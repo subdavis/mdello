@@ -1,0 +1,827 @@
+/* JetBrains Mono, variable weight axis. SIL OFL, see src/assets/fonts/OFL.txt */
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('./assets/fonts/JetBrainsMono-VariableFont_wght.woff2') format('woff2');
+  font-weight: 100 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('./assets/fonts/JetBrainsMono-Italic-VariableFont_wght.woff2') format('woff2');
+  font-weight: 100 800;
+  font-style: italic;
+  font-display: swap;
+}
+
+:root {
+  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --bg: #f1f2f4;
+  --column-bg: #ebecf0;
+  --card-bg: #fff;
+  --line: #d8dae0;
+  --text: #172b4d;
+  --muted: #6b778c;
+  --accent: #0c66e4;
+  --radius: 3px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-size: 13px;
+  /* Whole px, not a ratio: fractional line boxes make translucent selection rects
+     round into each other and draw a 1px seam on every other line. */
+  line-height: 18px;
+  color: var(--text);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  /* --board-bg is set from .mdello.yml's `background`; `none` when unset. */
+  background: var(--board-bg, none) center / cover no-repeat var(--bg);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#app {
+  display: contents;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #f4f5f7;
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+input,
+textarea {
+  font: inherit;
+  color: inherit;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 3px 6px;
+  width: 100%;
+}
+
+/* topbar */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  background: #fff;
+  border-bottom: 1px solid var(--line);
+  flex: none;
+}
+
+.brand {
+  letter-spacing: 0.02em;
+}
+
+.board-name {
+  color: var(--muted);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.error {
+  margin: 0;
+  padding: 4px 8px;
+  background: #ffecea;
+  border-bottom: 1px solid #f3b8b0;
+  color: #ae2a19;
+  flex: none;
+}
+
+main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.gate {
+  margin: 32px auto;
+  text-align: center;
+  color: var(--muted);
+}
+
+.init-gate {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.init-gate h1 {
+  margin: 0;
+  font-size: 20px;
+  /* Root line-height is absolute now, so bigger text needs its own box. */
+  line-height: 26px;
+}
+
+.init-gate p {
+  margin: 0;
+}
+
+.init-button {
+  padding: 10px 20px;
+  font-size: 15px;
+}
+
+/* board */
+
+.board {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px;
+  overflow-x: auto;
+  width: 100%;
+}
+
+.column {
+  flex: none;
+  width: 260px;
+  max-height: calc(100vh - 60px);
+  display: flex;
+  flex-direction: column;
+  background: var(--column-bg);
+  border-radius: var(--radius);
+  padding: 6px;
+  gap: 6px;
+}
+
+.column-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.column-head h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.count {
+  color: var(--muted);
+}
+
+.column-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+  min-height: 8px;
+}
+
+.empty {
+  margin: 0;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.add-button {
+  text-align: left;
+  background: transparent;
+  border-color: transparent;
+  color: var(--muted);
+}
+
+/* cards */
+
+.card {
+  background: var(--card-bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 5px 6px;
+  cursor: pointer;
+  box-shadow: 0 1px 0 rgb(9 30 66 / 0.1);
+}
+
+.card:hover {
+  border-color: #b3bac5;
+}
+
+.card.is-dragging {
+  opacity: 0.4;
+}
+
+.slot {
+  flex: none;
+  border-radius: var(--radius);
+  background: rgb(9 30 66 / 0.08);
+}
+
+.card-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.card-meta {
+  display: flex;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 3px;
+}
+
+.assignee {
+  margin-left: auto;
+}
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin: 3px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tag {
+  background: #dfe1e6;
+  border-radius: 2px;
+  padding: 0 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* tag editor */
+
+.tag-row {
+  /* Anchor for .labels-pop. Lives in the modal's <dl>, so no indent of its own. */
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tag-add {
+  padding: 0 6px;
+  line-height: 1.35;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.labels-pop {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 20;
+  width: 280px;
+  margin-top: 4px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--card-bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 16px rgb(9 30 66 / 25%);
+}
+
+.labels-head {
+  display: flex;
+  align-items: center;
+}
+
+.labels-head strong {
+  flex: 1;
+  text-align: center;
+}
+
+.labels-head .icon-button {
+  flex: none;
+}
+
+.labels-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.labels-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.labels-item input[type='checkbox'] {
+  flex: none;
+  width: auto;
+  margin: 0;
+}
+
+.tag-row .tag {
+  border: 0;
+  line-height: 1.35;
+}
+
+.label-chip {
+  flex: 1;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--radius);
+  text-align: left;
+  color: #fff;
+  font-weight: 600;
+}
+
+.tag-row .tag:hover,
+.label-chip:hover {
+  /* Repeat the base colour so the generic button:hover rule cannot win. */
+  background: #dfe1e6;
+  filter: brightness(0.92);
+}
+
+.label-chip.is-plain {
+  background: #dfe1e6;
+  color: var(--text);
+}
+
+.label-create {
+  color: var(--muted);
+}
+
+.label-preview {
+  display: grid;
+  place-items: center;
+  padding: 16px 8px;
+  background: #f1f2f4;
+  border-radius: var(--radius);
+}
+
+.label-preview .label-chip {
+  flex: none;
+  min-width: 160px;
+  text-align: center;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field > span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.swatches {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+}
+
+.swatch {
+  height: 28px;
+  border: 2px solid transparent;
+  border-radius: var(--radius);
+  color: rgb(23 43 77 / 0.7);
+  line-height: 1;
+}
+
+.swatch:hover,
+.swatch.is-active {
+  border-color: var(--accent);
+  filter: none;
+}
+
+.label-foot {
+  display: flex;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.danger {
+  margin-left: auto;
+  background: #ffecea;
+  border-color: #f3b8b0;
+  color: #ae2a19;
+}
+
+.archive-strip {
+  flex: none;
+  width: 90px;
+  align-self: stretch;
+  display: grid;
+  place-items: center;
+  border: 1px dashed #b3bac5;
+  border-radius: var(--radius);
+  background: rgb(255 255 255 / 0.4);
+  color: var(--muted);
+  writing-mode: vertical-rl;
+}
+
+/* Own opaque-ish chip so a board wallpaper cannot bleed through the text. */
+.archive-label {
+  padding: 8px 6px;
+  border-radius: var(--radius);
+  background: rgb(255 255 255 / 0.85);
+}
+
+.archive-strip.is-over {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgb(255 255 255 / 0.6);
+}
+
+.archive-strip.is-over .archive-label {
+  background: #fff;
+}
+
+/* modal */
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgb(9 30 66 / 0.5);
+  display: grid;
+  place-items: start center;
+  padding: 24px 12px;
+  overflow: hidden;
+}
+
+.modal {
+  background: #fff;
+  border-radius: var(--radius);
+  width: min(680px, 100%);
+  max-height: calc(100vh - 48px);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Head, meta, tags and foot stay put; only the body/editor scrolls. */
+.modal-head,
+.meta,
+.modal-foot {
+  flex: none;
+}
+
+.modal-head {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.modal-title {
+  font-size: 18px;
+  font-weight: 600;
+  border-color: transparent;
+  padding: 2px 6px;
+}
+
+.modal-title:hover,
+.modal-title:focus {
+  border-color: var(--line);
+}
+
+.icon-button {
+  border-color: transparent;
+  font-size: 15px;
+  line-height: 1;
+  padding: 2px 6px;
+}
+
+.meta {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 3px 14px;
+  margin: 0;
+  font-size: 11.5px;
+  margin-left: 8px;
+  color: var(--muted);
+}
+
+.meta dt {
+  font-weight: 600;
+}
+
+.meta dd {
+  margin: 0;
+}
+
+/* Reads as plain meta text until hovered or focused, like .modal-title. */
+.meta-input {
+  /* Chrome-only, like the rest of this app: box hugs the text and grows as you type. */
+  field-sizing: content;
+  /* Overrides the global `input { width: 100% }`, which field-sizing cannot beat. */
+  width: auto;
+  min-width: 4ch;
+  max-width: 100%;
+  /* Pulls the glyphs back over the border + padding so they line up with the other values. */
+  margin-left: -3px;
+  padding: 0 2px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: none;
+  color: inherit;
+  font: inherit;
+}
+
+.meta-input:hover,
+.meta-input:focus {
+  border-color: var(--line);
+}
+
+.meta-input:focus {
+  outline: none;
+  background: #fff;
+}
+
+.path {
+  font-family: var(--mono);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-size: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.path:hover {
+  text-decoration: underline;
+}
+
+/* stacked editor: highlight layer pinned under a transparent, scrolling textarea */
+
+.editor-stack {
+  /* Grows with the content, shrinks once the modal hits its cap, then scrolls. */
+  flex: 0 1 auto;
+  min-height: 240px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow-y: auto;
+}
+
+.editor-inner {
+  position: relative;
+  min-height: 100%;
+}
+
+.editor-layer {
+  margin: 0;
+  padding: 8px;
+  border: 0;
+  font: inherit;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 450;
+  line-height: 19px;
+  tab-size: 2;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+/* UA stylesheet gives <code> its own monospace font, which would beat inheritance
+   and desync the two layers. */
+.editor-layer code {
+  font: inherit;
+}
+
+/* The highlight layer is in flow and sizes the stack; the textarea floats on top of it. */
+.editor-layer.hljs {
+  min-height: 100%;
+  background: none;
+  color: #24292e;
+}
+
+/* GitHub light palette. Only color/style changes that keep glyph metrics,
+   otherwise text drifts away from the caret in the textarea above. */
+
+.editor-layer .hljs-section {
+  color: #225c9f;
+  font-weight: 900;
+}
+
+.editor-layer .hljs-strong {
+  color: #005cc5;
+  font-weight: 900;
+}
+
+.editor-layer .hljs-emphasis {
+  color: #24292e;
+  font-style: italic;
+}
+
+.editor-layer .hljs-code {
+  color: #193d4d;
+  background: #ecedf1;
+}
+
+.editor-layer .hljs-bullet {
+  color: #735c0f;
+  font-weight: 900;
+}
+
+.editor-layer .hljs-quote {
+  color: #22863a;
+}
+
+.editor-layer .hljs-link {
+  color: #225c9f;
+  text-decoration: underline;
+}
+
+.editor-layer .hljs-symbol {
+  color: #6f42c1;
+}
+
+.editor-layer .hljs-string {
+  color: #02731b;
+}
+
+.editor-layer .hljs-literal {
+  color: #d73a49;
+}
+
+.editor-input {
+  position: absolute;
+  inset: 0;
+  resize: none;
+  overflow: hidden;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--text);
+  border-radius: 0;
+}
+
+.editor-input:focus {
+  outline: none;
+}
+
+.editor-input::selection {
+  background: #024ba433;
+}
+
+.body {
+  flex: 1;
+  min-height: 120px;
+  overflow-y: auto;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  padding: 8px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.body:hover {
+  border-color: var(--line);
+}
+
+.markdown > :first-child {
+  margin-top: 0;
+}
+
+.markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown h1,
+.markdown h2,
+.markdown h3 {
+  font-size: 20px;
+  margin: 8px 0 4px;
+}
+
+.markdown p,
+.markdown ul,
+.markdown ol,
+.markdown pre {
+  margin: 12px 0;
+}
+
+.markdown ul,
+.markdown ol {
+  padding-left: 20px;
+}
+
+.markdown code {
+  font-family: var(--mono);
+  background: #f1f2f4;
+  padding: 0 3px;
+  border-radius: 2px;
+}
+
+.markdown pre {
+  background: #f1f2f4;
+  padding: 6px;
+  border-radius: var(--radius);
+  overflow-x: auto;
+}
+
+.markdown img {
+  max-width: 100%;
+  height: auto;
+}
+
+.markdown table {
+  border-collapse: collapse;
+  margin: 12px 0;
+  width: 100%;
+  display: block;
+  overflow-x: auto;
+}
+
+.markdown th,
+.markdown td {
+  border: 1px solid var(--line);
+  padding: 4px 8px;
+  text-align: left;
+}
+
+.markdown th {
+  background: var(--column-bg);
+  font-weight: 600;
+}
+
+.markdown tbody tr:nth-child(even) {
+  background: #fafbfc;
+}
+
+.markdown blockquote {
+  margin: 4px 0;
+  padding-left: 8px;
+  border-left: 2px solid var(--line);
+  color: var(--muted);
+}
+
+.modal-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.save-state {
+  color: var(--muted);
+  font-size: 11px;
+  margin-right: auto;
+}
+
+.editor-link {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 2px 8px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.editor-link:hover {
+  background: #f4f5f7;
+}
+
+.toast {
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card-bg);
+  box-shadow: 0 2px 8px rgb(9 30 66 / 25%);
+  font-size: 12px;
+  z-index: 100;
+}
