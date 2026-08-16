@@ -6,7 +6,7 @@ import {
   serializeFile,
   type Frontmatter,
 } from './frontmatter';
-import { DEFAULT_CONFIG, writeConfig } from './config';
+import { CONFIG_FILE, DEFAULT_CONFIG, writeConfig } from './config';
 import { openWritable } from './writable';
 
 export const ARCHIVE_DIR = 'archive';
@@ -191,43 +191,114 @@ export async function createCard(
 
 const STARTER_COLUMNS = ['1-todo', '2-doing', '3-done'];
 
-const STARTER_CARDS: Array<{ column: string; title: string; body: string }> = [
+const SETUP_TAG = 'Setup';
+const SETUP_COLOR = '#579dff';
+const TUTORIAL_TAG = 'Tutorial';
+const TUTORIAL_COLOR = '#4bce97';
+
+const STARTER_CARDS: Array<{
+  column: string;
+  title: string;
+  body: string;
+  tags?: string[];
+}> = [
   {
-    column: '1-todo',
-    title: 'Drag me to Doing',
+    column: '2-doing',
+    title: 'Edit or Drag Me Around',
+    tags: [TUTORIAL_TAG],
     body: [
       'Cards are markdown files. Columns are folders. That is the whole model.',
       '',
       '- Drag between columns to `mv` the file',
-      '- Drag to the Archive strip to file it under `archive/YYYY-MM/`',
       '- Double-click the description to edit raw markdown',
+      '- Press escape to exit and save the file',
+      '- Edits also save automatically',
+      '',
+      'Edit me now to see the file change on disk. Double-click here.',
     ].join('\n'),
   },
   {
     column: '2-doing',
-    title: 'Edit me, then check the file on disk',
+    title: 'Archive this card',
+    tags: [TUTORIAL_TAG],
     body: [
-      'Frontmatter holds the metadata:',
+      'Archiving takes a card off the board without deleting anything.',
       '',
-      '```yaml',
-      'title: Edit me, then check the file on disk',
-      'tags: [example]',
-      'assignee: Brandon',
+      '- Drag a card onto the Archive strip at the edge of the board',
+      `- The file moves to \`${ARCHIVE_DIR}/YYYY-MM/\`, bucketed by the month you archived it`,
+      '- The archive folder is never scanned, so old cards cost nothing',
+      '- Nothing is destroyed: move the file back into a column folder to restore it',
+      '',
+      'Try it on this card.',
+    ].join('\n'),
+  },
+  {
+    column: '1-todo',
+    title: 'Set a background image',
+    tags: [SETUP_TAG],
+    body: [
+      'Drag any image file onto the window. It is saved as `background.<ext>` in this board',
+      'folder and drawn centred and cropped to cover.',
+      '',
+      'Need one?',
+      '',
+      '- [Default Mac wallpapers in 5K](https://512pixels.net/projects/default-mac-wallpapers-in-5k/)',
+      '- [Public-domain paintings at the National Gallery of Art](https://www.nga.gov/artwork-search?images=1&begin_year=-499&end_year=1900&f[]=awtype:107231&f[]=movement:29206&f[]=movement:58341&f[]=movement:91366&f[]=movement:46221)',
+      '',
+      'Delete the file to go back to the plain board.',
+    ].join('\n'),
+  },
+  {
+    column: '1-todo',
+    title: 'Update the config file',
+    tags: [SETUP_TAG],
+    body: [
+      `Board settings live in \`${CONFIG_FILE}\` in this folder, next to the column folders,`,
+      'so they travel with the board instead of hiding in one browser profile.',
+      '',
+      '| Key | What it does |',
+      '| --- | --- |',
+      '| `path` | Absolute path of this folder. The browser never reveals real paths, so fill it in by hand. Once set, the "open in editor" link on each card works. |',
+      '| `editor` | URL template for that link; `{path}` becomes the card file path. `vscode://file{path}`, `cursor://file{path}`, `obsidian://open?path={path}` |',
+      '| `labels` | Tag names and colours, like the blue Setup tag on this card. |',
+      '',
+      'Hand-edit it any time; mdello re-reads it and keeps the explanatory comments.',
+    ].join('\n'),
+  },
+  {
+    column: '1-todo',
+    title: 'Install the agent skill',
+    tags: [SETUP_TAG],
+    body: [
+      'Your board is just files, so an AI agent can read and write it with no MCP, tools or auth.',
+      'Teach the agent the layout with the mdello skill:',
+      '',
+      '```bash',
+      'npx skills add https://github.com/subdavis/mdello/blob/main/skills/mdello-board',
       '```',
       '',
-      'Edits save on a debounce, so your editor and this app can share the folder.',
+      'Then ask it things like "what is on my board?" or "add a card for the release notes".',
     ].join('\n'),
   },
 ];
 
-/** Scaffolds config, columns, an archive dir, and two starter cards into an empty folder. */
+/** Scaffolds config, columns, an archive dir, and the starter cards into an empty folder. */
 export async function initBoard(root: FileSystemDirectoryHandle): Promise<void> {
-  await writeConfig(root, { ...DEFAULT_CONFIG });
+  await writeConfig(root, {
+    ...DEFAULT_CONFIG,
+    labels: [
+      { name: SETUP_TAG, color: SETUP_COLOR },
+      { name: TUTORIAL_TAG, color: TUTORIAL_COLOR },
+    ],
+  });
   for (const dir of STARTER_COLUMNS) await columnHandle(root, dir, true);
   await root.getDirectoryHandle(ARCHIVE_DIR, { create: true });
 
+  const orders: Record<string, number> = {};
   for (const card of STARTER_CARDS) {
-    const created = await createCard(root, card.column, card.title, 1);
+    const order = (orders[card.column] = (orders[card.column] ?? 0) + 1);
+    const created = await createCard(root, card.column, card.title, order);
+    created.data.tags = card.tags ?? [];
     await writeCard(root, { ...created, body: card.body });
   }
 }

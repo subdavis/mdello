@@ -1,18 +1,21 @@
-# mdello
+<p align="center">
+<img src="./public/Mdello.png" width="260px">
+</p>
 
-Trello-style board that reads and writes plain markdown files on your local disk. Pronounced like the beer.
+Trello-style board that reads and writes plain markdown files on your local disk.
 
-* 100% local, no server, no database.
-* folders are columns, `.md` files are cards, frontmatter is metadata.
-* Uses the Filesystem API, requires a [Chromium-based browser](https://caniuse.com/filesystem)
-* Designed to share your personal TODOs with AI agents - No MCP, tools or auth needed.
+- 100% local, no server, no database.
+- folders are columns, `.md` files are cards, frontmatter is metadata.
+- Uses the Filesystem API, requires a [Chromium-based browser](https://caniuse.com/filesystem)
+- Designed to share your personal TODOs with AI agents - No MCP, tools or auth needed.
+- 🍻 Pronounced like the beer
 
 **Try it out at https://subdavis.github.io/mdello/**
 
 ## User Guide
 
-| Your files | Your board |
-|----|-----|
+| Your files                              | Your board                                 |
+| --------------------------------------- | ------------------------------------------ |
 | ![Filesystem](./public/filesystem2.png) | ![PWA Screenshot](./public/screenshot.png) |
 
 Mdello can be installed as a PWA.
@@ -26,7 +29,7 @@ later visits only need a single **Reconnect** click to re-grant write permission
 
 ### Agent Skills
 
-The purpose of the filesystem-based approach is to give AI agents complete access to your board without any external tools, MCP, or auth. It's just files!  You can tell your agent about your board with a simple skill.
+The purpose of the filesystem-based approach is to give AI agents complete access to your board without any external tools, MCP, or auth. It's just files! You can tell your agent about your board with a simple skill.
 
 ```bash
 npx skills add https://github.com/subdavis/mdello/blob/main/skills/mdello-board
@@ -57,8 +60,8 @@ autosave after a short pause; **Save** exits edit mode and re-renders.
 
 See `.mdello.yml` in your mdello board folder to configure additional features
 
-* Open-in-editor setup
-* Tag customization
+- Open-in-editor setup
+- Tag customization
 
 Drag any image onto the window to set the background image.
 
