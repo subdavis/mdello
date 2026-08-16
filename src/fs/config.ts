@@ -13,8 +13,6 @@ export interface BoardConfig {
   path: string;
   /** URL template used to open a card in an external editor. */
   editor: string;
-  /** Optional board wallpaper; any URL the browser can load. */
-  background: string;
   labels: Label[];
 }
 
@@ -23,7 +21,6 @@ const DEFAULT_EDITOR = 'vscode://file{path}';
 export const DEFAULT_CONFIG: BoardConfig = {
   path: '',
   editor: DEFAULT_EDITOR,
-  background: '',
   labels: [],
 };
 
@@ -41,9 +38,8 @@ const HEADER = `# mdello board config — written by the app, safe to hand-edit.
 #           cursor://file{path}          Cursor
 #           obsidian://open?path={path}  Obsidian
 #
-# background  Wallpaper URL for the board, drawn centred and cropped to cover.
-#             Remote https:// links or a file served next to the board both work.
-#               example: https://example.com/wallpaper.jpg
+# Wallpaper: drop a file named background.<ext> in this folder. Any format the browser
+#            can render works; it is drawn centred and cropped to cover.
 #
 # labels  Tag colours. They live here so they travel with the board instead of
 #         being stuck in one browser's local storage.
@@ -74,7 +70,6 @@ export async function readConfig(root: FileSystemDirectoryHandle): Promise<Board
   return {
     path: typeof data.path === 'string' ? data.path.trim() : '',
     editor: typeof data.editor === 'string' && data.editor ? data.editor : DEFAULT_EDITOR,
-    background: typeof data.background === 'string' ? data.background.trim() : '',
     labels: readLabels(data.labels),
   };
 }

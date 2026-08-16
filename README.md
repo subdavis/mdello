@@ -9,9 +9,15 @@ Trello-style board that reads and writes plain markdown files on your local disk
 
 **Try it out at https://subdavis.github.io/mdello/**
 
-![Mdello Banner](./public/mdello_banner.jpeg)
-
 ## User Guide
+
+| Your files | Your board |
+|----|-----|
+| ![Filesystem](./public/filesystem2.png) | ![PWA Screenshot](./public/screenshot.png) |
+
+Mdello can be installed as a PWA.
+
+![Install PWA](./public/install-pwa.png)
 
 Recommend creating the folder at `~/Documents/mdello`
 
@@ -47,20 +53,14 @@ content/
 Editing: click a card to open it, double-click the description for a raw markdown editor. Changes
 autosave after a short pause; **Save** exits edit mode and re-renders.
 
-| Your files | Your board |
-|----|-----|
-| ![Filesystem](./public/filesystem2.png) | ![PWA Screenshot](./public/screenshot.png) |
-
-Mdello can be installed as a PWA.
-
-![Install PWA](./public/install-pwa.png)
-
-### Configuration
+### Configuration & Customization
 
 See `.mdello.yml` in your mdello board folder to configure additional features
 
 * Open-in-editor setup
 * Tag customization
+
+Drag any image onto the window to set the background image.
 
 ## Local development
 

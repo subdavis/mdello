@@ -15,6 +15,7 @@ import {
 import { grantPermission, pickBoard, restoreBoard, type BoardAccess } from '../fs/handle';
 import { acquireBoardLock, releaseBoardLock } from '../fs/lock';
 import { watchBoard } from '../fs/watch';
+import { readBackground, writeBackground } from '../fs/background';
 import {
   DEFAULT_CONFIG,
   editorName,
@@ -38,6 +39,14 @@ const saveState = ref<'idle' | 'dirty' | 'saving' | 'saved'>('idle');
 const pendingSaves = new Map<string, ReturnType<typeof setTimeout>>();
 
 const config = ref<BoardConfig>({ ...DEFAULT_CONFIG });
+/** Blob URL for `background.<ext>` in the board root, empty when the board has none. */
+const background = ref('');
+
+async function loadBackground(): Promise<void> {
+  const next = root.value ? await readBackground(root.value) : null;
+  if (background.value) URL.revokeObjectURL(background.value);
+  background.value = next ?? '';
+}
 /** Set while the config file is being applied, so loading labels does not write them back. */
 let applyingConfig = false;
 
@@ -80,6 +89,7 @@ let watchTimer: ReturnType<typeof setTimeout> | undefined;
 
 let lastConfigWrite = 0;
 let configChanged = false;
+let backgroundChanged = false;
 /** Columns touched since the last reload; null means "unknown, rescan the board". */
 let dirtyColumns: Set<string> | null = new Set();
 
@@ -99,6 +109,7 @@ function onFileChange(records: FileSystemChangeRecord[]): void {
       configChanged = true;
       markDirty(null);
     } else if (top === CONFIG_FILE && rest.length === 0) configChanged = true;
+    else if (rest.length === 0 && /^background\./i.test(top)) backgroundChanged = true;
     else if (top === ARCHIVE_DIR || top.startsWith('.')) continue;
     // A change on a top-level entry is a column appearing or disappearing.
     else markDirty(rest.length === 0 ? null : top);
@@ -109,6 +120,9 @@ function onFileChange(records: FileSystemChangeRecord[]): void {
     // Our own config write echoes back as a change; ignore that window.
     if (configChanged && Date.now() - lastConfigWrite > ECHO_WINDOW) void loadConfig();
     configChanged = false;
+
+    if (backgroundChanged) void loadBackground();
+    backgroundChanged = false;
 
     if (pendingSaves.size > 0) return; // Keep the dirty set; our own writes land first.
     const dirty = dirtyColumns;
@@ -151,6 +165,7 @@ async function openBoard(): Promise<void> {
   }
 
   await loadConfig();
+  await loadBackground();
   await refresh();
   await attachWatcher();
 }
@@ -266,7 +281,7 @@ export function useBoard() {
     columns,
     editorName: computed(() => editorName(config.value)),
     rootPath: computed(() => config.value.path),
-    background: computed(() => config.value.background),
+    background,
     cardUrl: (card: Pick<Card, 'column' | 'name'>) => editorUrl(config.value, card),
     loading,
     error,
@@ -295,10 +310,22 @@ export function useBoard() {
 
     refresh,
 
+    /** Drop target for images: writes background.<ext> into the board root. */
+    async setBackground(file: File): Promise<boolean> {
+      if (!root.value || locked.value) return false;
+      const done = await guard(async () => {
+        await writeBackground(requireRoot(), file);
+        return true;
+      });
+      await loadBackground();
+      return done === true;
+    },
+
     /** Config + cards, for the manual button and the focus fallback. */
     async reload(): Promise<void> {
       if (locked.value) return;
       await loadConfig();
+      await loadBackground();
       await refresh();
     },
 

@@ -439,6 +439,9 @@ main {
 
 .archive-strip {
   flex: none;
+  /* Eats the leftover space so the strip hugs the right edge; with no leftover space
+     (columns overflowing) it resolves to 0 and the strip scrolls after the last column. */
+  margin-left: auto;
   width: 90px;
   align-self: stretch;
   display: grid;

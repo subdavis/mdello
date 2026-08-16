@@ -3,6 +3,7 @@ import { onBeforeUnmount, onMounted, watchEffect } from 'vue';
 import Board from './components/Board.vue';
 import Toast from './components/Toast.vue';
 import { useBoard } from './composables/useBoard';
+import { showToast } from './composables/useToast';
 
 const board = useBoard();
 
@@ -22,12 +23,44 @@ async function onFocus(): Promise<void> {
   await board.reload();
 }
 
+/** Card drags carry no files, so this never competes with the board's own drag handling. */
+function isFileDrag(event: DragEvent): boolean {
+  return event.dataTransfer?.types.includes('Files') ?? false;
+}
+
+function onDragover(event: DragEvent): void {
+  if (!isFileDrag(event)) return;
+  event.preventDefault();
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+}
+
+/** An image dropped anywhere in the window becomes the board wallpaper. */
+async function onDrop(event: DragEvent): Promise<void> {
+  if (!isFileDrag(event)) return;
+  event.preventDefault();
+
+  const file = event.dataTransfer?.files[0];
+  if (!file) return;
+  if (!file.type.startsWith('image/')) {
+    showToast('Not an image');
+    return;
+  }
+
+  if (await board.setBackground(file)) showToast('Background updated');
+}
+
 onMounted(async () => {
   await board.init();
   window.addEventListener('focus', onFocus);
+  window.addEventListener('dragover', onDragover);
+  window.addEventListener('drop', onDrop);
 });
 
-onBeforeUnmount(() => window.removeEventListener('focus', onFocus));
+onBeforeUnmount(() => {
+  window.removeEventListener('focus', onFocus);
+  window.removeEventListener('dragover', onDragover);
+  window.removeEventListener('drop', onDrop);
+});
 </script>
 
 <template>
