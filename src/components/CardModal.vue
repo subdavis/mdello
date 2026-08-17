@@ -94,6 +94,25 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
         <dd>{{ formatStamp(card.created) }}</dd>
         <dt>Modified</dt>
         <dd>{{ formatStamp(card.modified) }}</dd>
+        <template v-if="card.references.length">
+          <dt>References</dt>
+          <dd>
+            <div class="ref-row">
+              <a
+                v-for="reference in card.references"
+                :key="reference.url"
+                class="ref"
+                :href="reference.url"
+                target="_blank"
+                rel="noreferrer"
+                :title="reference.url"
+              >
+                <img class="ref-icon" :src="reference.icon" alt="" />
+                {{ reference.label }}
+              </a>
+            </div>
+          </dd>
+        </template>
         <dt>Assignee</dt>
         <dd>
           <input

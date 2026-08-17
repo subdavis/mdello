@@ -7,11 +7,14 @@ import {
   persistOrder,
   readColumn,
   scanBoard,
+  unarchiveCard,
   writeCard,
   ARCHIVE_DIR,
   type Card,
   type Column,
 } from '../fs/board';
+import { findReferences } from '../references';
+import { showToast } from './useToast';
 import { grantPermission, pickBoard, restoreBoard, type BoardAccess } from '../fs/handle';
 import { acquireBoardLock, releaseBoardLock } from '../fs/lock';
 import { watchBoard } from '../fs/watch';
@@ -383,14 +386,27 @@ export function useBoard() {
     async archive(card: Card): Promise<void> {
       await flushCard(card);
       const from = columns.value.find((column) => column.dir === card.column);
+      const index = from ? from.cards.indexOf(card) : 0;
 
-      const done = await guard(async () => {
-        await archiveCard(requireRoot(), card);
-        return true;
-      });
-      if (!done) return;
+      const archived = await guard(async () => archiveCard(requireRoot(), card));
+      if (archived === undefined) return;
 
       if (from) from.cards = from.cards.filter((entry) => entry.id !== card.id);
+
+      showToast(`Archived "${card.title}"`, 5000, {
+        label: 'Undo',
+        run: async () => {
+          const name = await guard(async () =>
+            unarchiveCard(requireRoot(), archived, card.column),
+          );
+          if (name === undefined || !from) return;
+
+          card.name = name;
+          card.id = `${card.column}/${name}`;
+          from.cards.splice(Math.min(index, from.cards.length), 0, card);
+          await guard(async () => persistOrder(requireRoot(), from));
+        },
+      });
     },
   };
 }
@@ -401,6 +417,7 @@ async function flushCard(card: Card): Promise<void> {
   if (!pendingSaves.delete(card.id)) return;
 
   saveState.value = 'saving';
+  card.references = findReferences(card.body);
   const modified = await guard(async () => {
     card.data.title = card.title;
     // An empty assignee drops the key rather than writing `assignee: ''`.

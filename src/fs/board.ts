@@ -8,6 +8,7 @@ import {
 } from './frontmatter';
 import { CONFIG_FILE, DEFAULT_CONFIG, writeConfig } from './config';
 import { openWritable } from './writable';
+import { findReferences, type Reference } from '../references';
 
 export const ARCHIVE_DIR = 'archive';
 
@@ -22,6 +23,8 @@ export interface Card {
   order?: number;
   modified: number;
   body: string;
+  /** Parsed from the body on load and on save, never per keystroke. */
+  references: Reference[];
   data: Frontmatter;
 }
 
@@ -33,7 +36,10 @@ export interface Column {
 
 // Handles are never kept in reactive state; everything is re-resolved by name.
 async function columnHandle(root: FileSystemDirectoryHandle, column: string, create = false) {
-  return root.getDirectoryHandle(column, { create });
+  let dir = root;
+  // Slash-separated so archive buckets (`archive/YYYY-MM`) resolve too.
+  for (const part of column.split('/')) dir = await dir.getDirectoryHandle(part, { create });
+  return dir;
 }
 
 function splitPrefix(dir: string): { order: number; label: string } {
@@ -64,6 +70,7 @@ function toCard(column: string, name: string, text: string, modified: number): C
     order: readNumber(data, 'order'),
     modified,
     body,
+    references: findReferences(body),
     data,
   };
 }
@@ -346,14 +353,24 @@ export async function moveCard(
   return moveFile(root, card.column, card.name, await columnHandle(root, toColumn, true));
 }
 
+/** Returns where the file landed, so the move can be undone. */
 export async function archiveCard(
   root: FileSystemDirectoryHandle,
   card: Pick<Card, 'column' | 'name'>,
-): Promise<void> {
+): Promise<{ dir: string; name: string }> {
   const now = new Date();
   const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   const archive = await root.getDirectoryHandle(ARCHIVE_DIR, { create: true });
   const bucket = await archive.getDirectoryHandle(month, { create: true });
 
-  await moveFile(root, card.column, card.name, bucket);
+  const name = await moveFile(root, card.column, card.name, bucket);
+  return { dir: `${ARCHIVE_DIR}/${month}`, name };
+}
+
+export async function unarchiveCard(
+  root: FileSystemDirectoryHandle,
+  archived: { dir: string; name: string },
+  toColumn: string,
+): Promise<string> {
+  return moveFile(root, archived.dir, archived.name, await columnHandle(root, toColumn, true));
 }
