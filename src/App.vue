@@ -84,7 +84,7 @@ onBeforeUnmount(() => {
 <template>
   <header class="topbar">
     <strong class="brand">🍺 mdello</strong>
-    <span v-if="board.boardName.value" class="board-name">{{ board.rootPath.value ?? board.boardName.value }}</span>
+    <span v-if="board.boardName.value" class="board-name">{{ board.rootPath.value || board.boardName.value }}</span>
     <span class="spacer" />
     <template v-if="board.access.value.state === 'ready' && !board.locked.value">
       <form v-if="addingColumn" class="add-column-form" @submit.prevent="submitColumn">

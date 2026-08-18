@@ -13,15 +13,22 @@ interface DirEntry {
 }
 
 async function dirId(handle: FileSystemDirectoryHandle): Promise<string> {
-  const registry = (await get<DirEntry[]>(REGISTRY_KEY)) ?? [];
+  const lookup = async (): Promise<string> => {
+    const registry = (await get<DirEntry[]>(REGISTRY_KEY)) ?? [];
 
-  for (const entry of registry) {
-    if (await entry.handle.isSameEntry(handle)) return entry.id;
-  }
+    for (const entry of registry) {
+      if (await entry.handle.isSameEntry(handle)) return entry.id;
+    }
 
-  const id = crypto.randomUUID();
-  await set(REGISTRY_KEY, [...registry, { id, handle }]);
-  return id;
+    const id = crypto.randomUUID();
+    await set(REGISTRY_KEY, [...registry, { id, handle }]);
+    return id;
+  };
+
+  // The lookup is a read-modify-write; unserialized, two tabs opening the same folder
+  // can each mint a different id and both "win" the exclusive board lock.
+  if (!navigator.locks) return lookup();
+  return navigator.locks.request('mdello:dir-registry', lookup);
 }
 
 let release: (() => void) | null = null;
