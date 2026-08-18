@@ -39,7 +39,7 @@ npx skills add https://github.com/subdavis/mdello/blob/main/skills/mdello-board
 
 ```
 content/
-  .mdello.yml               # Local config file
+  mdello.yml                # Local config file
   1-todo/card.md            # numeric prefix sets column order
   2-doing/card.md
   3-done/card.md
@@ -58,7 +58,7 @@ autosave after a short pause; **Save** exits edit mode and re-renders.
 
 ### Configuration & Customization
 
-See `.mdello.yml` in your mdello board folder to configure additional features
+See `mdello.yml` in your mdello board folder to configure additional features
 
 - Open-in-editor setup
 - Tag customization

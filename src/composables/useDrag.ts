@@ -7,6 +7,9 @@ const target = ref<{ column: string; index: number } | null>(null);
 // Height of the card being held, so the open slot matches it exactly.
 const slotHeight = ref(30);
 
+// Column drags are a separate track: `dragging` stays null, so card handlers ignore them.
+const column = ref<string | null>(null);
+
 /**
  * Chrome drops a transform set on the dragged element itself, so the tilt has to live on a
  * child of the element handed to setDragImage. Offscreen wrapper, padded so the rotated
@@ -19,7 +22,7 @@ function tiltedImage(el: HTMLElement, width: number, height: number): HTMLElemen
 
   const clone = el.cloneNode(true) as HTMLElement;
   clone.classList.remove('is-dragging');
-  clone.style.cssText = `width:${width}px;transform:rotate(3deg);box-shadow:0 6px 12px rgb(9 30 66 / 0.25);`;
+  clone.style.cssText = `width:${width}px;height:${height}px;transform:rotate(3deg);box-shadow:0 6px 12px rgb(9 30 66 / 0.25);`;
 
   wrapper.append(clone);
   document.body.append(wrapper);
@@ -31,6 +34,33 @@ export function useDrag() {
     dragging,
     target,
     slotHeight,
+    column,
+
+    /** The header is the handle, but `el` (the whole column) is what the ghost shows. */
+    startColumn(event: DragEvent, dir: string, el: HTMLElement | null): void {
+      column.value = dir;
+      if (!event.dataTransfer) return;
+
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/plain', dir);
+
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const image = tiltedImage(el, rect.width, rect.height);
+      event.dataTransfer.setDragImage(
+        image,
+        event.clientX - rect.left + 12,
+        event.clientY - rect.top + 12,
+      );
+      setTimeout(() => image.remove());
+    },
+
+    /** Claims the drop so the cursor stays "move"; reordering itself is a live preview. */
+    overColumn(event: DragEvent): void {
+      if (!column.value) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+    },
 
     start(event: DragEvent, card: Card): void {
       dragging.value = { id: card.id, column: card.column };
@@ -72,6 +102,7 @@ export function useDrag() {
     end(): void {
       dragging.value = null;
       target.value = null;
+      column.value = null;
     },
   };
 }

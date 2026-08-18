@@ -93,6 +93,10 @@ Archived cards are invisible in app. Only read archive if user asks about histor
 
 **New column** — `mkdir ~/Documents/mdello/4-blocked`. Prefix sets position.
 
+**Rename / reorder column** — `mv` the directory. Name minus prefix = label; prefix = position.
+App does the same thing (double-click header to rename, drag header to reorder), so folder names
+change over time. Never cache column dir names.
+
 ## Rules
 
 - Do not delete cards. Archive instead, unless user says delete.

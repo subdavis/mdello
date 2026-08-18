@@ -1,7 +1,7 @@
 import { dump, load } from 'js-yaml';
 import { openWritable } from './writable';
 
-export const CONFIG_FILE = '.mdello.yml';
+export const CONFIG_FILE = 'mdello.yml';
 
 export interface Label {
   name: string;

@@ -1,11 +1,29 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, watchEffect } from 'vue';
+import { nextTick, onBeforeUnmount, onMounted, ref, watchEffect } from 'vue';
 import Board from './components/Board.vue';
 import Toast from './components/Toast.vue';
 import { useBoard } from './composables/useBoard';
 import { showToast } from './composables/useToast';
 
 const board = useBoard();
+
+const addingColumn = ref(false);
+const draftColumn = ref('');
+const columnInput = ref<HTMLInputElement | null>(null);
+
+async function startAddingColumn(): Promise<void> {
+  addingColumn.value = true;
+  draftColumn.value = '';
+  await nextTick();
+  columnInput.value?.focus();
+}
+
+function submitColumn(): void {
+  const label = draftColumn.value.trim();
+  draftColumn.value = '';
+  addingColumn.value = false;
+  if (label) void board.addColumn(label);
+}
 
 // Wallpaper lives on <body> so it stays put while the board scrolls sideways.
 watchEffect(() => {
@@ -68,6 +86,22 @@ onBeforeUnmount(() => {
     <strong class="brand">🍺 mdello</strong>
     <span v-if="board.boardName.value" class="board-name">{{ board.rootPath.value ?? board.boardName.value }}</span>
     <span class="spacer" />
+    <template v-if="board.access.value.state === 'ready' && !board.locked.value">
+      <form v-if="addingColumn" class="add-column-form" @submit.prevent="submitColumn">
+        <input
+          ref="columnInput"
+          v-model="draftColumn"
+          aria-label="New column name"
+          placeholder="Column name"
+          @blur="submitColumn"
+          @keydown.esc="
+            draftColumn = '';
+            addingColumn = false;
+          "
+        />
+      </form>
+      <button v-else type="button" @click="startAddingColumn">Add column</button>
+    </template>
     <button
       v-if="board.access.value.state === 'ready' && !board.locked.value"
       type="button"
@@ -107,6 +141,14 @@ onBeforeUnmount(() => {
 
     <Board v-else />
   </main>
+
+  <!-- Folder renames move files one by one; block interaction rather than let the board churn. -->
+  <div v-if="board.busy.value" class="busy-overlay">
+    <div class="busy-card">
+      <span class="busy-spinner" />
+      <p>{{ board.busy.value }}</p>
+    </div>
+  </div>
 
   <Toast />
 </template>

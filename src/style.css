@@ -40,7 +40,7 @@
 
 body {
   margin: 0;
-  /* --board-bg is set from .mdello.yml's `background`; `none` when unset. */
+  /* --board-bg is set from mdello.yml's `background`; `none` when unset. */
   background: var(--board-bg, none) center / cover no-repeat var(--bg);
   height: 100vh;
   display: flex;
@@ -177,10 +177,17 @@ main {
   gap: 6px;
 }
 
+.column.is-dragging {
+  opacity: 0.4;
+}
+
 .column-head {
+  /* Anchor for .column-menu. */
+  position: relative;
   display: flex;
   align-items: baseline;
   gap: 6px;
+  cursor: grab;
 }
 
 .column-head h2 {
@@ -189,8 +196,76 @@ main {
   font-weight: 600;
 }
 
+.rename-form {
+  flex: 1;
+  display: flex;
+}
+
+/* Inputs that replace an element in a row must not be taller than it, or the row jumps.
+   Border is 1px a side, so line-height carries the rest of the target height. */
+.rename-form input {
+  padding: 0 4px;
+  font-size: 13px;
+  /* h2 line box is 18px. */
+  line-height: 16px;
+}
+
+.add-column-form input {
+  padding: 0 6px;
+  /* Sibling buttons are 24px: 18px line box + 2px padding + 1px border a side. */
+  line-height: 22px;
+}
+
+.add-column-form {
+  flex: none;
+  display: flex;
+  /* Fixed so swapping the button for the field does not shuffle the topbar sideways either. */
+  width: 120px;
+}
+
 .count {
   color: var(--muted);
+}
+
+.kebab {
+  margin-left: auto;
+  padding: 0 4px;
+  /* Glyph is drawn oversized but kept in an 18px line box so the header does not grow. */
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 16px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+}
+
+.kebab:hover {
+  color: inherit;
+  background: rgb(9 30 66 / 0.06);
+}
+
+.column-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 15;
+  margin-top: 4px;
+  min-width: 120px;
+  display: flex;
+  flex-direction: column;
+  background: var(--card-bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 12px rgb(9 30 66 / 0.2);
+  overflow: hidden;
+}
+
+.column-menu button {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+  padding: 4px 8px;
 }
 
 .column-body {
@@ -477,6 +552,9 @@ main {
   inset: 0;
   background: rgb(9 30 66 / 0.5);
   display: grid;
+  /* Not `auto`: an auto track sizes to the modal's max-content (a long code line in the
+     body), so the modal centers inside a track wider than the viewport and looks off-center. */
+  grid-template-columns: minmax(0, 1fr);
   place-items: start center;
   padding: 24px 12px;
   overflow: hidden;
@@ -896,4 +974,47 @@ main {
 .ref-icon {
   width: 18px;
   height: 18px;
+}
+
+/* busy overlay: shown while a column folder operation moves files */
+
+.busy-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(9 30 66 / 0.35);
+  cursor: progress;
+}
+
+.busy-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #fff;
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  box-shadow: 0 8px 24px rgb(9 30 66 / 0.3);
+}
+
+.busy-card p {
+  margin: 0;
+}
+
+.busy-spinner {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--line);
+  border-top-color: var(--muted);
+  border-radius: 50%;
+  animation: busy-spin 0.7s linear infinite;
+}
+
+@keyframes busy-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }

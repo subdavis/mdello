@@ -1,10 +1,14 @@
 import { computed, markRaw, ref, shallowRef, watch } from 'vue';
 import {
   archiveCard,
+  archiveColumn,
   createCard,
+  createColumn,
   initBoard,
   moveCard,
+  persistColumnOrder,
   persistOrder,
+  renameColumn,
   readColumn,
   scanBoard,
   unarchiveCard,
@@ -112,6 +116,8 @@ function onFileChange(records: FileSystemChangeRecord[]): void {
       configChanged = true;
       markDirty(null);
     } else if (top === CONFIG_FILE && rest.length === 0) configChanged = true;
+    // OS litter (.DS_Store and friends) is never a card; do not rescan for it.
+    else if (record.relativePathComponents.at(-1)?.startsWith('.')) continue;
     else if (rest.length === 0 && /^background\./i.test(top)) backgroundChanged = true;
     else if (top === ARCHIVE_DIR || top.startsWith('.')) continue;
     // A change on a top-level entry is a column appearing or disappearing.
@@ -127,7 +133,9 @@ function onFileChange(records: FileSystemChangeRecord[]): void {
     if (backgroundChanged) void loadBackground();
     backgroundChanged = false;
 
-    if (pendingSaves.size > 0) return; // Keep the dirty set; our own writes land first.
+    // Keep the dirty set; our own writes land first. Column moves rename folders file by file,
+    // so re-scanning mid-flight would blank out columns that are about to reappear.
+    if (pendingSaves.size > 0 || busy.value) return;
     const dirty = dirtyColumns;
     dirtyColumns = new Set();
     if (dirty === null) void refresh();
@@ -288,6 +296,7 @@ export function useBoard() {
     cardUrl: (card: Pick<Card, 'column' | 'name'>) => editorUrl(config.value, card),
     loading,
     error,
+    busy,
     saveState,
     boardName: computed(() => ('handle' in access.value ? access.value.handle.name : '')),
 
@@ -344,6 +353,81 @@ export function useBoard() {
     queueSave,
     renameTag,
     flushCard,
+
+    async addColumn(label: string): Promise<void> {
+      await guard(async () => {
+        const column = await createColumn(requireRoot(), label, columns.value.length + 1);
+        columns.value = [...columns.value, column];
+      });
+    },
+
+    /** Folder rename moves every card file, so pending card writes go out first. */
+    async renameColumn(column: Column, label: string): Promise<void> {
+      const next = label.trim();
+      if (!next || next === column.label) return;
+
+      await withBusy(`Renaming "${column.label}" to "${next}"…`, async () => {
+        await flushPending();
+        await guard(async () => renameColumn(requireRoot(), column.dir, next));
+      });
+    },
+
+    /**
+     * Live preview while a column header is dragged: the board reorders under the cursor and
+     * nothing touches disk until the drop. Swapping in place keeps the held column under the
+     * pointer, so the next dragover is a no-op instead of a fight.
+     */
+    previewColumnOrder(dir: string, index: number): void {
+      const current = columns.value.findIndex((column) => column.dir === dir);
+      if (current === -1 || current === index) return;
+
+      columnSnapshot ??= columns.value.map((column) => column.dir);
+
+      const next = [...columns.value];
+      const [moved] = next.splice(current, 1);
+      next.splice(index, 0, moved);
+      columns.value = next;
+    },
+
+    /** Cards go to `archive/YYYY-MM/` and the folder goes away. Files stay recoverable. */
+    async archiveColumn(column: Column): Promise<void> {
+      await withBusy(`Archiving "${column.label}"…`, async () => {
+        await flushPending();
+        const moved = await guard(async () => archiveColumn(requireRoot(), column.dir));
+        if (moved !== undefined) {
+          showToast(`Archived "${column.label}" and ${moved} card${moved === 1 ? '' : 's'}`);
+        }
+      });
+    },
+
+    /** Drop: renumber the folder prefixes to match what the user is already looking at. */
+    async commitColumnOrder(): Promise<void> {
+      const before = columnSnapshot;
+      columnSnapshot = null;
+      if (!before) return;
+
+      const dirs = columns.value.map((column) => column.dir);
+      if (dirs.every((dir, index) => dir === before[index])) return;
+
+      await withBusy('Reordering columns…', async () => {
+        await flushPending();
+        await guard(async () =>
+          persistColumnOrder(requireRoot(), dirs, (done, total) => {
+            busy.value = `Reordering columns… ${done} of ${total} folders`;
+          }),
+        );
+      });
+    },
+
+    /** Drag cancelled (escape, or dropped outside): put the preview back. */
+    cancelColumnOrder(): void {
+      const before = columnSnapshot;
+      columnSnapshot = null;
+      if (!before) return;
+
+      const byDir = new Map(columns.value.map((column) => [column.dir, column]));
+      columns.value = before.map((dir) => byDir.get(dir)!).filter(Boolean);
+    },
 
     async addCard(column: Column, title: string): Promise<Card | undefined> {
       return guard(async () => {
@@ -409,6 +493,37 @@ export function useBoard() {
       });
     },
   };
+}
+
+/** Column order as it was before the current drag started; null when no drag is previewing. */
+let columnSnapshot: string[] | null = null;
+
+/** Non-null while a blocking folder operation runs; the string is what the overlay shows. */
+const busy = ref<string | null>(null);
+
+/** Held for a beat even on fast boards, so the overlay reads as progress and not a flash. */
+const BUSY_MIN = 1000;
+
+/** Blocks the UI and mutes the watcher for the duration of a multi-file folder operation. */
+async function withBusy(label: string, action: () => Promise<void>): Promise<void> {
+  busy.value = label;
+  const started = Date.now();
+  try {
+    await action();
+  } finally {
+    const left = BUSY_MIN - (Date.now() - started);
+    if (left > 0) await new Promise((resolve) => setTimeout(resolve, left));
+    busy.value = null;
+    // Whatever the watcher swallowed while blocked is picked up by this one scan.
+    await refresh();
+  }
+}
+
+/** Column folder ops move files out from under queued card writes; drain them first. */
+async function flushPending(): Promise<void> {
+  for (const column of columns.value) {
+    for (const card of column.cards) await flushCard(card);
+  }
 }
 
 async function flushCard(card: Card): Promise<void> {

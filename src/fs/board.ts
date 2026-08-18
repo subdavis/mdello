@@ -42,8 +42,16 @@ async function columnHandle(root: FileSystemDirectoryHandle, column: string, cre
   return dir;
 }
 
+const PREFIX = /^(\d+)\s*[-_.]\s*/;
+
+/** Name minus its numeric prefix, unslugified, so renumbering does not reshape the name. */
+function stripPrefix(dir: string): string {
+  const match = PREFIX.exec(dir);
+  return match ? dir.slice(match[0].length) : dir;
+}
+
 function splitPrefix(dir: string): { order: number; label: string } {
-  const match = /^(\d+)\s*[-_.]\s*/.exec(dir);
+  const match = PREFIX.exec(dir);
   const rest = match ? dir.slice(match[0].length) : dir;
   const label = rest
     .replace(/[-_]+/g, ' ')
@@ -156,7 +164,7 @@ export async function persistOrder(
   }
 }
 
-function slugify(title: string): string {
+function slugify(title: string, fallback = 'card'): string {
   // split/join instead of trimming with `-+$`, which backtracks on long dash runs.
   const slug = title
     .toLowerCase()
@@ -165,14 +173,31 @@ function slugify(title: string): string {
     .join('-')
     .slice(0, 60);
 
-  return slug.replace(/-$/, '') || 'card';
+  return slug.replace(/-$/, '') || fallback;
 }
 
+async function uniqueDir(root: FileSystemDirectoryHandle, name: string): Promise<string> {
+  for (let suffix = 0; ; suffix += 1) {
+    const candidate = suffix === 0 ? name : `${name}-${suffix}`;
+    try {
+      await root.getDirectoryHandle(candidate);
+    } catch {
+      return candidate;
+    }
+  }
+}
+
+/**
+ * Never invents or changes an extension: the name is used as given, and a collision only ever
+ * adds `-1`, `-2` before the existing extension. `.DS_Store` stays `.DS_Store`.
+ */
 async function uniqueName(dir: FileSystemDirectoryHandle, name: string): Promise<string> {
-  const base = name.replace(/\.md$/, '');
+  const match = /^(.+)(\.[^.]+)$/.exec(name);
+  const base = match?.[1] ?? name;
+  const ext = match?.[2] ?? '';
 
   for (let suffix = 0; ; suffix += 1) {
-    const candidate = suffix === 0 ? `${base}.md` : `${base}-${suffix}.md`;
+    const candidate = suffix === 0 ? `${base}${ext}` : `${base}-${suffix}${ext}`;
     try {
       await dir.getFileHandle(candidate);
     } catch {
@@ -189,7 +214,7 @@ export async function createCard(
   order: number,
 ): Promise<Card> {
   const dir = await columnHandle(root, column);
-  const name = await uniqueName(dir, slugify(title));
+  const name = await uniqueName(dir, `${slugify(title)}.md`);
   const data: Frontmatter = { title, tags: [], order, created: new Date().toISOString() };
   const modified = await writeCard(root, { column, name, data, body: '' });
 
@@ -335,9 +360,9 @@ async function moveFile(
   await writable.write(text);
   await writable.close();
 
-  // Only drop the source once the copy is verifiably on disk.
+  // The source is dropped only after reading the copy back and matching it byte for byte.
   const written = await (await toDir.getFileHandle(target)).getFile();
-  if (written.size !== new Blob([text]).size) {
+  if ((await written.text()) !== text) {
     throw new Error(`Copy of ${name} could not be verified; source kept`);
   }
   await fromDir.removeEntry(name);
@@ -353,18 +378,29 @@ export async function moveCard(
   return moveFile(root, card.column, card.name, await columnHandle(root, toColumn, true));
 }
 
+/** This month's archive bucket, created on demand. */
+async function archiveBucket(
+  root: FileSystemDirectoryHandle,
+): Promise<{ dir: string; handle: FileSystemDirectoryHandle }> {
+  const now = new Date();
+  const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const archive = await root.getDirectoryHandle(ARCHIVE_DIR, { create: true });
+
+  return {
+    dir: `${ARCHIVE_DIR}/${month}`,
+    handle: await archive.getDirectoryHandle(month, { create: true }),
+  };
+}
+
 /** Returns where the file landed, so the move can be undone. */
 export async function archiveCard(
   root: FileSystemDirectoryHandle,
   card: Pick<Card, 'column' | 'name'>,
 ): Promise<{ dir: string; name: string }> {
-  const now = new Date();
-  const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-  const archive = await root.getDirectoryHandle(ARCHIVE_DIR, { create: true });
-  const bucket = await archive.getDirectoryHandle(month, { create: true });
+  const bucket = await archiveBucket(root);
+  const name = await moveFile(root, card.column, card.name, bucket.handle);
 
-  const name = await moveFile(root, card.column, card.name, bucket);
-  return { dir: `${ARCHIVE_DIR}/${month}`, name };
+  return { dir: bucket.dir, name };
 }
 
 export async function unarchiveCard(
@@ -373,4 +409,123 @@ export async function unarchiveCard(
   toColumn: string,
 ): Promise<string> {
   return moveFile(root, archived.dir, archived.name, await columnHandle(root, toColumn, true));
+}
+
+/**
+ * Chrome cannot move a directory, so a column "rename" is a fresh folder plus a file-by-file
+ * move. Boards are small; correctness beats cleverness here. Returns the name it landed on.
+ */
+async function renameColumnDir(
+  root: FileSystemDirectoryHandle,
+  from: string,
+  to: string,
+): Promise<string> {
+  if (from === to) return from;
+
+  const target = await uniqueDir(root, to);
+  const toDir = await root.getDirectoryHandle(target, { create: true });
+  await emptyColumn(root, from, toDir);
+
+  return target;
+}
+
+/**
+ * Every file in a column folder, dotfiles included. Nested folders are refused outright: a
+ * recursive move is not worth writing for a case the board model does not have.
+ */
+async function listColumnFiles(
+  root: FileSystemDirectoryHandle,
+  dir: string,
+): Promise<string[]> {
+  const handle = await columnHandle(root, dir);
+  const names: string[] = [];
+
+  for await (const entry of handle.values()) {
+    if (entry.kind !== 'file') {
+      throw new Error(`"${dir}" contains the folder "${entry.name}", so it cannot be moved here`);
+    }
+    names.push(entry.name);
+  }
+
+  return names;
+}
+
+/**
+ * Moves every file out of a column, then removes the folder only after re-listing it and
+ * finding it empty. Nothing is ever deleted here except the empty folder itself: OS litter
+ * like `.DS_Store` is carried along rather than destroyed.
+ */
+async function emptyColumn(
+  root: FileSystemDirectoryHandle,
+  dir: string,
+  toDir: FileSystemDirectoryHandle,
+): Promise<{ files: string[]; cards: number }> {
+  const files = await listColumnFiles(root, dir);
+  for (const name of files) await moveFile(root, dir, name, toDir);
+
+  const leftover = await listColumnFiles(root, dir);
+  if (leftover.length) {
+    throw new Error(
+      `"${dir}" still holds ${leftover.join(', ')}, so the folder was kept. Nothing was lost.`,
+    );
+  }
+
+  // Non-recursive, and only reached once the folder is verifiably empty.
+  await root.removeEntry(dir);
+
+  return { files, cards: files.filter((name) => name.endsWith('.md')).length };
+}
+
+/** Archives every file in a column, then removes the folder. Returns how many cards moved. */
+export async function archiveColumn(
+  root: FileSystemDirectoryHandle,
+  dir: string,
+): Promise<number> {
+  const bucket = await archiveBucket(root);
+  const { cards } = await emptyColumn(root, dir, bucket.handle);
+
+  return cards;
+}
+
+/** New column folders keep the `<order>-<slug>` convention the rest of the board relies on. */
+export async function createColumn(
+  root: FileSystemDirectoryHandle,
+  label: string,
+  order: number,
+): Promise<Column> {
+  const dir = await uniqueDir(root, `${order}-${slugify(label, 'column')}`);
+  await root.getDirectoryHandle(dir, { create: true });
+
+  return { dir, label: splitPrefix(dir).label, cards: [] };
+}
+
+/** Keeps the existing prefix (or lack of one) and swaps only the label part of the name. */
+export async function renameColumn(
+  root: FileSystemDirectoryHandle,
+  dir: string,
+  label: string,
+): Promise<string> {
+  const { order } = splitPrefix(dir);
+  const slug = slugify(label, 'column');
+  const next = order === Number.MAX_SAFE_INTEGER ? slug : `${order}-${slug}`;
+
+  return renameColumnDir(root, dir, next);
+}
+
+/** Renumbers columns 1..n in the given order, renaming only the folders that shifted. */
+export async function persistColumnOrder(
+  root: FileSystemDirectoryHandle,
+  dirs: string[],
+  onStep?: (done: number, total: number) => void,
+): Promise<void> {
+  const shifted = dirs.filter((dir, index) => splitPrefix(dir).order !== index + 1);
+  let done = 0;
+  onStep?.(0, shifted.length);
+
+  for (const [index, dir] of dirs.entries()) {
+    const order = index + 1;
+    if (splitPrefix(dir).order === order) continue;
+    await renameColumnDir(root, dir, `${order}-${stripPrefix(dir)}`);
+    onStep?.((done += 1), shifted.length);
+  }
 }

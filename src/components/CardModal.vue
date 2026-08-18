@@ -18,7 +18,7 @@ const pressedBackdrop = ref(false);
 const editor = ref<InstanceType<typeof MarkdownEditor> | null>(null);
 const rendered = computed(() => renderMarkdown(props.card.body || '_No description_'));
 const fullPath = computed(() => `${board.boardName.value}/${props.card.column}/${props.card.name}`);
-/** Undefined until `path` is filled in inside the board's .mdello.yml. */
+/** Undefined until `path` is filled in inside the board's mdello.yml. */
 const editorLink = computed(() => board.cardUrl(props.card));
 
 async function copyPath(): Promise<void> {

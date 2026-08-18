@@ -20,7 +20,14 @@ function findCard(id: string): Card | undefined {
 async function onDrop(): Promise<void> {
   const source = drag.dragging.value;
   const target = drag.target.value;
+  const movedColumn = drag.column.value;
   drag.end();
+
+  if (movedColumn) {
+    await board.commitColumnOrder();
+    return;
+  }
+
   if (!source || !target) return;
 
   const card = findCard(source.id);
@@ -33,6 +40,12 @@ async function onDrop(): Promise<void> {
 
   const column = board.columns.value.find((entry) => entry.dir === target.column);
   if (column) await board.placeCard(card, column, target.index);
+}
+
+/** Fires after drop too, but by then the commit already cleared the preview snapshot. */
+function onDragend(): void {
+  drag.end();
+  board.cancelColumnOrder();
 }
 </script>
 
@@ -52,14 +65,18 @@ async function onDrop(): Promise<void> {
     @dragover.self="drag.clearTarget()"
     @dragleave.self="drag.clearTarget()"
     @drop.prevent="onDrop"
-    @dragend="drag.end()"
+    @dragend="onDragend"
   >
     <Column
-      v-for="column in board.columns.value"
+      v-for="(column, index) in board.columns.value"
       :key="column.dir"
       :column="column"
+      :index="index"
       @open="openCard = $event"
       @add="(target, title) => board.addCard(target, title)"
+      @rename="(target, label) => board.renameColumn(target, label)"
+      @archive="(target) => board.archiveColumn(target)"
+      @hover="(dir, index) => board.previewColumnOrder(dir, index)"
     />
 
     <aside
