@@ -1,4 +1,4 @@
-import gitIcon from './assets/icons/Git_icon.svg';
+import gitIcon from './assets/icons/Octicons-mark-github.svg';
 import jiraIcon from './assets/icons/atlassian-jira-icon.svg';
 import figmaIcon from './assets/icons/Figma-logo.svg';
 import slackIcon from './assets/icons/Slack_icon_2019.svg';

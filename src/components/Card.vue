@@ -26,7 +26,17 @@ const isDragging = computed(() => drag.dragging.value?.id === props.card.id);
       <li v-for="tag in card.tags" :key="tag" class="tag" :style="tagStyle(tag)">{{ tag }}</li>
     </ul>
     <footer class="card-meta">
-      <span>{{ formatStamp(card.modified) }}</span>
+      <span class="stamp">{{ formatStamp(card.modified) }}</span>
+      <span v-if="card.references.length" class="card-refs">
+        <img
+          v-for="reference in card.references"
+          :key="reference.url"
+          class="ref-icon"
+          :src="reference.icon"
+          :alt="reference.label"
+          :title="reference.label"
+        />
+      </span>
       <span v-if="card.assignee" class="assignee">{{ card.assignee }}</span>
     </footer>
   </article>

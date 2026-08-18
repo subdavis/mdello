@@ -322,14 +322,27 @@ main {
 
 .card-meta {
   display: flex;
+  align-items: center;
   gap: 6px;
   color: var(--muted);
   font-size: 11px;
   margin-top: 3px;
 }
 
-.assignee {
-  margin-left: auto;
+/* Pushes refs + assignee to the right edge, in that order. */
+.card-meta .stamp {
+  margin-right: auto;
+}
+
+.card-refs {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.card-refs .ref-icon {
+  width: 14px;
+  height: 14px;
 }
 
 .tags {
