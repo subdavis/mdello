@@ -44,6 +44,8 @@ const loading = ref(false);
 const error = ref<string | null>(null);
 const saveState = ref<'idle' | 'dirty' | 'saving' | 'saved'>('idle');
 const pendingSaves = new Map<string, ReturnType<typeof setTimeout>>();
+/** Cards whose write is on the wire; the map entry is already gone by then. */
+const inFlightSaves = new Set<string>();
 
 const config = ref<BoardConfig>({ ...DEFAULT_CONFIG });
 /** Blob URL for `background.<ext>` in the board root, empty when the board has none. */
@@ -81,12 +83,19 @@ async function saveConfig(): Promise<void> {
   lastConfigWrite = Date.now();
 }
 
+// flush: 'sync' is load-bearing, not a tuning choice. The default pre-flush runs the
+// callback after loadConfig has already cleared `applyingConfig`, so every load — including
+// the one the file watcher fires after you hand-edit mdello.yml — wrote the config straight
+// back, dropping unknown keys and your comments. Firing inside the mutation keeps the guard
+// a real critical section. Trade-off: writes no longer coalesce per tick, which is free only
+// while every mutation site touches `labels` exactly once. Bind a control to a live label
+// (v-model="labels[i].color") and this becomes a write per keystroke; batch there instead.
 watch(
   labels,
   () => {
     if (!applyingConfig) void saveConfig();
   },
-  { deep: true },
+  { deep: true, flush: 'sync' },
 );
 
 /** True while a FileSystemObserver is attached, so callers can skip focus polling. */
@@ -135,7 +144,7 @@ function onFileChange(records: FileSystemChangeRecord[]): void {
 
     // Keep the dirty set; our own writes land first. Column moves rename folders file by file,
     // so re-scanning mid-flight would blank out columns that are about to reappear.
-    if (pendingSaves.size > 0 || busy.value) return;
+    if (pendingSaves.size > 0 || inFlightSaves.size > 0 || busy.value) return;
     const dirty = dirtyColumns;
     dirtyColumns = new Set();
     if (dirty === null) void refresh();
@@ -211,6 +220,8 @@ function mergeCards(current: Card[], fresh: Card[]): Card[] {
   return fresh.map((next) => {
     const existing = byId.get(next.id);
     if (!existing) return next;
+    // A queued or in-flight save means memory is ahead of disk; never merge backwards.
+    if (pendingSaves.has(next.id) || inFlightSaves.has(next.id)) return existing;
     if (existing.modified !== next.modified) Object.assign(existing, next);
     return existing;
   });
@@ -532,6 +543,8 @@ async function flushCard(card: Card): Promise<void> {
   if (!pendingSaves.delete(card.id)) return;
 
   saveState.value = 'saving';
+  const flushing = card.id;
+  inFlightSaves.add(flushing);
   card.references = findReferences(card.body);
   const modified = await guard(async () => {
     card.data.title = card.title;
@@ -543,6 +556,7 @@ async function flushCard(card: Card): Promise<void> {
     if (card.tags.length || 'tags' in card.data) card.data.tags = [...card.tags];
     return writeCard(root.value!, card);
   });
+  inFlightSaves.delete(flushing);
 
   if (modified !== undefined) card.modified = modified;
   saveState.value = error.value ? 'idle' : 'saved';

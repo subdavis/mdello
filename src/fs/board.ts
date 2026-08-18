@@ -145,8 +145,10 @@ export async function writeCard(
   await writable.write(serializeFile(card.data, card.body));
   await writable.close();
 
-  // Close resolves once the write landed, so the clock is as good as a re-stat.
-  return Date.now();
+  // Re-stat rather than Date.now(): refresh compares this against the file's
+  // lastModified, and the two clocks never agree, so our own writes would always
+  // look like external changes and get merged back over live card state.
+  return (await handle.getFile()).lastModified;
 }
 
 /** Renumbers a column 1..n, rewriting only the files whose order actually changed. */
