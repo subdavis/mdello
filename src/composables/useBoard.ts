@@ -1,4 +1,4 @@
-import { computed, markRaw, nextTick, ref, shallowRef, watch } from 'vue';
+import { computed, markRaw, ref, shallowRef, watch } from 'vue';
 import {
   archiveCard,
   archiveColumn,
@@ -70,9 +70,6 @@ async function loadConfig(): Promise<void> {
   applyingConfig = true;
   config.value = loaded;
   labels.value = loaded.labels;
-  // The labels watcher flushes async, so the guard must outlive this tick or every
-  // load writes the config straight back (dropping hand-added keys and comments).
-  await nextTick();
   applyingConfig = false;
 
   if (legacy.length) await saveConfig();
@@ -86,12 +83,19 @@ async function saveConfig(): Promise<void> {
   lastConfigWrite = Date.now();
 }
 
+// flush: 'sync' is load-bearing, not a tuning choice. The default pre-flush runs the
+// callback after loadConfig has already cleared `applyingConfig`, so every load — including
+// the one the file watcher fires after you hand-edit mdello.yml — wrote the config straight
+// back, dropping unknown keys and your comments. Firing inside the mutation keeps the guard
+// a real critical section. Trade-off: writes no longer coalesce per tick, which is free only
+// while every mutation site touches `labels` exactly once. Bind a control to a live label
+// (v-model="labels[i].color") and this becomes a write per keystroke; batch there instead.
 watch(
   labels,
   () => {
     if (!applyingConfig) void saveConfig();
   },
-  { deep: true },
+  { deep: true, flush: 'sync' },
 );
 
 /** True while a FileSystemObserver is attached, so callers can skip focus polling. */
