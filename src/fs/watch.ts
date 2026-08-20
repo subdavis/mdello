@@ -3,6 +3,13 @@ export function canObserve(): boolean {
   return typeof globalThis.FileSystemObserver === 'function';
 }
 
+/** A move changes both its old and new parent directories. */
+export function changePaths(record: FileSystemChangeRecord): string[][] {
+  return record.type === 'moved' && record.relativePathMovedFrom
+    ? [record.relativePathComponents, record.relativePathMovedFrom]
+    : [record.relativePathComponents];
+}
+
 /** Watches the board tree; returns a disconnect fn, or null when unavailable. */
 export async function watchBoard(
   root: FileSystemDirectoryHandle,

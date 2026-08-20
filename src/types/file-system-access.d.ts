@@ -14,6 +14,7 @@ interface Window {
 interface FileSystemChangeRecord {
   type: string;
   relativePathComponents: string[];
+  relativePathMovedFrom?: string[] | null;
 }
 
 interface FileSystemObserver {

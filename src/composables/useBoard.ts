@@ -31,7 +31,7 @@ import {
   type BoardRef,
 } from '../fs/handle';
 import { acquireBoardLock, releaseBoardLock } from '../fs/lock';
-import { watchBoard } from '../fs/watch';
+import { changePaths, watchBoard } from '../fs/watch';
 import { readBackground, writeBackground } from '../fs/background';
 import {
   DEFAULT_CONFIG,
@@ -138,19 +138,21 @@ function markDirty(column: string | null): void {
 /** Observer also reports our own writes, so debounce and skip while saves are pending. */
 function onFileChange(records: FileSystemChangeRecord[]): void {
   for (const record of records) {
-    const [top, ...rest] = record.relativePathComponents;
+    for (const path of changePaths(record)) {
+      const [top, ...rest] = path;
 
-    // A record with no path (errored/unknown) could be anything: reload everything.
-    if (top === undefined) {
-      configChanged = true;
-      markDirty(null);
-    } else if (top === CONFIG_FILE && rest.length === 0) configChanged = true;
-    // OS litter (.DS_Store and friends) is never a card; do not rescan for it.
-    else if (record.relativePathComponents.at(-1)?.startsWith('.')) continue;
-    else if (rest.length === 0 && /^background\./i.test(top)) backgroundChanged = true;
-    else if (top === ARCHIVE_DIR || top.startsWith('.')) continue;
-    // A change on a top-level entry is a column appearing or disappearing.
-    else markDirty(rest.length === 0 ? null : top);
+      // A record with no path (errored/unknown) could be anything: reload everything.
+      if (top === undefined) {
+        configChanged = true;
+        markDirty(null);
+      } else if (top === CONFIG_FILE && rest.length === 0) configChanged = true;
+      // OS litter (.DS_Store and friends) is never a card; do not rescan for it.
+      else if (path.at(-1)?.startsWith('.')) continue;
+      else if (rest.length === 0 && /^background\./i.test(top)) backgroundChanged = true;
+      else if (top === ARCHIVE_DIR || top.startsWith('.')) continue;
+      // A change on a top-level entry is a column appearing or disappearing.
+      else markDirty(rest.length === 0 ? null : top);
+    }
   }
 
   clearTimeout(watchTimer);
