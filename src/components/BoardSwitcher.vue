@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useBoard } from '../composables/useBoard';
 import type { BoardRef } from '../fs/handle';
+import Overlay from './Overlay.vue';
 
 const emit = defineEmits<{ close: [] }>();
 
@@ -54,47 +55,50 @@ onMounted(() => input.value?.focus());
 </script>
 
 <template>
-  <div class="switcher-backdrop" @mousedown.self="emit('close')">
-    <div class="switcher" role="dialog" aria-modal="true" aria-label="Switch board">
-      <input
-        ref="input"
-        v-model="query"
-        class="switcher-input"
-        aria-label="Filter boards"
-        placeholder="Switch board…"
-        @input="active = 0"
-        @keydown.down.prevent="move(1)"
-        @keydown.up.prevent="move(-1)"
-        @keydown.enter.prevent="choose()"
-        @keydown.esc.stop.prevent="emit('close')"
-      />
+  <Overlay
+    place="drop"
+    panel-class="switcher"
+    label="Switch board"
+    @close="emit('close')"
+    @escape="emit('close')"
+  >
+    <input
+      ref="input"
+      v-model="query"
+      class="switcher-input"
+      aria-label="Filter boards"
+      placeholder="Switch board…"
+      @input="active = 0"
+      @keydown.down.prevent="move(1)"
+      @keydown.up.prevent="move(-1)"
+      @keydown.enter.prevent="choose()"
+    />
 
-      <ul ref="list" class="switcher-list">
-        <li
-          v-for="(entry, index) in entries"
-          :key="entry.kind === 'board' ? entry.board.id : 'pick'"
-          class="switcher-row"
-          :class="{ selected: index === active }"
-          @mousemove="active = index"
-          @mousedown.prevent
-          @click="choose(index)"
-        >
-          <template v-if="entry.kind === 'board'">
-            <span class="switcher-name">{{ entry.board.name }}</span>
-            <span class="switcher-path">{{ entry.board.path }}</span>
-            <span v-if="entry.board.id === board.activeId.value" class="switcher-tag">current</span>
-            <button
-              type="button"
-              class="switcher-forget"
-              title="Forget this board"
-              @click.stop="forget(entry.board)"
-            >
-              ×
-            </button>
-          </template>
-          <span v-else class="switcher-name">Open folder…</span>
-        </li>
-      </ul>
-    </div>
-  </div>
+    <ul ref="list" class="switcher-list">
+      <li
+        v-for="(entry, index) in entries"
+        :key="entry.kind === 'board' ? entry.board.id : 'pick'"
+        class="switcher-row"
+        :class="{ selected: index === active }"
+        @mousemove="active = index"
+        @mousedown.prevent
+        @click="choose(index)"
+      >
+        <template v-if="entry.kind === 'board'">
+          <span class="switcher-name">{{ entry.board.name }}</span>
+          <span class="switcher-path">{{ entry.board.path }}</span>
+          <span v-if="entry.board.id === board.activeId.value" class="switcher-tag">current</span>
+          <button
+            type="button"
+            class="switcher-forget"
+            title="Forget this board"
+            @click.stop="forget(entry.board)"
+          >
+            ×
+          </button>
+        </template>
+        <span v-else class="switcher-name">Open folder…</span>
+      </li>
+    </ul>
+  </Overlay>
 </template>

@@ -2,6 +2,7 @@
 import { nextTick, onBeforeUnmount, onMounted, ref, watchEffect } from 'vue';
 import Board from './components/Board.vue';
 import BoardSwitcher from './components/BoardSwitcher.vue';
+import Overlay from './components/Overlay.vue';
 import Toast from './components/Toast.vue';
 import { useBoard } from './composables/useBoard';
 import { showToast } from './composables/useToast';
@@ -167,12 +168,10 @@ onBeforeUnmount(() => {
   <BoardSwitcher v-if="switching" @close="switching = false" />
 
   <!-- Folder renames move files one by one; block interaction rather than let the board churn. -->
-  <div v-if="board.busy.value" class="busy-overlay">
-    <div class="busy-card">
-      <span class="busy-spinner" />
-      <p>{{ board.busy.value }}</p>
-    </div>
-  </div>
+  <Overlay v-if="board.busy.value" place="center" panel-class="busy" blocking>
+    <span class="busy-spinner" />
+    <p>{{ board.busy.value }}</p>
+  </Overlay>
 
   <Toast />
 </template>

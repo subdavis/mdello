@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useBoard } from '../composables/useBoard';
 import { chipStyle, labels, PALETTE, tagStyle, type Label } from '../composables/useLabels';
 import { showToast } from '../composables/useToast';
+import { useLayer } from '../composables/useLayer';
 import type { Card } from '../fs/board';
 
 interface Row {
@@ -83,24 +84,17 @@ function onPointerDown(event: PointerEvent): void {
   open.value = false;
 }
 
-// Escape must not reach the modal's handler while the popover is the topmost layer.
-function onKeydown(event: KeyboardEvent): void {
-  if (event.key !== 'Escape' || !open.value) return;
-  event.stopPropagation();
-
+/** Unwinds one level at a time: the label form first, then the popover. */
+function onEscape(): void {
   if (editing.value) editing.value = null;
   else open.value = false;
 }
 
-onMounted(() => {
-  document.addEventListener('pointerdown', onPointerDown);
-  window.addEventListener('keydown', onKeydown, true);
-});
+// Registered only while open, so the enclosing modal keeps Escape the rest of the time.
+useLayer(onEscape, open);
 
-onBeforeUnmount(() => {
-  document.removeEventListener('pointerdown', onPointerDown);
-  window.removeEventListener('keydown', onKeydown, true);
-});
+onMounted(() => document.addEventListener('pointerdown', onPointerDown));
+onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown));
 </script>
 
 <template>
