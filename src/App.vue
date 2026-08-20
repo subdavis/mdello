@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watchEffect } from 'vue';
 import Board from './components/Board.vue';
+import BoardSwitcher from './components/BoardSwitcher.vue';
 import Toast from './components/Toast.vue';
 import { useBoard } from './composables/useBoard';
 import { showToast } from './composables/useToast';
@@ -10,6 +11,7 @@ const board = useBoard();
 const addingColumn = ref(false);
 const draftColumn = ref('');
 const columnInput = ref<HTMLInputElement | null>(null);
+const switching = ref(false);
 
 async function startAddingColumn(): Promise<void> {
   addingColumn.value = true;
@@ -67,24 +69,44 @@ async function onDrop(event: DragEvent): Promise<void> {
   if (await board.setBackground(file)) showToast('Background updated');
 }
 
+/** The shortcut the panel imitates; on a board app, print is the lesser feature. */
+function onKeydown(event: KeyboardEvent): void {
+  if (event.key !== 'p' || event.altKey || !(event.metaKey || event.ctrlKey)) return;
+  event.preventDefault();
+  // A folder operation is mid-flight and the overlay is blocking the board; do not let the
+  // shortcut open a panel on top of it and swap the root out from under those moves.
+  if (board.busy.value) return;
+  switching.value = !switching.value;
+}
+
 onMounted(async () => {
   await board.init();
   window.addEventListener('focus', onFocus);
   window.addEventListener('dragover', onDragover);
   window.addEventListener('drop', onDrop);
+  window.addEventListener('keydown', onKeydown);
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener('focus', onFocus);
   window.removeEventListener('dragover', onDragover);
   window.removeEventListener('drop', onDrop);
+  window.removeEventListener('keydown', onKeydown);
 });
 </script>
 
 <template>
   <header class="topbar">
     <strong class="brand">🍺 mdello</strong>
-    <span v-if="board.boardName.value" class="board-name">{{ board.rootPath.value || board.boardName.value }}</span>
+    <button
+      v-if="board.boardName.value"
+      type="button"
+      class="board-switch"
+      title="Switch board (⌘P)"
+      @click="switching = true"
+    >
+      {{ board.rootPath.value || board.boardName.value }}
+    </button>
     <span class="spacer" />
     <template v-if="board.access.value.state === 'ready' && !board.locked.value">
       <form v-if="addingColumn" class="add-column-form" @submit.prevent="submitColumn">
@@ -141,6 +163,8 @@ onBeforeUnmount(() => {
 
     <Board v-else />
   </main>
+
+  <BoardSwitcher v-if="switching" @close="switching = false" />
 
   <!-- Folder renames move files one by one; block interaction rather than let the board churn. -->
   <div v-if="board.busy.value" class="busy-overlay">

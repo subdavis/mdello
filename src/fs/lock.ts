@@ -1,48 +1,18 @@
-import { get, set } from 'idb-keyval';
-
-/**
- * Web Locks are keyed by string, but a directory handle exposes no path or id — only
- * `isSameEntry`. So handles get a persistent uuid here, shared by every tab of this
- * origin, which is exactly the scope the lock covers.
- */
-const REGISTRY_KEY = 'mdello:dir-ids';
-
-interface DirEntry {
-  id: string;
-  handle: FileSystemDirectoryHandle;
-}
-
-async function dirId(handle: FileSystemDirectoryHandle): Promise<string> {
-  const lookup = async (): Promise<string> => {
-    const registry = (await get<DirEntry[]>(REGISTRY_KEY)) ?? [];
-
-    for (const entry of registry) {
-      if (await entry.handle.isSameEntry(handle)) return entry.id;
-    }
-
-    const id = crypto.randomUUID();
-    await set(REGISTRY_KEY, [...registry, { id, handle }]);
-    return id;
-  };
-
-  // The lookup is a read-modify-write; unserialized, two tabs opening the same folder
-  // can each mint a different id and both "win" the exclusive board lock.
-  if (!navigator.locks) return lookup();
-  return navigator.locks.request('mdello:dir-registry', lookup);
-}
-
 let release: (() => void) | null = null;
 
 /**
- * Takes the exclusive lock for a board folder, held until `releaseBoardLock()` or the
- * tab goes away. Returns false when another tab already holds it. Browsers without
- * the Web Locks API get a free pass rather than a broken app.
+ * Takes the exclusive lock for a board, held until `releaseBoardLock()` or the tab goes away.
+ * Returns false when another tab already holds it. Browsers without the Web Locks API get a
+ * free pass rather than a broken app.
+ *
+ * Keyed by the board's registry id: Web Locks are named by string, and a directory handle
+ * exposes no path or id of its own — only `isSameEntry`. See fs/handle.ts.
  */
-export async function acquireBoardLock(handle: FileSystemDirectoryHandle): Promise<boolean> {
+export async function acquireBoardLock(id: string): Promise<boolean> {
   releaseBoardLock();
   if (!navigator.locks) return true;
 
-  const name = `mdello:board:${await dirId(handle)}`;
+  const name = `mdello:board:${id}`;
 
   return new Promise<boolean>((resolve) => {
     navigator.locks

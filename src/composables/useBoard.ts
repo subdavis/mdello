@@ -19,7 +19,17 @@ import {
 } from '../fs/board';
 import { findReferences } from '../references';
 import { showToast } from './useToast';
-import { grantPermission, pickBoard, restoreBoard, type BoardAccess } from '../fs/handle';
+import {
+  forgetBoard,
+  grantPermission,
+  listBoards,
+  noteBoardPath,
+  pickBoard,
+  restoreBoard,
+  selectBoard,
+  type BoardAccess,
+  type BoardRef,
+} from '../fs/handle';
 import { acquireBoardLock, releaseBoardLock } from '../fs/lock';
 import { watchBoard } from '../fs/watch';
 import { readBackground, writeBackground } from '../fs/background';
@@ -39,6 +49,8 @@ const WATCH_DELAY = 250;
 const ECHO_WINDOW = 1000;
 
 const access = shallowRef<BoardAccess>({ state: 'none' });
+/** Shallow: the entries hold native directory handles, which must not be proxied. */
+const boards = shallowRef<BoardRef[]>([]);
 const columns = ref<Column[]>([]);
 const loading = ref(false);
 const error = ref<string | null>(null);
@@ -72,7 +84,15 @@ async function loadConfig(): Promise<void> {
   labels.value = loaded.labels;
   applyingConfig = false;
 
+  // The switcher lists boards by path where it can: every board folder is called `content`.
+  const id = activeId.value;
+  if (id && (await noteBoardPath(id, loaded.path))) await refreshBoards();
+
   if (legacy.length) await saveConfig();
+}
+
+async function refreshBoards(): Promise<void> {
+  boards.value = await listBoards();
 }
 
 async function saveConfig(): Promise<void> {
@@ -168,16 +188,20 @@ async function attachWatcher(): Promise<void> {
 
 const root = computed(() => (access.value.state === 'ready' ? access.value.handle : null));
 
+/** Registry id of the board being shown, including one still waiting on permission. */
+const activeId = computed(() => ('id' in access.value ? access.value.id : null));
+
 /** True when another tab of this browser already has this folder open. */
 const locked = ref(false);
 
 /** Takes the folder lock, then loads. A losing tab shows a gate and touches nothing. */
 async function openBoard(): Promise<void> {
   locked.value = false;
+  const current = access.value;
 
-  if (!root.value) {
+  if (current.state !== 'ready') {
     releaseBoardLock();
-  } else if (!(await acquireBoardLock(root.value))) {
+  } else if (!(await acquireBoardLock(current.id))) {
     locked.value = true;
     detachWatcher();
     columns.value = [];
@@ -188,6 +212,56 @@ async function openBoard(): Promise<void> {
   await loadBackground();
   await refresh();
   await attachWatcher();
+}
+
+/** Everything `openBoard` set up, undone, so the next board starts from a clean slate. */
+async function closeBoard(): Promise<void> {
+  // Queued card writes resolve their folder through `root` at flush time, so anything still
+  // pending when the root changes lands in the board we are switching *to*. Drain first.
+  await flushPending();
+  detachWatcher();
+  releaseBoardLock();
+  clearTimeout(watchTimer);
+
+  if (background.value) URL.revokeObjectURL(background.value);
+  background.value = '';
+  columns.value = [];
+  config.value = { ...DEFAULT_CONFIG };
+
+  // The guard is what makes clearing labels safe: their watcher is flush:'sync', so it runs
+  // inside this assignment and would otherwise write the empty list straight back into the
+  // board being left. Clearing matters because openBoard can bail before loadConfig replaces
+  // them — a board locked by another tab keeps a live root with the previous board's labels.
+  applyingConfig = true;
+  labels.value = [];
+  applyingConfig = false;
+
+  dirtyColumns = new Set();
+  configChanged = false;
+  backgroundChanged = false;
+  lastConfigWrite = 0;
+  columnSnapshot = null;
+  saveState.value = 'idle';
+  error.value = null;
+}
+
+async function switchBoard(id: string): Promise<void> {
+  if (id === activeId.value) return;
+
+  // Permission is settled before the teardown: requestPermission needs the user gesture that
+  // opened the switcher, and flushing the old board's writes can outlive it.
+  const next = await guard(async () => selectBoard(id));
+  if (!next) return;
+
+  const opened =
+    next.state === 'needs-permission'
+      ? ((await guard(async () => grantPermission(next.id, next.handle))) ?? next)
+      : next;
+
+  await closeBoard();
+  setAccess(opened);
+  await openBoard();
+  await refreshBoards();
 }
 
 function setAccess(next: BoardAccess): void {
@@ -298,6 +372,8 @@ function renameTag(from: string, to: string): void {
 export function useBoard() {
   return {
     access,
+    boards,
+    activeId,
     locked,
     watching,
     columns,
@@ -313,18 +389,44 @@ export function useBoard() {
 
     async init(): Promise<void> {
       await guard(async () => setAccess(await restoreBoard()));
+      await refreshBoards();
       await openBoard();
     },
 
+    /** Adds a folder to the registry and opens it; re-picking a known board just switches. */
     async pick(): Promise<void> {
-      await guard(async () => setAccess(await pickBoard()));
+      const picked = await guard(async () => pickBoard());
+      // Cancelling the picker leaves the current board alone.
+      if (!picked) return;
+      if (picked.state === 'unsupported') {
+        setAccess(picked);
+        return;
+      }
+      if (picked.state === 'ready' && picked.id === activeId.value) return;
+
+      await closeBoard();
+      setAccess(picked);
+      await refreshBoards();
       await openBoard();
     },
 
     async grant(): Promise<void> {
       if (access.value.state !== 'needs-permission') return;
-      const handle = access.value.handle;
-      await guard(async () => setAccess(await grantPermission(handle)));
+      const { id, handle } = access.value;
+      await guard(async () => setAccess(await grantPermission(id, handle)));
+      await openBoard();
+    },
+
+    switchBoard,
+
+    /** Drops a board from the switcher. Files are untouched; re-pick the folder to get it back. */
+    async forgetBoard(id: string): Promise<void> {
+      await guard(async () => forgetBoard(id));
+      await refreshBoards();
+      if (id !== activeId.value) return;
+
+      await closeBoard();
+      await guard(async () => setAccess(await restoreBoard()));
       await openBoard();
     },
 

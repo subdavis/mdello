@@ -1,0 +1,115 @@
+/* Board switcher: a quick-open panel dropped from the top of the window, plus the
+   topbar control that summons it. See components/BoardSwitcher.vue. */
+
+.board-switch {
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+  /* The label is a full path on a configured board; do not let it push the toolbar around. */
+  max-width: 40vw;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.board-switch:hover {
+  background: rgb(9 30 66 / 0.06);
+}
+
+.switcher-backdrop {
+  position: fixed;
+  inset: 0;
+  /* Above the busy overlay, which is the highest thing on the board. */
+  z-index: 30;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 6px 12px;
+  background: rgb(9 30 66 / 0.2);
+}
+
+.switcher {
+  width: min(520px, 100%);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgb(9 30 66 / 0.3);
+}
+
+.switcher-input {
+  flex: none;
+  border-color: transparent;
+}
+
+.switcher-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.switcher-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 6px;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.switcher-row.selected {
+  background: var(--accent);
+  color: #fff;
+}
+
+.switcher-name {
+  flex: none;
+}
+
+/* Takes the slack so the tag and the × sit at the right edge; truncates from the tail. */
+.switcher-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.switcher-tag {
+  flex: none;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.switcher-forget {
+  flex: none;
+  /* Hidden rather than absent: showing it on hover must not reflow the row. */
+  visibility: hidden;
+  padding: 0 4px;
+  line-height: 16px;
+  border-color: transparent;
+  background: transparent;
+  color: inherit;
+}
+
+.switcher-row:hover .switcher-forget,
+.switcher-row.selected .switcher-forget {
+  visibility: visible;
+}
+
+.switcher-forget:hover {
+  background: rgb(9 30 66 / 0.15);
+}
+
+.switcher-row.selected .switcher-path,
+.switcher-row.selected .switcher-tag {
+  color: rgb(255 255 255 / 0.75);
+}

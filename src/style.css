@@ -98,10 +98,6 @@ textarea {
   letter-spacing: 0.02em;
 }
 
-.board-name {
-  color: var(--muted);
-}
-
 .spacer {
   flex: 1;
 }
