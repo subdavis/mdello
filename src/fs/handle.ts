@@ -41,7 +41,8 @@ async function migrate(): Promise<BoardRef[]> {
 
   // Reusing the id lock.ts already minted for this folder keeps the board lock stable across
   // the upgrade, so an old tab and a new one still contend for the same name.
-  const legacy = (await get<{ id: string; handle: FileSystemDirectoryHandle }[]>(LEGACY_IDS_KEY)) ?? [];
+  const legacy =
+    (await get<{ id: string; handle: FileSystemDirectoryHandle }[]>(LEGACY_IDS_KEY)) ?? [];
   let id: string | undefined;
   for (const entry of legacy) {
     if (await entry.handle.isSameEntry(handle)) {
@@ -96,9 +97,10 @@ export async function listBoards(): Promise<BoardRef[]> {
 }
 
 export async function pickBoard(): Promise<BoardAccess> {
-  if (!isSupported()) return { state: 'unsupported' };
+  const pickDirectory = window.showDirectoryPicker;
+  if (!pickDirectory) return { state: 'unsupported' };
 
-  const handle = await window.showDirectoryPicker!({
+  const handle = await pickDirectory({
     id: 'mdello',
     mode: 'readwrite',
     startIn: 'documents',

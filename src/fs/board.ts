@@ -1,14 +1,14 @@
+import { findReferences, type Reference } from '../references';
+import { CONFIG_FILE, DEFAULT_CONFIG, writeConfig } from './config';
 import {
+  type Frontmatter,
   parseFile,
   readNumber,
   readString,
   readTags,
   serializeFile,
-  type Frontmatter,
 } from './frontmatter';
-import { CONFIG_FILE, DEFAULT_CONFIG, writeConfig } from './config';
 import { openWritable } from './writable';
-import { findReferences, type Reference } from '../references';
 
 export const ARCHIVE_DIR = 'archive';
 
@@ -152,10 +152,7 @@ export async function writeCard(
 }
 
 /** Renumbers a column 1..n, rewriting only the files whose order actually changed. */
-export async function persistOrder(
-  root: FileSystemDirectoryHandle,
-  column: Column,
-): Promise<void> {
+export async function persistOrder(root: FileSystemDirectoryHandle, column: Column): Promise<void> {
   for (const [index, card] of column.cards.entries()) {
     const order = index + 1;
     if (card.order === order) continue;
@@ -330,7 +327,8 @@ export async function initBoard(root: FileSystemDirectoryHandle): Promise<void> 
 
   const orders: Record<string, number> = {};
   for (const card of STARTER_CARDS) {
-    const order = (orders[card.column] = (orders[card.column] ?? 0) + 1);
+    const order = (orders[card.column] ?? 0) + 1;
+    orders[card.column] = order;
     const created = await createCard(root, card.column, card.title, order);
     created.data.tags = card.tags ?? [];
     await writeCard(root, { ...created, body: card.body });
@@ -435,10 +433,7 @@ async function renameColumnDir(
  * Every file in a column folder, dotfiles included. Nested folders are refused outright: a
  * recursive move is not worth writing for a case the board model does not have.
  */
-async function listColumnFiles(
-  root: FileSystemDirectoryHandle,
-  dir: string,
-): Promise<string[]> {
+async function listColumnFiles(root: FileSystemDirectoryHandle, dir: string): Promise<string[]> {
   const handle = await columnHandle(root, dir);
   const names: string[] = [];
 
@@ -479,10 +474,7 @@ async function emptyColumn(
 }
 
 /** Archives every file in a column, then removes the folder. Returns how many cards moved. */
-export async function archiveColumn(
-  root: FileSystemDirectoryHandle,
-  dir: string,
-): Promise<number> {
+export async function archiveColumn(root: FileSystemDirectoryHandle, dir: string): Promise<number> {
   const bucket = await archiveBucket(root);
   const { cards } = await emptyColumn(root, dir, bucket.handle);
 
@@ -528,6 +520,7 @@ export async function persistColumnOrder(
     const order = index + 1;
     if (splitPrefix(dir).order === order) continue;
     await renameColumnDir(root, dir, `${order}-${stripPrefix(dir)}`);
-    onStep?.((done += 1), shifted.length);
+    done += 1;
+    onStep?.(done, shifted.length);
   }
 }

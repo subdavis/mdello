@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue';
 import { useBoard } from '../composables/useBoard';
+import { showToast } from '../composables/useToast';
 import { formatStamp } from '../format';
 import type { Card } from '../fs/board';
 import { renderMarkdown } from '../markdown';
-import { showToast } from '../composables/useToast';
-import TagEditor from './TagEditor.vue';
 import MarkdownEditor from './MarkdownEditor.vue';
 import Overlay from './Overlay.vue';
+import TagEditor from './TagEditor.vue';
 
 const props = defineProps<{ card: Card }>();
 const emit = defineEmits<{ close: [] }>();

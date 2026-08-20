@@ -29,10 +29,7 @@ function extensionOf(file: File): string {
 }
 
 /** Writes the board wallpaper, replacing any previous `background.*`. */
-export async function writeBackground(
-  root: FileSystemDirectoryHandle,
-  file: File,
-): Promise<void> {
+export async function writeBackground(root: FileSystemDirectoryHandle, file: File): Promise<void> {
   const name = `background.${extensionOf(file)}`;
 
   const stale: string[] = [];

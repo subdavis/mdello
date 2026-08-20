@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useBoard } from '../composables/useBoard';
-import { chipStyle, labels, PALETTE, tagStyle, type Label } from '../composables/useLabels';
-import { showToast } from '../composables/useToast';
+import { chipStyle, type Label, labels, PALETTE, tagStyle } from '../composables/useLabels';
 import { useLayer } from '../composables/useLayer';
+import { showToast } from '../composables/useToast';
 import type { Card } from '../fs/board';
 
 interface Row {
@@ -43,7 +43,8 @@ function toggle(name: string): void {
 
 async function edit(index?: number): Promise<void> {
   editIndex.value = index ?? null;
-  editing.value = index === undefined ? { name: '', color: PALETTE[0] } : { ...labels.value[index] };
+  editing.value =
+    index === undefined ? { name: '', color: PALETTE[0] } : { ...labels.value[index] };
   await nextTick();
   titleEl.value?.focus();
 }

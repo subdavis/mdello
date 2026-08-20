@@ -18,10 +18,7 @@ interface FileSystemChangeRecord {
 }
 
 interface FileSystemObserver {
-  observe: (
-    handle: FileSystemHandle,
-    options?: { recursive?: boolean },
-  ) => Promise<void>;
+  observe: (handle: FileSystemHandle, options?: { recursive?: boolean }) => Promise<void>;
   disconnect: () => void;
 }
 
@@ -39,7 +36,9 @@ interface FileSystemHandlePermissionDescriptor {
 
 interface FileSystemHandle {
   queryPermission?: (descriptor?: FileSystemHandlePermissionDescriptor) => Promise<PermissionState>;
-  requestPermission?: (descriptor?: FileSystemHandlePermissionDescriptor) => Promise<PermissionState>;
+  requestPermission?: (
+    descriptor?: FileSystemHandlePermissionDescriptor,
+  ) => Promise<PermissionState>;
 }
 
 interface FileSystemDirectoryHandle {

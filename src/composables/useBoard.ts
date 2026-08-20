@@ -1,25 +1,35 @@
 import { computed, markRaw, ref, shallowRef, watch } from 'vue';
+import { readBackground, writeBackground } from '../fs/background';
 import {
+  ARCHIVE_DIR,
   archiveCard,
   archiveColumn,
+  type Card,
+  type Column,
   createCard,
   createColumn,
   initBoard,
   moveCard,
   persistColumnOrder,
   persistOrder,
-  renameColumn,
   readColumn,
+  renameColumn,
   scanBoard,
   unarchiveCard,
   writeCard,
-  ARCHIVE_DIR,
-  type Card,
-  type Column,
 } from '../fs/board';
-import { findReferences } from '../references';
-import { showToast } from './useToast';
 import {
+  type BoardConfig,
+  CONFIG_FILE,
+  DEFAULT_CONFIG,
+  editorName,
+  editorUrl,
+  readConfig,
+  writeConfig,
+} from '../fs/config';
+import {
+  type BoardAccess,
+  type BoardRef,
   forgetBoard,
   grantPermission,
   listBoards,
@@ -27,22 +37,12 @@ import {
   pickBoard,
   restoreBoard,
   selectBoard,
-  type BoardAccess,
-  type BoardRef,
 } from '../fs/handle';
 import { acquireBoardLock, releaseBoardLock } from '../fs/lock';
 import { changePaths, watchBoard } from '../fs/watch';
-import { readBackground, writeBackground } from '../fs/background';
-import {
-  DEFAULT_CONFIG,
-  editorName,
-  editorUrl,
-  readConfig,
-  writeConfig,
-  CONFIG_FILE,
-  type BoardConfig,
-} from '../fs/config';
+import { findReferences } from '../references';
 import { labels, takeLegacyLabels } from './useLabels';
+import { showToast } from './useToast';
 
 const SAVE_DELAY = 600;
 const WATCH_DELAY = 250;
@@ -337,7 +337,8 @@ async function refreshColumns(dirs: string[]): Promise<void> {
     const fresh = await Promise.all(dirs.map((dir) => readColumn(handle, dir)));
 
     for (const next of fresh) {
-      const existing = known.get(next.dir)!;
+      const existing = known.get(next.dir);
+      if (!existing) return refresh();
       existing.label = next.label;
       existing.cards = mergeCards(existing.cards, next.cards);
     }
@@ -541,7 +542,10 @@ export function useBoard() {
       if (!before) return;
 
       const byDir = new Map(columns.value.map((column) => [column.dir, column]));
-      columns.value = before.map((dir) => byDir.get(dir)!).filter(Boolean);
+      columns.value = before.flatMap((dir) => {
+        const column = byDir.get(dir);
+        return column ? [column] : [];
+      });
     },
 
     async addCard(column: Column, title: string): Promise<Card | undefined> {
@@ -595,9 +599,7 @@ export function useBoard() {
       showToast(`Archived "${card.title}"`, 5000, {
         label: 'Undo',
         run: async () => {
-          const name = await guard(async () =>
-            unarchiveCard(requireRoot(), archived, card.column),
-          );
+          const name = await guard(async () => unarchiveCard(requireRoot(), archived, card.column));
           if (name === undefined || !from) return;
 
           card.name = name;
@@ -658,7 +660,7 @@ async function flushCard(card: Card): Promise<void> {
     else delete card.data.assignee;
     // Avoid adding an empty `tags:` key to files that never had one.
     if (card.tags.length || 'tags' in card.data) card.data.tags = [...card.tags];
-    return writeCard(root.value!, card);
+    return writeCard(requireRoot(), card);
   });
   inFlightSaves.delete(flushing);
 

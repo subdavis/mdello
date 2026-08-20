@@ -1,23 +1,23 @@
 /* JetBrains Mono, variable weight axis. SIL OFL, see src/assets/fonts/OFL.txt */
 
 @font-face {
-  font-family: 'JetBrains Mono';
-  src: url('./assets/fonts/JetBrainsMono-VariableFont_wght.woff2') format('woff2');
+  font-family: "JetBrains Mono";
+  src: url("./assets/fonts/JetBrainsMono-VariableFont_wght.woff2") format("woff2");
   font-weight: 100 800;
   font-style: normal;
   font-display: swap;
 }
 
 @font-face {
-  font-family: 'JetBrains Mono';
-  src: url('./assets/fonts/JetBrainsMono-Italic-VariableFont_wght.woff2') format('woff2');
+  font-family: "JetBrains Mono";
+  src: url("./assets/fonts/JetBrainsMono-Italic-VariableFont_wght.woff2") format("woff2");
   font-weight: 100 800;
   font-style: italic;
   font-display: swap;
 }
 
 :root {
-  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   --bg: #f1f2f4;
   --column-bg: #ebecf0;
   --card-bg: #fff;
@@ -38,7 +38,7 @@
      panel floating over it would offer actions against a board that is mid-move. */
   --z-blocking: 25;
   --z-toast: 100;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   font-size: 13px;
   /* Whole px, not a ratio: fractional line boxes make translucent selection rects
      round into each other and draw a 1px seam on every other line. */
@@ -348,6 +348,11 @@ main {
   gap: 3px;
 }
 
+.ref-icon {
+  width: 18px;
+  height: 18px;
+}
+
 .card-refs .ref-icon {
   width: 14px;
   height: 14px;
@@ -415,6 +420,13 @@ main {
   text-align: center;
 }
 
+.icon-button {
+  border-color: transparent;
+  font-size: 15px;
+  line-height: 1;
+  padding: 2px 6px;
+}
+
 .labels-head .icon-button {
   flex: none;
 }
@@ -436,7 +448,7 @@ main {
   gap: 6px;
 }
 
-.labels-item input[type='checkbox'] {
+.labels-item input[type="checkbox"] {
   flex: none;
   width: auto;
   margin: 0;
@@ -647,13 +659,6 @@ main {
 .modal-title:hover,
 .modal-title:focus {
   border-color: var(--line);
-}
-
-.icon-button {
-  border-color: transparent;
-  font-size: 15px;
-  line-height: 1;
-  padding: 2px 6px;
 }
 
 .meta {
@@ -966,7 +971,7 @@ main {
 
 /* Timing indicator: drains left to right over the toast's lifetime. */
 .toast::after {
-  content: '';
+  content: "";
   position: absolute;
   bottom: 0;
   left: 0;
@@ -1022,11 +1027,6 @@ main {
 
 .ref:hover {
   filter: brightness(0.92);
-}
-
-.ref-icon {
-  width: 18px;
-  height: 18px;
 }
 
 /* busy panel: shown while a column folder operation moves files */

@@ -1,4 +1,4 @@
-import { onBeforeUnmount, watch, type Ref } from 'vue';
+import { onBeforeUnmount, type Ref, watch } from 'vue';
 
 /**
  * Dismissible layers — overlays and the popovers inside them — in the order they opened.
@@ -42,10 +42,10 @@ function pop(layer: Layer): void {
  * layer that opens and closes without unmounting, such as a popover inside a modal: it
  * joins the stack above the modal each time it opens, so it gets Escape first.
  */
-export function useLayer(escape: () => void, active?: Ref<boolean>): void {
+export function useLayer(onEscape: () => void, active?: Ref<boolean>): void {
   // Identity matters more than the callback: `pop` finds this layer by reference, so a
   // component that opens and closes repeatedly keeps reusing the same entry.
-  const layer: Layer = { escape };
+  const layer: Layer = { escape: onEscape };
 
   if (!active) {
     push(layer);

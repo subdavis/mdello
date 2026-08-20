@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
 import hljs from 'highlight.js/lib/core';
 import markdown from 'highlight.js/lib/languages/markdown';
+import { computed, ref } from 'vue';
+
 // Token colors live in style.css (.editor-layer .hljs-*), GitHub light palette.
 
 // The stock markdown grammar only knows [text](url); add bare URLs and <autolinks>,
@@ -12,7 +13,10 @@ hljs.registerLanguage('markdown', (instance) => {
   language.contains?.unshift({
     className: 'link',
     relevance: 0,
-    variants: [{ begin: /<[a-z][a-z0-9+.-]*:\/\/[^\s>]+>/i }, { begin: /\b[a-z][a-z0-9+.-]*:\/\/[^\s<>()[\]]+/i }],
+    variants: [
+      { begin: /<[a-z][a-z0-9+.-]*:\/\/[^\s>]+>/i },
+      { begin: /\b[a-z][a-z0-9+.-]*:\/\/[^\s<>()[\]]+/i },
+    ],
   });
   return language;
 });
@@ -22,7 +26,9 @@ const area = ref<HTMLTextAreaElement | null>(null);
 const stack = ref<HTMLDivElement | null>(null);
 
 // Trailing newline keeps the highlight layer as tall as the textarea while typing.
-const highlighted = computed(() => hljs.highlight(`${model.value}\n`, { language: 'markdown' }).value);
+const highlighted = computed(
+  () => hljs.highlight(`${model.value}\n`, { language: 'markdown' }).value,
+);
 
 const INDENT = '  '; // matches tab-size: 2 on .editor-layer
 
@@ -136,7 +142,10 @@ function onKeydown(event: KeyboardEvent): void {
 function focus(line = 0): void {
   const el = area.value;
   if (!el) return;
-  const offset = model.value.split('\n').slice(0, line).reduce((sum, text) => sum + text.length + 1, 0);
+  const offset = model.value
+    .split('\n')
+    .slice(0, line)
+    .reduce((sum, text) => sum + text.length + 1, 0);
   el.focus();
   el.setSelectionRange(offset, offset);
   if (!stack.value) return;

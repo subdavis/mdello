@@ -1,6 +1,6 @@
-import gitIcon from './assets/icons/Octicons-mark-github.svg';
 import jiraIcon from './assets/icons/atlassian-jira-icon.svg';
 import figmaIcon from './assets/icons/Figma-logo.svg';
+import gitIcon from './assets/icons/Octicons-mark-github.svg';
 import slackIcon from './assets/icons/Slack_icon_2019.svg';
 
 export type ReferenceKind = 'git' | 'jira' | 'slack' | 'figma';
@@ -25,7 +25,8 @@ const SINGLETONS: ReferenceKind[] = ['slack', 'figma'];
 const URL_PATTERN = /https?:\/\/[^\s<>()[\]"'`]+/g;
 
 const GITHUB = /^https?:\/\/(?:www\.)?github\.com\/[^/]+\/([^/]+)\/(?:pull|issues)\/(\d+)/;
-const GITLAB = /^https?:\/\/[^/]*gitlab[^/]*\/(?:[^/]+\/)*([^/]+)\/-\/(?:merge_requests|issues)\/(\d+)/;
+const GITLAB =
+  /^https?:\/\/[^/]*gitlab[^/]*\/(?:[^/]+\/)*([^/]+)\/-\/(?:merge_requests|issues)\/(\d+)/;
 const JIRA = /^https?:\/\/[^/]+\.atlassian\.net\/browse\/([A-Z][A-Z0-9]*-\d+)/;
 const SLACK = /^https?:\/\/[^/]+\.slack\.com\/archives\//;
 const FIGMA = /^https?:\/\/(?:www\.)?figma\.com\//;
