@@ -26,6 +26,18 @@
   --muted: #3a3a3a;
   --accent: #0c66e4;
   --radius: 3px;
+  /* One scrim for every overlay layer; see components/Overlay.vue. */
+  --scrim: rgb(9 30 66 / 0.35);
+  --panel-shadow: 0 8px 24px rgb(9 30 66 / 0.3);
+  /* Stacking order for everything that floats. Overlays teleport to <body>, so these
+     compare directly against each other rather than against per-component ancestors.
+     Popovers stay below overlays: a popover always lives inside one. */
+  --z-popover: 15;
+  --z-overlay: 20;
+  /* A blocking layer outranks a dismissible one: it is waiting on the filesystem, and a
+     panel floating over it would offer actions against a board that is mid-move. */
+  --z-blocking: 25;
+  --z-toast: 100;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   font-size: 13px;
   /* Whole px, not a ratio: fractional line boxes make translucent selection rects
@@ -96,10 +108,6 @@ textarea {
 
 .brand {
   letter-spacing: 0.02em;
-}
-
-.board-name {
-  color: var(--muted);
 }
 
 .spacer {
@@ -248,7 +256,7 @@ main {
   position: absolute;
   top: 100%;
   right: 0;
-  z-index: 15;
+  z-index: var(--z-popover);
   margin-top: 4px;
   min-width: 120px;
   display: flex;
@@ -384,7 +392,7 @@ main {
   position: absolute;
   top: 100%;
   left: 0;
-  z-index: 20;
+  z-index: var(--z-popover);
   width: 280px;
   margin-top: 4px;
   padding: 8px;
@@ -558,29 +566,60 @@ main {
   background: #fff;
 }
 
-/* modal */
+/* overlays: the scrim and panel shared by the card modal, board switcher and busy
+   indicator. See components/Overlay.vue. */
 
-.backdrop {
+.scrim {
   position: fixed;
   inset: 0;
-  background: rgb(9 30 66 / 0.5);
+  z-index: var(--z-overlay);
+  background: var(--scrim);
   display: grid;
-  /* Not `auto`: an auto track sizes to the modal's max-content (a long code line in the
-     body), so the modal centers inside a track wider than the viewport and looks off-center. */
+  /* Not `auto`: an auto track sizes to the panel's max-content (a long code line in the
+     card body), so the panel centers inside a track wider than the viewport and looks
+     off-center. */
   grid-template-columns: minmax(0, 1fr);
-  place-items: start center;
-  padding: 24px 12px;
   overflow: hidden;
 }
 
-.modal {
-  background: #fff;
-  border-radius: var(--radius);
-  width: min(680px, 100%);
-  max-height: calc(100vh - 48px);
-  padding: 10px 12px;
+.scrim-drop {
+  place-items: start center;
+  padding: 6px 12px;
+}
+
+.scrim-top {
+  place-items: start center;
+  padding: 24px 12px;
+}
+
+.scrim-center {
+  place-items: center;
+  padding: 24px 12px;
+}
+
+/* Nothing to click, and the pointer should say so. */
+.scrim.is-blocking {
+  z-index: var(--z-blocking);
+  cursor: progress;
+}
+
+.panel {
   display: flex;
   flex-direction: column;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--panel-shadow);
+  /* Every scrim variant pads by 12px on the sides; the panel's own width caps it. */
+  max-width: 100%;
+  max-height: 100%;
+}
+
+/* modal */
+
+.modal {
+  width: min(680px, 100%);
+  padding: 10px 12px;
   gap: 8px;
 }
 
@@ -921,7 +960,7 @@ main {
   box-shadow: 0 2px 8px rgb(9 30 66 / 25%);
   font-size: 12px;
   overflow: hidden;
-  z-index: 100;
+  z-index: var(--z-toast);
 }
 
 /* Timing indicator: drains left to right over the toast's lifetime. */
@@ -989,30 +1028,16 @@ main {
   height: 18px;
 }
 
-/* busy overlay: shown while a column folder operation moves files */
+/* busy panel: shown while a column folder operation moves files */
 
-.busy-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 20;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgb(9 30 66 / 0.35);
-  cursor: progress;
-}
-
-.busy-card {
-  display: flex;
+.busy {
+  flex-direction: row;
   align-items: center;
   gap: 10px;
-  background: #fff;
-  border-radius: var(--radius);
   padding: 12px 16px;
-  box-shadow: 0 8px 24px rgb(9 30 66 / 0.3);
 }
 
-.busy-card p {
+.busy p {
   margin: 0;
 }
 
@@ -1030,4 +1055,102 @@ main {
   to {
     transform: rotate(360deg);
   }
+}
+
+/* board switcher: a quick-open panel dropped from the top of the window, plus the
+   topbar control that summons it. See components/BoardSwitcher.vue. */
+
+.board-switch {
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+  /* The label is a full path on a configured board; do not let it push the toolbar around. */
+  max-width: 40vw;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.board-switch:hover {
+  background: rgb(9 30 66 / 0.06);
+}
+
+.switcher {
+  width: min(520px, 100%);
+  padding: 4px;
+  gap: 4px;
+}
+
+.switcher-input {
+  flex: none;
+  border-color: transparent;
+}
+
+.switcher-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.switcher-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 6px;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.switcher-row.selected {
+  background: var(--accent);
+  color: #fff;
+}
+
+.switcher-name {
+  flex: none;
+}
+
+/* Takes the slack so the tag and the × sit at the right edge; truncates from the tail. */
+.switcher-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.switcher-tag {
+  flex: none;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.switcher-forget {
+  flex: none;
+  /* Hidden rather than absent: showing it on hover must not reflow the row. */
+  visibility: hidden;
+  padding: 0 4px;
+  line-height: 16px;
+  border-color: transparent;
+  background: transparent;
+  color: inherit;
+}
+
+.switcher-row:hover .switcher-forget,
+.switcher-row.selected .switcher-forget {
+  visibility: visible;
+}
+
+.switcher-forget:hover {
+  background: rgb(9 30 66 / 0.15);
+}
+
+.switcher-row.selected .switcher-path,
+.switcher-row.selected .switcher-tag {
+  color: rgb(255 255 255 / 0.75);
 }

@@ -27,6 +27,15 @@ Recommend creating the folder at `~/Documents/mdello`
 Open the app, click **Open folder…**, pick your folder. The folder handle is cached in IndexedDB, so
 later visits only need a single **Reconnect** click to re-grant write permission.
 
+### Switching boards
+
+Every folder you open is remembered. Press <kbd>⌘P</kbd> (<kbd>Ctrl</kbd>+<kbd>P</kbd>) or click the
+board name in the toolbar to bring up the switcher: arrow keys to move, <kbd>Enter</kbd> to switch,
+<kbd>Esc</kbd> to dismiss. Because the handles are cached, swapping boards never re-opens the file
+picker. Boards are listed by their `path` from `mdello.yml` where one is set, since every board
+folder tends to be called `content`. The **×** on a row drops it from the list and leaves the files
+alone.
+
 ### Agent Skills
 
 The purpose of the filesystem-based approach is to give AI agents complete access to your board without any external tools, MCP, or auth. It's just files! You can tell your agent about your board with a simple skill.
