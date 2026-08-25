@@ -16,6 +16,7 @@ const props = withDefaults(
     blocking?: boolean;
     /** Sizing and padding for this particular panel; the chrome comes from `.panel`. */
     panelClass?: string;
+    panelStyle?: Record<string, string>;
     label?: string;
   }>(),
   { place: 'top', blocking: false },
@@ -52,6 +53,7 @@ if (!props.blocking) useLayer(() => emit('escape'));
       <div
         class="panel"
         :class="panelClass"
+        :style="panelStyle"
         :role="blocking ? 'status' : 'dialog'"
         :aria-modal="blocking ? undefined : 'true'"
         :aria-live="blocking ? 'polite' : undefined"

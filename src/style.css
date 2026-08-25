@@ -631,9 +631,30 @@ main {
 /* modal */
 
 .modal {
-  width: min(680px, 100%);
+  position: relative;
+  width: 680px;
   padding: 10px 12px;
   gap: 8px;
+}
+
+.modal-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 1;
+  width: 10px;
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.modal-resize-handle-left {
+  left: 0;
+  transform: translateX(-50%);
+}
+
+.modal-resize-handle-right {
+  right: 0;
+  transform: translateX(50%);
 }
 
 /* Head, meta, tags and foot stay put; only the body/editor scrolls. */
