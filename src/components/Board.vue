@@ -2,12 +2,14 @@
 import { computed, ref } from 'vue';
 import { useBoard } from '../composables/useBoard';
 import { useDrag } from '../composables/useDrag';
+import { markdownFile, useMarkdownImport } from '../composables/useMarkdownImport';
 import { ARCHIVE_DIR, type Card } from '../fs/board';
 import CardModal from './CardModal.vue';
 import Column from './Column.vue';
 
 const board = useBoard();
 const drag = useDrag();
+const markdownImport = useMarkdownImport();
 const openCard = ref<Card | null>(null);
 const archiveOver = computed(() => drag.target.value?.column === ARCHIVE_DIR);
 const isEmpty = computed(() => !board.loading.value && board.columns.value.length === 0);
@@ -17,11 +19,22 @@ function findCard(id: string): Card | undefined {
 }
 
 // Drops bubble up from columns and the archive strip, so one handler covers the whole board.
-async function onDrop(): Promise<void> {
+async function onDrop(event: DragEvent): Promise<void> {
   const source = drag.dragging.value;
   const target = drag.target.value;
   const movedColumn = drag.column.value;
+  const file = markdownFile(event.dataTransfer);
   drag.end();
+  markdownImport.end();
+
+  if (file && target && target.column !== ARCHIVE_DIR) {
+    const column = board.columns.value.find((entry) => entry.dir === target.column);
+    if (!column) return;
+
+    const card = await board.importCard(column, file, target.index);
+    if (card) openCard.value = card;
+    return;
+  }
 
   if (movedColumn) {
     await board.commitColumnOrder();
@@ -46,6 +59,11 @@ async function onDrop(): Promise<void> {
 function onDragend(): void {
   drag.end();
   board.cancelColumnOrder();
+}
+
+function onArchiveDragover(event: DragEvent): void {
+  if (markdownImport.draggingMarkdown.value) drag.clearTarget();
+  else drag.over(event, ARCHIVE_DIR, 0);
 }
 </script>
 
@@ -82,7 +100,7 @@ function onDragend(): void {
     <aside
       class="archive-strip"
       :class="{ 'is-over': archiveOver }"
-      @dragover="drag.over($event, ARCHIVE_DIR, 0)"
+      @dragover="onArchiveDragover"
     >
       <span class="archive-label">🗑️ Archive</span>
     </aside>

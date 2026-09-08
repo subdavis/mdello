@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef } from 'vue';
 import { useDrag } from '../composables/useDrag';
+import { useMarkdownImport } from '../composables/useMarkdownImport';
 import type { Card as CardType, Column } from '../fs/board';
 import CardTile from './Card.vue';
 
@@ -14,6 +15,7 @@ const emit = defineEmits<{
 }>();
 
 const drag = useDrag();
+const markdownImport = useMarkdownImport();
 const body = useTemplateRef<HTMLElement>('body');
 const root = useTemplateRef<HTMLElement>('root');
 const adding = ref(false);
@@ -62,6 +64,11 @@ const sourceIndex = computed(() => {
  * no slot is drawn and the drop is a no-op.
  */
 function onDragover(event: DragEvent): void {
+  if (markdownImport.draggingMarkdown.value) {
+    drag.overImport(event, props.column.dir, slotAt(event));
+    return;
+  }
+
   // A column drag reorders the board live; cards are not involved.
   const held = drag.column.value;
   if (held) {

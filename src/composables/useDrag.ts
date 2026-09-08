@@ -94,6 +94,12 @@ export function useDrag() {
       target.value = { column, index };
     },
 
+    overImport(event: DragEvent, column: string, index: number): void {
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+      target.value = { column, index };
+    },
+
     /** Pointer moved onto neutral board background: no drop slot until it re-enters one. */
     clearTarget(): void {
       target.value = null;

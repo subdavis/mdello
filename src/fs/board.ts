@@ -211,13 +211,22 @@ export async function createCard(
   column: string,
   title: string,
   order: number,
+  body = '',
 ): Promise<Card> {
   const dir = await columnHandle(root, column);
   const name = await uniqueName(dir, `${slugify(title)}.md`);
   const data: Frontmatter = { title, tags: [], order, created: new Date().toISOString() };
-  const modified = await writeCard(root, { column, name, data, body: '' });
+  const modified = await writeCard(root, { column, name, data, body });
 
-  return { ...toCard(column, name, '', modified), title, data, order, modified };
+  return {
+    ...toCard(column, name, '', modified),
+    title,
+    data,
+    order,
+    modified,
+    body,
+    references: findReferences(body),
+  };
 }
 
 const STARTER_COLUMNS = ['1-todo', '2-doing', '3-done'];

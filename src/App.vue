@@ -5,9 +5,11 @@ import BoardSwitcher from './components/BoardSwitcher.vue';
 import Overlay from './components/Overlay.vue';
 import Toast from './components/Toast.vue';
 import { useBoard } from './composables/useBoard';
+import { isMarkdownFile, useMarkdownImport } from './composables/useMarkdownImport';
 import { showToast } from './composables/useToast';
 
 const board = useBoard();
+const markdownImport = useMarkdownImport();
 
 const addingColumn = ref(false);
 const draftColumn = ref('');
@@ -52,16 +54,22 @@ function isFileDrag(event: DragEvent): boolean {
 function onDragover(event: DragEvent): void {
   if (!isFileDrag(event)) return;
   event.preventDefault();
+  markdownImport.update(event.dataTransfer);
   if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
 }
 
-/** An image dropped anywhere in the window becomes the board wallpaper. */
+function onDragleave(event: DragEvent): void {
+  if (event.relatedTarget === null) markdownImport.end();
+}
+
+/** An image dropped outside a column dropzone becomes the board wallpaper. */
 async function onDrop(event: DragEvent): Promise<void> {
   if (!isFileDrag(event)) return;
   event.preventDefault();
+  markdownImport.end();
 
   const file = event.dataTransfer?.files[0];
-  if (!file) return;
+  if (!file || isMarkdownFile(file)) return;
   if (!file.type.startsWith('image/')) {
     showToast('Not an image');
     return;
@@ -84,6 +92,7 @@ onMounted(async () => {
   await board.init();
   window.addEventListener('focus', onFocus);
   window.addEventListener('dragover', onDragover);
+  window.addEventListener('dragleave', onDragleave);
   window.addEventListener('drop', onDrop);
   window.addEventListener('keydown', onKeydown);
 });
@@ -91,6 +100,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   window.removeEventListener('focus', onFocus);
   window.removeEventListener('dragover', onDragover);
+  window.removeEventListener('dragleave', onDragleave);
   window.removeEventListener('drop', onDrop);
   window.removeEventListener('keydown', onKeydown);
 });

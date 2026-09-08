@@ -40,6 +40,7 @@ import {
 } from '../fs/handle';
 import { acquireBoardLock, releaseBoardLock } from '../fs/lock';
 import { changePaths, watchBoard } from '../fs/watch';
+import { parseMarkdownImport } from '../importMarkdown';
 import { findReferences } from '../references';
 import { labels, takeLegacyLabels } from './useLabels';
 import { showToast } from './useToast';
@@ -552,6 +553,17 @@ export function useBoard() {
       return guard(async () => {
         const card = await createCard(requireRoot(), column.dir, title, 1);
         column.cards.unshift(card);
+        await persistOrder(requireRoot(), column);
+        return card;
+      });
+    },
+
+    async importCard(column: Column, file: File, index: number): Promise<Card | undefined> {
+      return guard(async () => {
+        const { title, body } = parseMarkdownImport(file.name, await file.text());
+        const destination = Math.min(index, column.cards.length);
+        const card = await createCard(requireRoot(), column.dir, title, destination + 1, body);
+        column.cards.splice(destination, 0, card);
         await persistOrder(requireRoot(), column);
         return card;
       });

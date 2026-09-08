@@ -3,6 +3,13 @@ import MarkdownIt from 'markdown-it';
 // html: false keeps raw HTML out of card bodies, so no sanitizer is needed.
 const md = new MarkdownIt({ html: false, linkify: true, breaks: true });
 
+// Keep link navigation outside the installed PWA.
+md.renderer.rules.link_open = (tokens, idx, options, _env, self) => {
+  tokens[idx].attrSet('target', '_blank');
+  tokens[idx].attrSet('rel', 'noopener noreferrer');
+  return self.renderToken(tokens, idx, options);
+};
+
 // Tag block elements with their source line so the editor can jump there on double-click.
 const renderToken = md.renderer.renderToken.bind(md.renderer);
 md.renderer.renderToken = (tokens, idx, options) => {
