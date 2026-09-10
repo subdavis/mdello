@@ -369,7 +369,7 @@ main {
 
 .tag {
   background: #dfe1e6;
-  border-radius: 2px;
+  border-radius: var(--radius);
   padding: 0 4px;
   font-size: 11px;
   color: var(--muted);
@@ -901,7 +901,7 @@ main {
   font-family: var(--mono);
   background: #f1f2f4;
   padding: 0 3px;
-  border-radius: 2px;
+  border-radius: var(--radius);
 }
 
 .markdown pre {
@@ -1038,7 +1038,7 @@ main {
   align-items: center;
   gap: 4px;
   background: #dfe1e6;
-  border-radius: 2px;
+  border-radius: var(--radius);
   padding: 0 2px;
   padding-left: 0;
   font-size: 12px;

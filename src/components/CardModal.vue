@@ -117,10 +117,11 @@ function onEscape(): void {
     </header>
 
     <dl class="meta">
-      <dt>Created</dt>
-      <dd>{{ formatStamp(card.created) }}</dd>
-      <dt>Modified</dt>
-      <dd>{{ formatStamp(card.modified) }}</dd>
+      <dt>History</dt>
+      <dd>
+          <span class="history-item">Created <span class="history-item-date">{{ formatStamp(card.created) }}</span></span>
+          <span class="history-item">Modified <span class="history-item-date">{{ formatStamp(card.modified) }}</span></span>
+      </dd>
       <template v-if="card.references.length">
         <dt>References</dt>
         <dd>
@@ -190,3 +191,19 @@ function onEscape(): void {
     </footer>
   </Overlay>
 </template>
+
+<style scoped >
+.history-item {
+  margin-right: 0.5em;
+  padding: 0.15em 0.25em;
+  background: var(--column-bg);
+  border-color: var(--accent);
+  border-radius: var(--radius);
+  color: var(--muted);
+}
+
+.history-item-date {
+  font-weight: bold;
+  color: var(--text);
+}
+</style>
