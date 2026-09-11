@@ -1,4 +1,11 @@
 import { computed, markRaw, ref, shallowRef, watch } from 'vue';
+import {
+  ATTACHMENTS_DIR,
+  type CardAttachment,
+  deleteAttachment,
+  readAttachment,
+  writeAttachment,
+} from '../fs/attachments';
 import { readBackground, writeBackground } from '../fs/background';
 import {
   ARCHIVE_DIR,
@@ -136,6 +143,10 @@ function markDirty(column: string | null): void {
   else dirtyColumns.add(column);
 }
 
+function isIgnoredDirectory(name: string): boolean {
+  return name === ARCHIVE_DIR || name === ATTACHMENTS_DIR || name.startsWith('.');
+}
+
 /** Observer also reports our own writes, so debounce and skip while saves are pending. */
 function onFileChange(records: FileSystemChangeRecord[]): void {
   for (const record of records) {
@@ -150,7 +161,7 @@ function onFileChange(records: FileSystemChangeRecord[]): void {
       // OS litter (.DS_Store and friends) is never a card; do not rescan for it.
       else if (path.at(-1)?.startsWith('.')) continue;
       else if (rest.length === 0 && /^background\./i.test(top)) backgroundChanged = true;
-      else if (top === ARCHIVE_DIR || top.startsWith('.')) continue;
+      else if (isIgnoredDirectory(top)) continue;
       // A change on a top-level entry is a column appearing or disappearing.
       else markDirty(rest.length === 0 ? null : top);
     }
@@ -470,6 +481,48 @@ export function useBoard() {
     queueSave,
     renameTag,
     flushCard,
+
+    async addAttachments(card: Card, files: File[]): Promise<number> {
+      if (!files.length || !root.value || locked.value) return 0;
+      const added = await guard(async () =>
+        Promise.all(files.map((file) => writeAttachment(requireRoot(), file))),
+      );
+      if (!added) return 0;
+
+      card.attachments.push(...added);
+      card.data.attachments = card.attachments.map((attachment) => ({ ...attachment }));
+      queueSave(card);
+      await flushCard(card);
+      return added.length;
+    },
+
+    async attachmentFile(attachment: CardAttachment): Promise<File | undefined> {
+      return guard(async () => readAttachment(requireRoot(), attachment));
+    },
+
+    async removeAttachment(card: Card, attachment: CardAttachment): Promise<boolean> {
+      const index = card.attachments.findIndex((entry) => entry.file === attachment.file);
+      if (index === -1) return false;
+
+      const previous = [...card.attachments];
+      card.attachments.splice(index, 1);
+      if (card.attachments.length) {
+        card.data.attachments = card.attachments.map((entry) => ({ ...entry }));
+      } else {
+        delete card.data.attachments;
+      }
+
+      queueSave(card);
+      await flushCard(card);
+      if (error.value) {
+        card.attachments.splice(0, card.attachments.length, ...previous);
+        card.data.attachments = previous.map((entry) => ({ ...entry }));
+        return false;
+      }
+
+      await guard(async () => deleteAttachment(requireRoot(), attachment));
+      return true;
+    },
 
     async addColumn(label: string): Promise<void> {
       await guard(async () => {

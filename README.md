@@ -65,6 +65,10 @@ content/
 Editing: click a card to open it, double-click the description for a raw markdown editor. Changes
 autosave after a short pause; **Save** exits edit mode and re-renders.
 
+Drop files onto an open card to attach them. Files are stored centrally in
+`attachments/`; each card tracks its files in frontmatter. Images appear as thumbnails
+above the description and open in a full-size viewer. Other file types open in the browser.
+
 ### Configuration & Customization
 
 See `mdello.yml` in your mdello board folder to configure additional features

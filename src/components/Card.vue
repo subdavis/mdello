@@ -27,6 +27,16 @@ const isDragging = computed(() => drag.dragging.value?.id === props.card.id);
     </ul>
     <footer class="card-meta">
       <span class="stamp">{{ formatStamp(card.modified) }}</span>
+      <span
+        v-if="card.attachments.length"
+        class="card-attachments"
+        :title="`${card.attachments.length} attachment${card.attachments.length === 1 ? '' : 's'}`"
+        aria-label="Attachments"
+      >
+        <svg class="attachment-icon" viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M11.5 4.5v7a3.5 3.5 0 0 1-7 0v-8a2.5 2.5 0 0 1 5 0V11a1.5 1.5 0 0 1-3 0V4.5" />
+        </svg>
+      </span>
       <span v-if="card.references.length" class="card-refs">
         <img
           v-for="reference in card.references"

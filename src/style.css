@@ -337,9 +337,24 @@ main {
   margin-top: 3px;
 }
 
-/* Pushes refs + assignee to the right edge, in that order. */
+/* Pushes attachments, refs, and assignee to the right edge, in that order. */
 .card-meta .stamp {
   margin-right: auto;
+}
+
+.card-attachments {
+  display: flex;
+  align-items: center;
+}
+
+.attachment-icon {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .card-refs {
@@ -633,8 +648,15 @@ main {
 .modal {
   position: relative;
   width: 680px;
-  padding: 10px 12px;
+}
+
+.modal-drop-surface {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
   gap: 8px;
+  padding: 10px 12px;
 }
 
 .modal-resize-handle {
@@ -657,7 +679,7 @@ main {
   transform: translateX(50%);
 }
 
-/* Head, meta, tags and foot stay put; only the body/editor scrolls. */
+/* Head, meta, tags and foot stay put; attachments and body share one scroller. */
 .modal-head,
 .meta,
 .modal-foot {
@@ -855,19 +877,147 @@ main {
   background: #024ba433;
 }
 
-.body {
+.card-content {
   flex: 1;
   min-height: 120px;
   overflow-y: auto;
   border: 1px solid transparent;
   border-radius: var(--radius);
+}
+
+.card-content:has(.body:hover),
+.card-content:has(.editor-stack) {
+  border-color: var(--line);
+}
+
+.card-content .editor-stack {
+  min-height: 240px;
+  overflow: visible;
+  border: 0;
+}
+
+.body {
+  min-height: 120px;
   padding: 8px;
   font-size: 14px;
   line-height: 1.5;
 }
 
-.body:hover {
-  border-color: var(--line);
+.attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 8px 8px 4px;
+}
+
+.attachment {
+  position: relative;
+  display: flex;
+  width: 200px;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.attachment-remove {
+  position: absolute;
+  z-index: 1;
+  top: 4px;
+  right: 4px;
+  background: rgb(255 255 255 / 90%);
+  box-shadow: 0 1px 2px rgb(9 30 66 / 20%);
+}
+
+.attachment-image,
+.attachment-file {
+  width: 200px;
+  height: 132px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--column-bg);
+  overflow: hidden;
+}
+
+.attachment-image {
+  padding: 0;
+  cursor: zoom-in;
+}
+
+.attachment-image:hover,
+.attachment-file:hover {
+  border-color: var(--accent);
+}
+
+.attachment-image img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.attachment-file {
+  display: flex;
+  padding: 12px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  color: inherit;
+  text-align: center;
+  text-decoration: none;
+}
+
+.attachment-file-icon {
+  font-size: 28px;
+  line-height: 36px;
+}
+
+.attachment-file strong {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-file small {
+  color: var(--muted);
+}
+
+.attachment-caption {
+  overflow: hidden;
+  padding: 0 2px;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-dropzone {
+  display: grid;
+  min-height: 240px;
+  place-items: center;
+  border: 2px dashed var(--accent);
+  border-radius: var(--radius);
+  background: repeating-linear-gradient(
+    -45deg,
+    rgb(12 102 228 / 6%),
+    rgb(12 102 228 / 6%) 12px,
+    rgb(12 102 228 / 14%) 12px,
+    rgb(12 102 228 / 14%) 24px
+  );
+  color: var(--accent);
+  font-size: 16px;
+}
+
+.image-viewer {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.image-viewer-image {
+  display: block;
+  max-width: calc(100vw - 48px);
+  max-height: calc(100vh - 48px);
+  object-fit: contain;
 }
 
 .markdown > :first-child {

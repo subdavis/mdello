@@ -1,4 +1,5 @@
 import { findReferences, type Reference } from '../references';
+import { ATTACHMENTS_DIR, type CardAttachment, readAttachments } from './attachments';
 import { CONFIG_FILE, DEFAULT_CONFIG, writeConfig } from './config';
 import {
   type Frontmatter,
@@ -23,6 +24,7 @@ export interface Card {
   order?: number;
   modified: number;
   body: string;
+  attachments: CardAttachment[];
   /** Parsed from the body on load and on save, never per keystroke. */
   references: Reference[];
   data: Frontmatter;
@@ -78,6 +80,7 @@ function toCard(column: string, name: string, text: string, modified: number): C
     order: readNumber(data, 'order'),
     modified,
     body,
+    attachments: readAttachments(data),
     references: findReferences(body),
     data,
   };
@@ -122,7 +125,13 @@ export async function listColumns(root: FileSystemDirectoryHandle): Promise<stri
 
   for await (const entry of root.values()) {
     if (entry.kind !== 'directory') continue;
-    if (entry.name === ARCHIVE_DIR || entry.name.startsWith('.')) continue;
+    if (
+      entry.name === ARCHIVE_DIR ||
+      entry.name === ATTACHMENTS_DIR ||
+      entry.name.startsWith('.')
+    ) {
+      continue;
+    }
     dirs.push(entry.name);
   }
 
@@ -225,6 +234,7 @@ export async function createCard(
     order,
     modified,
     body,
+    attachments: [],
     references: findReferences(body),
   };
 }
