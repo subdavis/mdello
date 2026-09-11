@@ -6,6 +6,8 @@ const dragging = ref<{ id: string; column: string } | null>(null);
 const target = ref<{ column: string; index: number } | null>(null);
 // Height of the card being held, so the open slot matches it exactly.
 const slotHeight = ref(30);
+// Pointer position within the card, used to continue the native ghost from its drop position.
+const grabOffset = ref({ x: 0, y: 0 });
 
 // Column drags are a separate track: `dragging` stays null, so card handlers ignore them.
 const column = ref<string | null>(null);
@@ -34,6 +36,7 @@ export function useDrag() {
     dragging,
     target,
     slotHeight,
+    grabOffset,
     column,
 
     /** The header is the handle, but `el` (the whole column) is what the ghost shows. */
@@ -66,7 +69,10 @@ export function useDrag() {
       dragging.value = { id: card.id, column: card.column };
       const el = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
       const rect = el?.getBoundingClientRect();
-      if (rect) slotHeight.value = rect.height;
+      if (rect) {
+        slotHeight.value = rect.height;
+        grabOffset.value = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+      }
 
       // The payload is for external drop targets; internal drops read `dragging` instead.
       if (event.dataTransfer) {

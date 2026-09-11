@@ -6,11 +6,14 @@ import { markdownFile, useMarkdownImport } from '../composables/useMarkdownImpor
 import { ARCHIVE_DIR, type Card } from '../fs/board';
 import CardModal from './CardModal.vue';
 import Column from './Column.vue';
+import '../styles/archive.css';
 
 const board = useBoard();
 const drag = useDrag();
 const markdownImport = useMarkdownImport();
 const openCard = ref<Card | null>(null);
+const archiveDropzone = ref<HTMLElement | null>(null);
+const archiveWarping = ref(false);
 const archiveOver = computed(() => drag.target.value?.column === ARCHIVE_DIR);
 const isEmpty = computed(() => !board.loading.value && board.columns.value.length === 0);
 
@@ -18,12 +21,60 @@ function findCard(id: string): Card | undefined {
   return board.columns.value.flatMap((column) => column.cards).find((card) => card.id === id);
 }
 
-// Drops bubble up from columns and the archive strip, so one handler covers the whole board.
+function playArchiveWarp(
+  cardId: string,
+  event: DragEvent,
+): { finished: Promise<void>; source: HTMLElement } | null {
+  const cardElement = document.querySelector<HTMLElement>(`[data-card-id="${CSS.escape(cardId)}"]`);
+  const dropzone = archiveDropzone.value;
+  if (!cardElement || !dropzone) return null;
+
+  const cardRect = cardElement.getBoundingClientRect();
+  const dropRect = dropzone.getBoundingClientRect();
+  const clone = cardElement.cloneNode(true) as HTMLElement;
+  const left = event.clientX ? event.clientX - drag.grabOffset.value.x : cardRect.left;
+  const top = event.clientY ? event.clientY - drag.grabOffset.value.y : cardRect.top;
+  const deltaX = dropRect.left + dropRect.width / 2 - (left + cardRect.width / 2);
+  const deltaY = dropRect.top + dropRect.height / 2 - (top + cardRect.height / 2);
+
+  clone.classList.remove('is-dragging');
+  clone.classList.add('archive-warp-clone');
+  clone.removeAttribute('data-card-id');
+  clone.setAttribute('aria-hidden', 'true');
+  clone.style.setProperty('--archive-dx', `${deltaX}px`);
+  clone.style.setProperty('--archive-dy', `${deltaY}px`);
+  clone.style.left = `${left}px`;
+  clone.style.top = `${top}px`;
+  clone.style.width = `${cardRect.width}px`;
+  clone.style.height = `${cardRect.height}px`;
+  document.body.append(clone);
+  cardElement.style.visibility = 'hidden';
+
+  const finished = new Promise<void>((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      clone.remove();
+      resolve();
+    };
+
+    clone.addEventListener('animationend', finish, { once: true });
+    window.setTimeout(finish, 200);
+  });
+
+  return { finished, source: cardElement };
+}
+
+// Drops bubble up from columns and archive, so one handler covers whole board.
 async function onDrop(event: DragEvent): Promise<void> {
   const source = drag.dragging.value;
   const target = drag.target.value;
   const movedColumn = drag.column.value;
   const file = markdownFile(event.dataTransfer);
+  const archiveCard = source && target?.column === ARCHIVE_DIR ? findCard(source.id) : undefined;
+  const warp = archiveCard ? playArchiveWarp(archiveCard.id, event) : null;
+  if (warp) archiveWarping.value = true;
   drag.end();
   markdownImport.end();
 
@@ -47,7 +98,12 @@ async function onDrop(event: DragEvent): Promise<void> {
   if (!card) return;
 
   if (target.column === ARCHIVE_DIR) {
-    await board.archive(card);
+    try {
+      await Promise.all([board.archive(card), warp?.finished]);
+    } finally {
+      if (warp) warp.source.style.visibility = '';
+      archiveWarping.value = false;
+    }
     return;
   }
 
@@ -75,8 +131,8 @@ function onArchiveDragover(event: DragEvent): void {
     </button>
   </div>
 
-  <!-- .self: gaps and padding only. Dragovers bubbling up from a column or the archive
-       strip have already set a target and must not be cleared here. -->
+  <!-- .self: gaps and padding only. Dragovers bubbling up from a column or archive
+       have already set a target and must not be cleared here. -->
   <div
     v-else
     class="board"
@@ -97,13 +153,17 @@ function onArchiveDragover(event: DragEvent): void {
       @hover="(dir, index) => board.previewColumnOrder(dir, index)"
     />
 
-    <aside
-      class="archive-strip"
-      :class="{ 'is-over': archiveOver }"
-      @dragover="onArchiveDragover"
-    >
-      <span class="archive-label">🗑️ Archive</span>
-    </aside>
+    <section class="column archive-column">
+      <div
+        ref="archiveDropzone"
+        class="archive-dropzone"
+        :class="{ 'is-over': archiveOver, 'is-warping': archiveWarping }"
+        @dragover="onArchiveDragover"
+      >
+        <span class="archive-vortex" aria-hidden="true" />
+        <span class="archive-label">Archive</span>
+      </div>
+    </section>
 
     <CardModal v-if="openCard" :card="openCard" @close="openCard = null" />
   </div>

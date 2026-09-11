@@ -16,6 +16,7 @@ const isDragging = computed(() => drag.dragging.value?.id === props.card.id);
   <article
     class="card"
     :class="{ 'is-dragging': isDragging }"
+    :data-card-id="card.id"
     draggable="true"
     @click="emit('open', card)"
     @dragstart="drag.start($event, card)"

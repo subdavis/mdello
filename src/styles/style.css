@@ -2,7 +2,7 @@
 
 @font-face {
   font-family: "JetBrains Mono";
-  src: url("./assets/fonts/JetBrainsMono-VariableFont_wght.woff2") format("woff2");
+  src: url("../assets/fonts/JetBrainsMono-VariableFont_wght.woff2") format("woff2");
   font-weight: 100 800;
   font-style: normal;
   font-display: swap;
@@ -10,7 +10,7 @@
 
 @font-face {
   font-family: "JetBrains Mono";
-  src: url("./assets/fonts/JetBrainsMono-Italic-VariableFont_wght.woff2") format("woff2");
+  src: url("../assets/fonts/JetBrainsMono-Italic-VariableFont_wght.woff2") format("woff2");
   font-weight: 100 800;
   font-style: italic;
   font-display: swap;
@@ -558,39 +558,6 @@ main {
   background: #ffecea;
   border-color: #f3b8b0;
   color: #ae2a19;
-}
-
-.archive-strip {
-  flex: none;
-  /* Eats the leftover space so the strip hugs the right edge; with no leftover space
-     (columns overflowing) it resolves to 0 and the strip scrolls after the last column. */
-  margin-left: auto;
-  width: 90px;
-  align-self: stretch;
-  display: grid;
-  place-items: center;
-  border: 1px dashed #b3bac5;
-  border-radius: var(--radius);
-  background: rgb(255 255 255 / 0.4);
-  color: var(--muted);
-  writing-mode: vertical-rl;
-}
-
-/* Own opaque-ish chip so a board wallpaper cannot bleed through the text. */
-.archive-label {
-  padding: 8px 6px;
-  border-radius: var(--radius);
-  background: rgb(255 255 255 / 0.85);
-}
-
-.archive-strip.is-over {
-  border-color: var(--accent);
-  color: var(--accent);
-  background: rgb(255 255 255 / 0.6);
-}
-
-.archive-strip.is-over .archive-label {
-  background: #fff;
 }
 
 /* overlays: the scrim and panel shared by the card modal, board switcher and busy
