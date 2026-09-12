@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { useBoard } from '../composables/useBoard';
+import { acknowledgeReadyForReview, useCompanion } from '../composables/useCompanion';
 import { useMarkdownImport } from '../composables/useMarkdownImport';
 import { showToast } from '../composables/useToast';
 import { formatStamp } from '../format';
@@ -24,6 +25,8 @@ function storedModalWidth(): number {
 }
 
 const board = useBoard();
+const associations = useCompanion(board.rootPath, props.card);
+watch(associations, (entries) => void acknowledgeReadyForReview(entries), { immediate: true });
 const markdownImport = useMarkdownImport();
 const editing = ref(false);
 const editor = ref<InstanceType<typeof MarkdownEditor> | null>(null);
@@ -263,6 +266,21 @@ function onEscape(): void {
           <span class="history-item">Created <span class="history-item-date">{{ formatStamp(card.created) }}</span></span>
           <span class="history-item">Modified <span class="history-item-date">{{ formatStamp(card.modified) }}</span></span>
       </dd>
+      <template v-if="associations.length">
+        <dt>Sessions</dt>
+        <dd class="session-list">
+          <span
+            v-for="association in associations"
+            :key="association.sessionId"
+            class="session-item"
+            :class="`is-${association.status}`"
+            :title="association.sessionFile"
+          >
+            Session <code>{{ association.sessionId }}</code>
+            <strong>{{ association.status.replaceAll('_', ' ') }}</strong>
+          </span>
+        </dd>
+      </template>
       <template v-if="card.references.length">
         <dt>References</dt>
         <dd>
@@ -417,5 +435,36 @@ function onEscape(): void {
 .history-item-date {
   font-weight: bold;
   color: var(--text);
+}
+
+.session-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25em;
+}
+
+.session-item {
+  display: flex;
+  gap: 0.5em;
+  align-items: baseline;
+}
+
+.session-item code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.session-item strong {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.session-item.is-running strong,
+.session-item.is-ready_for_review strong {
+  color: #1f845a;
+}
+
+.session-item.is-waiting_for_input strong {
+  color: #b65c02;
 }
 </style>

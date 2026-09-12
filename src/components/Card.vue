@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { aggregateStatus, useCompanion } from '../composables/useCompanion';
 import { useDrag } from '../composables/useDrag';
 import { tagStyle } from '../composables/useLabels';
+import { useBoard } from '../composables/useBoard';
 import { formatStamp } from '../format';
 import type { Card } from '../fs/board';
 
@@ -9,19 +11,34 @@ const props = defineProps<{ card: Card }>();
 const emit = defineEmits<{ open: [Card] }>();
 
 const drag = useDrag();
+const board = useBoard();
+const associations = useCompanion(board.rootPath, props.card);
+const status = computed(() => aggregateStatus(associations.value));
+const statusLabel = computed(() => status.value?.replaceAll('_', ' '));
 const isDragging = computed(() => drag.dragging.value?.id === props.card.id);
 </script>
 
 <template>
   <article
     class="card"
-    :class="{ 'is-dragging': isDragging }"
+    :class="[
+      { 'is-dragging': isDragging },
+      status ? `has-status status-${status}` : undefined,
+    ]"
     :data-card-id="card.id"
     draggable="true"
     @click="emit('open', card)"
     @dragstart="drag.start($event, card)"
     @dragend="drag.end()"
   >
+    <span
+      v-if="status"
+      class="card-status-indicator"
+      :class="`is-${status}`"
+      role="img"
+      :aria-label="`Session status: ${statusLabel}`"
+      :title="statusLabel"
+    />
     <h3 class="card-title">{{ card.title }}</h3>
     <ul v-if="card.tags.length" class="tags">
       <li v-for="tag in card.tags" :key="tag" class="tag" :style="tagStyle(tag)">{{ tag }}</li>

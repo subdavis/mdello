@@ -300,6 +300,7 @@ main {
 /* cards */
 
 .card {
+  position: relative;
   background: var(--card-bg);
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -310,6 +311,15 @@ main {
 
 .card:hover {
   border-color: #b3bac5;
+}
+
+.card.status-running,
+.card.status-waiting_for_input {
+  background: color-mix(in srgb, var(--card-bg) 88%, #e2b203);
+}
+
+.card.status-ready_for_review {
+  background: color-mix(in srgb, var(--card-bg) 88%, #4bce97);
 }
 
 .card.is-dragging {
@@ -326,6 +336,50 @@ main {
   margin: 0;
   font-size: 13px;
   font-weight: 500;
+}
+
+.card.has-status .card-title {
+  padding-right: 16px;
+}
+
+.card-status-indicator {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 10px;
+  height: 10px;
+  box-sizing: border-box;
+}
+
+.card-status-indicator.is-idle {
+  border: 2px solid #1f845a;
+  border-radius: 50%;
+}
+
+.card-status-indicator.is-running,
+.card-status-indicator.is-waiting_for_input {
+  border: 2px solid #b38600;
+  border-radius: 50%;
+  background: linear-gradient(to right, #e2b203 50%, transparent 50%);
+}
+
+.card-status-indicator.is-ready_for_review::before,
+.card-status-indicator.is-closed::before {
+  position: absolute;
+  top: -5px;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.card-status-indicator.is-ready_for_review::before {
+  content: "✓";
+  color: #1f845a;
+}
+
+.card-status-indicator.is-closed::before {
+  content: "×";
+  color: var(--muted);
 }
 
 .card-meta {

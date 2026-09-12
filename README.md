@@ -78,6 +78,39 @@ See `mdello.yml` in your mdello board folder to configure additional features
 
 Drag any image onto the window to set the background image.
 
+## Experimental Pi companion
+
+Companion proof of concept associates cards with Pi sessions when a user prompt contains an
+absolute card path. Start local HTTP/SSE sidecar:
+
+```bash
+yarn companion
+```
+
+Backfill associations from existing Pi session files, then exit without starting the server:
+
+```bash
+yarn companion backfill
+```
+
+Backfill is idempotent: existing live associations keep their status, and only missing historical
+associations are appended as `closed`.
+
+Install Pi extension globally, then run `/reload` in Pi:
+
+```bash
+ln -s "$(pwd)/companion/pi-extension.ts" ~/.pi/agent/extensions/mdello-companion.ts
+```
+
+Frontend connects to `http://127.0.0.1:31337` and displays each associated session in card modal
+metadata. Status follows Pi lifecycle: `idle`, `running`, `waiting_for_input`,
+`ready_for_review`, or `closed`. Opening a ready card acknowledges it back to `idle`. Set
+`MDELLO_COMPANION_PORT`, `MDELLO_COMPANION_DATA`,
+`MDELLO_COMPANION_URL`, or `MDELLO_BOARD_PATH` for extension/sidecar overrides. Set
+`VITE_MDELLO_COMPANION_URL` when frontend endpoint differs.
+
+Associations currently use absolute card paths, so moving a card creates a new identity.
+
 ## Local development
 
 ```bash
