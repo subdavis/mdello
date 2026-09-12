@@ -83,7 +83,7 @@ See `mdello.yml` in your mdello board folder to configure:
 
 Drag any image onto the window to set the background image.
 
-## Experimental Pi companion
+## Agent companion
 
 Companion proof of concept associates cards with Pi sessions when a user prompt contains an
 absolute card path. Start local HTTP/SSE sidecar:
@@ -108,6 +108,23 @@ yarn companion reset
 ```
 
 Stop any running companion sidecar first; its in-memory associations remain until it restarts.
+
+### Run continuously with launchd (macOS)
+
+Install a per-user `LaunchAgent` so the companion starts at login and restarts after it exits.
+
+```bash
+./companion/install-launchd.sh
+```
+
+To stop and remove agent:
+
+```bash
+launchctl bootout "gui/$(id -u)" ~/Library/LaunchAgents/com.mdello.companion.plist
+rm ~/Library/LaunchAgents/com.mdello.companion.plist
+```
+
+### Agent plugins
 
 Install Pi extension globally as a directory so its sibling modules resolve, then run `/reload`
 in Pi:
