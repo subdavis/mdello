@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "bin": {
-    "companion": "./companion/cli.ts"
+    "mdello-companion": "./companion/cli.ts"
   },
   "packageManager": "yarn@4.12.0",
   "scripts": {

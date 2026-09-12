@@ -769,6 +769,8 @@ __metadata:
     vite: "npm:^8.2.1"
     vue: "npm:^3.5.41"
     vue-tsc: "npm:^3.3.9"
+  bin:
+    mdello-companion: ./companion/cli.ts
   languageName: unknown
   linkType: soft
 
