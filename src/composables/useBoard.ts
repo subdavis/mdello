@@ -63,8 +63,7 @@ const pendingSaves = new Map<string, ReturnType<typeof setTimeout>>();
 /** Cards whose write is on the wire; the map entry is already gone by then. */
 const inFlightSaves = new Set<string>();
 
-const config = ref<BoardConfig>({ ...DEFAULT_CONFIG });
-const configLoaded = ref(false);
+const config = ref<BoardConfig | null>(null);
 /** Blob URL for `background.<ext>` in the board root, empty when the board has none. */
 const background = ref('');
 
@@ -88,7 +87,6 @@ async function loadConfig(): Promise<void> {
   config.value = loaded;
   labels.value = loaded.labels;
   applyingConfig = false;
-  configLoaded.value = true;
 
   // The switcher lists boards by path where it can: every board folder is called `content`.
   const id = activeId.value;
@@ -102,11 +100,12 @@ async function refreshBoards(): Promise<void> {
 }
 
 async function saveConfig(): Promise<boolean> {
-  if (!root.value || !configLoaded.value) return false;
-  config.value.labels = [...labels.value];
+  if (!root.value || !config.value) return false;
+  const loaded = config.value;
+  loaded.labels = [...labels.value];
   lastConfigWrite = Date.now();
   const saved = await guard(async () => {
-    await writeConfig(requireRoot(), config.value);
+    await writeConfig(requireRoot(), loaded);
     return true;
   });
   lastConfigWrite = Date.now();
@@ -232,8 +231,7 @@ async function closeBoard(): Promise<void> {
   if (background.value) URL.revokeObjectURL(background.value);
   background.value = '';
   columns.value = [];
-  config.value = { ...DEFAULT_CONFIG };
-  configLoaded.value = false;
+  config.value = null;
 
   // The guard is what makes clearing labels safe: their watcher is flush:'sync', so it runs
   // inside this assignment and would otherwise write the empty list straight back into the
@@ -281,6 +279,11 @@ function requireRoot(): FileSystemDirectoryHandle {
   return root.value;
 }
 
+function requireConfig(): BoardConfig {
+  if (!config.value) throw new Error('Board config has not loaded');
+  return config.value;
+}
+
 async function guard<T>(action: () => Promise<T>): Promise<T | undefined> {
   try {
     error.value = null;
@@ -321,10 +324,11 @@ function mergeColumns(fresh: Column[]): Column[] {
 }
 
 export async function refresh(): Promise<void> {
-  if (!root.value) return;
+  if (!root.value || !config.value) return;
+  const loaded = config.value;
   loading.value = true;
   await guard(async () => {
-    columns.value = mergeColumns(await scanBoard(requireRoot(), config.value.columns));
+    columns.value = mergeColumns(await scanBoard(requireRoot(), loaded.columns));
   });
   loading.value = false;
 }
@@ -360,12 +364,13 @@ export function useBoard() {
     locked,
     watching,
     columns,
-    editorName: computed(() => editorName(config.value)),
-    rootPath: computed(() => config.value.path),
-    configLoaded,
-    companionEnabled: computed(() => config.value.companion),
+    editorName: computed(() => editorName(config.value ?? DEFAULT_CONFIG)),
+    rootPath: computed(() => config.value?.path ?? ''),
+    configReady: computed(() => config.value !== null),
+    companionEnabled: computed(() => config.value?.companion ?? false),
     background,
-    cardUrl: (card: Pick<Card, 'name'>) => editorUrl(config.value, card),
+    cardUrl: (card: Pick<Card, 'name'>) =>
+      config.value ? editorUrl(config.value, card) : undefined,
     loading,
     error,
     saveState,
@@ -431,11 +436,11 @@ export function useBoard() {
     },
 
     async setCompanionEnabled(enabled: boolean): Promise<void> {
-      if (!root.value || locked.value || !configLoaded.value || config.value.companion === enabled)
-        return;
-      const previous = config.value.companion;
-      config.value.companion = enabled;
-      if (!(await saveConfig())) config.value.companion = previous;
+      const loaded = config.value;
+      if (!root.value || locked.value || !loaded || loaded.companion === enabled) return;
+      const previous = loaded.companion;
+      loaded.companion = enabled;
+      if (!(await saveConfig())) loaded.companion = previous;
     },
 
     /** Config + cards, for the manual button and the focus fallback. */
@@ -448,6 +453,7 @@ export function useBoard() {
 
     /** Scaffolds a starter board into the currently open (empty) folder. */
     async initialize(): Promise<void> {
+      if (!root.value || !config.value) return;
       loading.value = true;
       await guard(async () => initBoard(requireRoot()));
       loading.value = false;
@@ -509,7 +515,7 @@ export function useBoard() {
           throw new Error(`Column "${name}" already exists`);
         }
         columns.value = [...columns.value, { name, cards: [] }];
-        config.value.columns = columns.value.map((column) => column.name);
+        requireConfig().columns = columns.value.map((column) => column.name);
         await saveConfig();
       });
     },
@@ -531,7 +537,7 @@ export function useBoard() {
           card.column = next;
           card.modified = await writeCard(requireRoot(), card);
         }
-        config.value.columns = columns.value.map((entry) => entry.name);
+        requireConfig().columns = columns.value.map((entry) => entry.name);
         await saveConfig();
         return true;
       });
@@ -557,7 +563,7 @@ export function useBoard() {
       const done = await guard(async () => {
         await archiveColumn(requireRoot(), column.cards);
         columns.value = columns.value.filter((entry) => entry !== column);
-        config.value.columns = columns.value.map((entry) => entry.name);
+        requireConfig().columns = columns.value.map((entry) => entry.name);
         await saveConfig();
         return true;
       });
@@ -571,7 +577,7 @@ export function useBoard() {
       if (!before) return;
       const names = columns.value.map((column) => column.name);
       if (names.every((name, index) => name === before[index])) return;
-      config.value.columns = names;
+      requireConfig().columns = names;
       await saveConfig();
     },
 

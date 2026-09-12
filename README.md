@@ -101,6 +101,14 @@ yarn companion backfill
 Backfill is idempotent: existing live associations keep their status, and only missing historical
 associations are appended as `closed`.
 
+Clear persisted companion session data before restarting the sidecar:
+
+```bash
+yarn companion reset
+```
+
+Stop any running companion sidecar first; its in-memory associations remain until it restarts.
+
 Install Pi extension globally as a directory so its sibling modules resolve, then run `/reload`
 in Pi:
 

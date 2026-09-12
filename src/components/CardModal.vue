@@ -10,6 +10,7 @@ import type { Card } from '../fs/board';
 import { renderMarkdown } from '../markdown';
 import MarkdownEditor from './MarkdownEditor.vue';
 import Overlay from './Overlay.vue';
+import SessionStatusDetails from './SessionStatusDetails.vue';
 import TagEditor from './TagEditor.vue';
 
 const props = defineProps<{ card: Card }>();
@@ -45,7 +46,6 @@ const clipboardPath = computed(() => {
 const editorLink = computed(() => board.cardUrl(props.card));
 
 interface LoadedAttachment extends CardAttachment {
-  source: File;
   url: string;
   size: number;
   image: boolean;
@@ -54,7 +54,6 @@ interface LoadedAttachment extends CardAttachment {
 const loadedAttachments = ref<LoadedAttachment[]>([]);
 const openImage = ref<LoadedAttachment | null>(null);
 const draggingFiles = ref(false);
-let draggingAttachmentOut = false;
 let attachmentLoad = 0;
 
 function revokeAttachments(): void {
@@ -77,7 +76,6 @@ async function loadAttachments(): Promise<void> {
     if (!file) continue;
     next.push({
       ...attachment,
-      source: file,
       url: URL.createObjectURL(file),
       size: file.size,
       image: imageFile(attachment, file),
@@ -99,28 +97,7 @@ function formatSize(bytes: number): string {
 }
 
 function isFileDrag(event: DragEvent): boolean {
-  return !draggingAttachmentOut && (event.dataTransfer?.types.includes('Files') ?? false);
-}
-
-function startAttachmentDrag(event: DragEvent, attachment: LoadedAttachment): void {
-  const transfer = event.dataTransfer;
-  if (!transfer) return;
-
-  draggingAttachmentOut = true;
-  draggingFiles.value = false;
-  transfer.clearData();
-  transfer.effectAllowed = 'copy';
-  transfer.items.add(attachment.source);
-
-  // Chromium uses DownloadURL when dragging a browser-backed file into native apps.
-  const type = attachment.source.type || attachment.type || 'application/octet-stream';
-  const name = attachment.name.replaceAll(':', '-');
-  transfer.setData('DownloadURL', `${type}:${name}:${attachment.url}`);
-}
-
-function finishAttachmentDrag(): void {
-  draggingAttachmentOut = false;
-  draggingFiles.value = false;
+  return event.dataTransfer?.types.includes('Files') ?? false;
 }
 
 function onDragover(event: DragEvent): void {
@@ -267,18 +244,13 @@ function onEscape(): void {
           <span class="history-item">Modified <span class="history-item-date">{{ formatStamp(card.modified) }}</span></span>
       </dd>
       <template v-if="associations.length">
-        <dt>Sessions</dt>
+        <dt>Agents</dt>
         <dd class="session-list">
-          <span
+          <SessionStatusDetails
             v-for="association in associations"
             :key="`${association.harness}:${association.sessionId}`"
-            class="session-item"
-            :class="`is-${association.status}`"
-            :title="association.sessionFile"
-          >
-            <code>{{ association.harness }}:{{ association.sessionId.split('-').at(-1) }}</code>
-            <strong>{{ association.status.replaceAll('_', ' ') }}</strong>
-          </span>
+            :association="association"
+          />
         </dd>
       </template>
       <template v-if="card.references.length">
@@ -315,7 +287,7 @@ function onEscape(): void {
       </dd>
       <dt>File</dt>
       <dd>
-        <button type="button" class="path" title="Click to copy path" @click="copyPath">
+        <button type="button" class="path copyable-details" title="Click to copy path" @click="copyPath">
           {{ fullPath }}
         </button>
       </dd>
@@ -333,9 +305,6 @@ function onEscape(): void {
             v-for="attachment in loadedAttachments"
             :key="attachment.file"
             class="attachment"
-            draggable="true"
-            @dragstart="startAttachmentDrag($event, attachment)"
-            @dragend="finishAttachmentDrag"
           >
             <button
               type="button"
@@ -441,30 +410,5 @@ function onEscape(): void {
   display: flex;
   flex-direction: column;
   gap: 0.25em;
-}
-
-.session-item {
-  display: flex;
-  gap: 0.5em;
-  align-items: baseline;
-}
-
-.session-item code {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.session-item strong {
-  color: var(--muted);
-  white-space: nowrap;
-}
-
-.session-item.is-running strong,
-.session-item.is-ready_for_review strong {
-  color: #1f845a;
-}
-
-.session-item.is-waiting_for_input strong {
-  color: #b65c02;
 }
 </style>

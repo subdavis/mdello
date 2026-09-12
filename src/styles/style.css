@@ -371,11 +371,13 @@ main {
 
 .card-status-indicator.is-ready_for_review::before {
   content: "✓";
+  font-size: 20px;
   color: #1f845a;
 }
 
 .card-status-indicator.is-closed::before {
   content: "×";
+  font-size: 20px;
   color: var(--muted);
 }
 
@@ -761,8 +763,7 @@ main {
   background: #fff;
 }
 
-.path {
-  font-family: var(--mono);
+.copyable-details {
   padding: 0;
   border: 0;
   background: none;
@@ -772,8 +773,17 @@ main {
   text-align: left;
 }
 
-.path:hover {
+.copyable-details:not(:disabled):hover {
+  background: #f4f5f7;
   text-decoration: underline;
+}
+
+.copyable-details:disabled {
+  cursor: default;
+}
+
+.path {
+  font-family: var(--mono);
 }
 
 /* stacked editor: highlight layer pinned under a transparent, scrolling textarea */

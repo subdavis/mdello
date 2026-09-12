@@ -15,7 +15,9 @@ const openCard = ref<Card | null>(null);
 const archiveDropzone = ref<HTMLElement | null>(null);
 const archiveWarping = ref(false);
 const archiveOver = computed(() => drag.target.value?.column === ARCHIVE_DIR);
-const isEmpty = computed(() => !board.loading.value && board.columns.value.length === 0);
+const isEmpty = computed(
+  () => board.configReady.value && !board.loading.value && board.columns.value.length === 0,
+);
 
 function findCard(id: string): Card | undefined {
   return board.columns.value.flatMap((column) => column.cards).find((card) => card.id === id);
@@ -125,7 +127,11 @@ function onArchiveDragover(event: DragEvent): void {
 </script>
 
 <template>
-  <div v-if="isEmpty" class="init-gate">
+  <div v-if="!board.configReady.value" class="init-gate">
+    <p>Loading board…</p>
+  </div>
+
+  <div v-else-if="isEmpty" class="init-gate">
     <h1>{{ board.boardName.value }} is empty</h1>
     <button type="button" class="primary init-button" @click="board.initialize()">
       Initialize folder
