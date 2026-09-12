@@ -4,48 +4,73 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
+import {
+  type Association,
+  type AssociationStatus,
+  associationKey,
+  isAssociationStatus,
+} from '../src/associations.ts';
+import {
+  type BoardRegistration,
+  DEFAULT_CONFIG_FILE,
+  listActiveCards,
+  loadBoards,
+  readBoardUuid,
+  registerBoard,
+  resolveCard,
+} from './boards.ts';
+import { createDebugLogger } from './debug.ts';
 
-export type AssociationStatus =
-  | 'idle'
-  | 'running'
-  | 'waiting_for_input'
-  | 'ready_for_review'
-  | 'closed';
-
-export interface Association {
-  cardPath: string;
-  harness: string;
-  sessionId: string;
-  sessionFile?: string;
-  status: AssociationStatus;
-  updatedAt: string;
-}
+export type { Association, AssociationStatus };
+export { associationKey };
 
 export interface CompanionOptions {
   host?: string;
   port?: number;
   dataFile?: string;
+  configFile?: string;
+  sessionsRoot?: string;
+}
+
+export interface ReconcileResult {
+  associations: Map<string, Association>;
+  purgedAssociations: number;
 }
 
 const DEFAULT_HOST = '127.0.0.1';
 const DEFAULT_PORT = 31337;
 export const DEFAULT_DATA_FILE = resolve(homedir(), '.mdello', 'companion.jsonl');
 const MAX_BODY_BYTES = 64 * 1024;
-
-export function associationKey(
-  association: Pick<Association, 'cardPath' | 'harness' | 'sessionId'>,
-): string {
-  return `${association.cardPath}\0${association.harness}\0${association.sessionId}`;
-}
+const debug = createDebugLogger();
 
 function writeSse(response: ServerResponse, event: string, data: unknown): void {
   response.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 }
 
+function boardAssociations(
+  associations: Map<string, Association>,
+  boardUuid: string,
+  cardUuid?: string,
+): Association[] {
+  return [...associations.values()].filter(
+    (association) =>
+      association.boardUuid === boardUuid && (!cardUuid || association.cardUuid === cardUuid),
+  );
+}
+
+function writeBoardSnapshots(
+  clients: Map<ServerResponse, string>,
+  associations: Map<string, Association>,
+): void {
+  for (const [client, boardUuid] of clients) {
+    writeSse(client, 'snapshot', boardAssociations(associations, boardUuid));
+  }
+}
+
 function setCors(response: ServerResponse): void {
   response.setHeader('Access-Control-Allow-Origin', '*');
   response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  response.setHeader('Access-Control-Allow-Methods', 'DELETE, GET, POST, OPTIONS');
 }
 
 function sendJson(response: ServerResponse, status: number, body: unknown): void {
@@ -62,6 +87,8 @@ function normalizeAssociation(value: unknown, legacyHarness?: string): Associati
   if (status === 'active') status = 'idle';
   if (status === 'inactive') status = 'closed';
   if (
+    (candidate.boardUuid !== undefined && typeof candidate.boardUuid !== 'string') ||
+    (candidate.cardUuid !== undefined && typeof candidate.cardUuid !== 'string') ||
     typeof candidate.cardPath !== 'string' ||
     !candidate.cardPath.startsWith('/') ||
     !candidate.cardPath.endsWith('.md') ||
@@ -70,11 +97,7 @@ function normalizeAssociation(value: unknown, legacyHarness?: string): Associati
     typeof candidate.sessionId !== 'string' ||
     !candidate.sessionId ||
     (candidate.sessionFile !== undefined && typeof candidate.sessionFile !== 'string') ||
-    (status !== 'idle' &&
-      status !== 'running' &&
-      status !== 'waiting_for_input' &&
-      status !== 'ready_for_review' &&
-      status !== 'closed') ||
+    !isAssociationStatus(status) ||
     typeof candidate.updatedAt !== 'string'
   ) {
     return undefined;
@@ -97,12 +120,21 @@ async function handleAssociationPost(
   response: ServerResponse,
   dataFile: string,
   associations: Map<string, Association>,
-  clients: Set<ServerResponse>,
+  clients: Map<ServerResponse, string>,
+  boards: BoardRegistration[],
 ): Promise<void> {
   try {
-    const input = (await readBody(request)) as Partial<Association>;
+    const input = (await readBody(request)) as Partial<Association> & { markdownPath?: string };
+    const requestedPath = input.markdownPath ?? input.cardPath;
+    const card =
+      typeof requestedPath === 'string' ? await resolveCard(requestedPath, boards) : undefined;
+    if (!card) {
+      debug('association ignored', { requestedPath, reason: 'unknown_card' });
+      sendJson(response, 202, { ignored: true, reason: 'unknown_card' });
+      return;
+    }
     const association = normalizeAssociation(
-      { ...input, updatedAt: new Date().toISOString() },
+      { ...input, ...card, updatedAt: new Date().toISOString() },
       'unknown',
     );
     if (!association) {
@@ -112,24 +144,45 @@ async function handleAssociationPost(
 
     associations.set(associationKey(association), association);
     await appendFile(dataFile, `${JSON.stringify(association)}\n`);
-    for (const client of clients) writeSse(client, 'association', association);
+    debug('association recorded', {
+      boardUuid: association.boardUuid,
+      cardUuid: association.cardUuid,
+      harness: association.harness,
+      sessionId: association.sessionId,
+      status: association.status,
+    });
+    for (const [client, boardUuid] of clients) {
+      if (boardUuid === association.boardUuid) writeSse(client, 'association', association);
+    }
     sendJson(response, 202, association);
   } catch (error) {
-    sendJson(response, 400, {
-      error: error instanceof Error ? error.message : String(error),
-    });
+    const message = error instanceof Error ? error.message : String(error);
+    debug('association request failed', { error: message });
+    sendJson(response, 400, { error: message });
   }
 }
 
-export async function resetAssociations(
+export async function purgeAssociations(
   dataFile = process.env.MDELLO_COMPANION_DATA ?? DEFAULT_DATA_FILE,
 ): Promise<void> {
   await mkdir(dirname(dataFile), { recursive: true });
   await writeFile(dataFile, '');
 }
 
-export async function loadAssociations(dataFile: string): Promise<Map<string, Association>> {
-  const associations = new Map<string, Association>();
+export async function saveAssociations(
+  dataFile: string,
+  associations: Iterable<Association>,
+): Promise<void> {
+  const entries = [...associations];
+  await mkdir(dirname(dataFile), { recursive: true });
+  await writeFile(
+    dataFile,
+    entries.length ? `${entries.map((entry) => JSON.stringify(entry)).join('\n')}\n` : '',
+  );
+}
+
+export async function loadAssociationEvents(dataFile: string): Promise<Association[]> {
+  const events: Association[] = [];
   try {
     const lines = createInterface({
       input: createReadStream(dataFile),
@@ -139,7 +192,7 @@ export async function loadAssociations(dataFile: string): Promise<Map<string, As
       if (!line.trim()) continue;
       try {
         const association = normalizeAssociation(JSON.parse(line), 'unknown');
-        if (association) associations.set(associationKey(association), association);
+        if (association) events.push(association);
       } catch {
         // Ignore an incomplete final line after an interrupted append.
       }
@@ -147,6 +200,202 @@ export async function loadAssociations(dataFile: string): Promise<Map<string, As
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
   }
+  return events;
+}
+
+export async function loadAssociations(dataFile: string): Promise<Map<string, Association>> {
+  const associations = new Map<string, Association>();
+  for (const association of await loadAssociationEvents(dataFile)) {
+    associations.set(associationKey(association), association);
+  }
+  return associations;
+}
+
+export async function expungeCardAssociations(
+  dataFile: string,
+  associations: Map<string, Association>,
+  boardUuid: string,
+  cardUuid: string,
+): Promise<number> {
+  const events = await loadAssociationEvents(dataFile);
+  const remaining = events.filter(
+    (association) => association.boardUuid !== boardUuid || association.cardUuid !== cardUuid,
+  );
+  for (const [key, association] of associations) {
+    if (association.boardUuid === boardUuid && association.cardUuid === cardUuid) {
+      associations.delete(key);
+    }
+  }
+  await saveAssociations(dataFile, remaining);
+  return events.length - remaining.length;
+}
+
+export async function reconcileAssociations(
+  dataFile: string,
+  associations: Map<string, Association>,
+  boards: BoardRegistration[],
+): Promise<ReconcileResult> {
+  const activeCards = (await Promise.all(boards.map((board) => listActiveCards(board)))).flat();
+  const activeByIdentity = new Map(
+    activeCards.map((card) => [`${card.boardUuid}\0${card.cardUuid}`, card]),
+  );
+  const persistedEvents = await loadAssociationEvents(dataFile);
+  const events = persistedEvents.length > 0 ? persistedEvents : [...associations.values()];
+  const retainedEvents: Association[] = [];
+  const reconciled = new Map<string, Association>();
+  let changed = false;
+
+  for (const association of events) {
+    let identity =
+      association.boardUuid && association.cardUuid
+        ? activeByIdentity.get(`${association.boardUuid}\0${association.cardUuid}`)
+        : undefined;
+    identity ??= await resolveCard(association.cardPath, boards);
+    if (!identity) {
+      changed = true;
+      continue;
+    }
+
+    const current = { ...association, ...identity };
+    if (
+      current.boardUuid !== association.boardUuid ||
+      current.cardUuid !== association.cardUuid ||
+      current.cardPath !== association.cardPath
+    ) {
+      changed = true;
+    }
+    retainedEvents.push(current);
+    reconciled.set(associationKey(current), current);
+  }
+
+  if (changed) await saveAssociations(dataFile, retainedEvents);
+  return {
+    associations: reconciled,
+    purgedAssociations: events.length - retainedEvents.length,
+  };
+}
+
+async function handleAssociationDelete(
+  response: ServerResponse,
+  url: URL,
+  dataFile: string,
+  associations: Map<string, Association>,
+  clients: Map<ServerResponse, string>,
+): Promise<void> {
+  const boardUuid = url.searchParams.get('boardUuid');
+  const cardUuid = url.searchParams.get('cardUuid');
+  if (!boardUuid || !cardUuid) {
+    sendJson(response, 400, { error: 'boardUuid and cardUuid are required' });
+    return;
+  }
+  try {
+    const removedEvents = await expungeCardAssociations(
+      dataFile,
+      associations,
+      boardUuid,
+      cardUuid,
+    );
+    writeBoardSnapshots(clients, associations);
+    debug('card associations expunged', { boardUuid, cardUuid, removedEvents });
+    sendJson(response, 200, { removedEvents });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    debug('card association expunge failed', { boardUuid, cardUuid, error: message });
+    sendJson(response, 500, { error: message });
+  }
+}
+
+async function handleBackfillPost(
+  request: IncomingMessage,
+  response: ServerResponse,
+  configFile: string,
+  dataFile: string,
+  sessionsRoot: string | undefined,
+  associations: Map<string, Association>,
+  clients: Map<ServerResponse, string>,
+): Promise<Map<string, Association>> {
+  try {
+    const input = (await readBody(request)) as { boardUuid?: unknown; boardPath?: unknown };
+    if (typeof input.boardUuid !== 'string' || typeof input.boardPath !== 'string') {
+      sendJson(response, 400, { error: 'boardUuid and boardPath are required' });
+      return associations;
+    }
+    if ((await readBoardUuid(input.boardPath)) !== input.boardUuid) {
+      sendJson(response, 400, { error: 'Board UUID does not match mdello.yml' });
+      return associations;
+    }
+
+    const { backfillAssociations } = await import('./backfill.ts');
+    const result = await backfillAssociations({
+      boardRoot: input.boardPath,
+      configFile,
+      dataFile,
+      sessionsRoot,
+    });
+    associations = await loadAssociations(dataFile);
+    writeBoardSnapshots(clients, associations);
+    debug('board backfilled', { boardUuid: input.boardUuid, ...result });
+    sendJson(response, 200, result);
+    return associations;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    debug('board backfill failed', { error: message });
+    sendJson(response, 500, { error: message });
+    return associations;
+  }
+}
+
+async function handleEventsGet(
+  request: IncomingMessage,
+  response: ServerResponse,
+  url: URL,
+  configFile: string,
+  dataFile: string,
+  boards: BoardRegistration[],
+  associations: Map<string, Association>,
+  clients: Map<ServerResponse, string>,
+): Promise<Map<string, Association>> {
+  const boardUuid = url.searchParams.get('boardUuid');
+  const boardPath = url.searchParams.get('boardPath');
+  if (!boardUuid || !boardPath) {
+    sendJson(response, 400, { error: 'boardUuid and boardPath are required' });
+    return associations;
+  }
+
+  try {
+    const registration = await registerBoard(configFile, boards, {
+      uuid: boardUuid,
+      path: boardPath,
+    });
+    const reconciled = await reconcileAssociations(dataFile, associations, boards);
+    associations = reconciled.associations;
+    writeBoardSnapshots(clients, associations);
+    debug('board registered', {
+      boardUuid: registration.uuid,
+      path: registration.path,
+      purgedAssociations: reconciled.purgedAssociations,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    debug('board registration failed', { error: message });
+    sendJson(response, 400, { error: message });
+    return associations;
+  }
+
+  setCors(response);
+  response.writeHead(200, {
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+    'Content-Type': 'text/event-stream',
+  });
+  clients.set(response, boardUuid);
+  const snapshot = boardAssociations(associations, boardUuid);
+  writeSse(response, 'snapshot', snapshot);
+  debug('event stream subscribed', { boardUuid, associations: snapshot.length });
+  request.on('close', () => {
+    clients.delete(response);
+    debug('event stream unsubscribed', { boardUuid });
+  });
   return associations;
 }
 
@@ -158,13 +407,17 @@ export async function createCompanionServer(options: CompanionOptions = {}): Pro
   const host = options.host ?? DEFAULT_HOST;
   const port = options.port ?? DEFAULT_PORT;
   const dataFile = options.dataFile ?? process.env.MDELLO_COMPANION_DATA ?? DEFAULT_DATA_FILE;
-  const associations = await loadAssociations(dataFile);
-  const clients = new Set<ServerResponse>();
+  const configFile =
+    options.configFile ?? process.env.MDELLO_COMPANION_CONFIG ?? DEFAULT_CONFIG_FILE;
+  let associations = await loadAssociations(dataFile);
+  const boards = await loadBoards(configFile);
+  const clients = new Map<ServerResponse, string>();
   await mkdir(dirname(dataFile), { recursive: true });
   await open(dataFile, 'a').then((file) => file.close());
 
   const server = createServer(async (request, response) => {
     const url = new URL(request.url ?? '/', `http://${request.headers.host ?? host}`);
+    debug('request received', { method: request.method, path: `${url.pathname}${url.search}` });
 
     if (request.method === 'OPTIONS') {
       setCors(response);
@@ -173,26 +426,53 @@ export async function createCompanionServer(options: CompanionOptions = {}): Pro
       return;
     }
 
+    if (request.method === 'POST' && url.pathname === '/backfill') {
+      associations = await handleBackfillPost(
+        request,
+        response,
+        configFile,
+        dataFile,
+        options.sessionsRoot,
+        associations,
+        clients,
+      );
+      return;
+    }
+
     if (request.method === 'GET' && url.pathname === '/events') {
-      setCors(response);
-      response.writeHead(200, {
-        'Cache-Control': 'no-cache',
-        Connection: 'keep-alive',
-        'Content-Type': 'text/event-stream',
-      });
-      clients.add(response);
-      writeSse(response, 'snapshot', [...associations.values()]);
-      request.on('close', () => clients.delete(response));
+      associations = await handleEventsGet(
+        request,
+        response,
+        url,
+        configFile,
+        dataFile,
+        boards,
+        associations,
+        clients,
+      );
       return;
     }
 
     if (request.method === 'GET' && url.pathname === '/associations') {
-      sendJson(response, 200, [...associations.values()]);
+      const boardUuid = url.searchParams.get('boardUuid');
+      const cardUuid = url.searchParams.get('cardUuid') ?? undefined;
+      sendJson(
+        response,
+        200,
+        boardUuid
+          ? boardAssociations(associations, boardUuid, cardUuid)
+          : [...associations.values()],
+      );
+      return;
+    }
+
+    if (request.method === 'DELETE' && url.pathname === '/associations') {
+      await handleAssociationDelete(response, url, dataFile, associations, clients);
       return;
     }
 
     if (request.method === 'POST' && url.pathname === '/associations') {
-      await handleAssociationPost(request, response, dataFile, associations, clients);
+      await handleAssociationPost(request, response, dataFile, associations, clients, boards);
       return;
     }
 
@@ -209,12 +489,13 @@ export async function createCompanionServer(options: CompanionOptions = {}): Pro
 
   const address = server.address();
   const actualPort = typeof address === 'object' && address ? address.port : port;
+  debug('server listening', { host, port: actualPort, boards: boards.length });
   return {
     server,
     url: `http://${host}:${actualPort}`,
     close: () =>
       new Promise<void>((resolveClose, reject) => {
-        for (const client of clients) client.end();
+        for (const client of clients.keys()) client.end();
         server.close((error) => (error ? reject(error) : resolveClose()));
       }),
   };

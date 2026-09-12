@@ -1,20 +1,23 @@
-import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import type {
   ExtensionAPI,
   ExtensionContext,
   SessionMessageEntry,
 } from '@earendil-works/pi-coding-agent';
-import { extractCardPaths, messageText } from './paths.ts';
+import {
+  extractMarkdownPaths,
+  isModificationToolName,
+  messageText,
+  successfulModificationPaths,
+} from './paths.ts';
 
 const DEFAULT_URL = 'http://127.0.0.1:31337';
-const DEFAULT_BOARD_ROOT = resolve(homedir(), 'Documents', 'mdello');
 
 type Status = 'idle' | 'running' | 'waiting_for_input' | 'ready_for_review' | 'closed';
 
 async function sendAssociation(
   endpoint: string,
-  cardPath: string,
+  markdownPath: string,
   status: Status,
   ctx: ExtensionContext,
 ): Promise<void> {
@@ -23,7 +26,7 @@ async function sendAssociation(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        cardPath,
+        markdownPath,
         harness: 'pi',
         sessionId: ctx.sessionManager.getSessionId(),
         sessionFile: ctx.sessionManager.getSessionFile(),
@@ -38,7 +41,6 @@ async function sendAssociation(
 
 export default function mdelloCompanion(pi: ExtensionAPI): void {
   const endpoint = (process.env.MDELLO_COMPANION_URL ?? DEFAULT_URL).replace(/\/$/, '');
-  const boardRoot = resolve(process.env.MDELLO_BOARD_PATH ?? DEFAULT_BOARD_ROOT);
   const associatedCards = new Set<string>();
   let currentStatus: Status = 'idle';
 
@@ -49,8 +51,7 @@ export default function mdelloCompanion(pi: ExtensionAPI): void {
     );
   }
 
-  async function associate(text: string, ctx: ExtensionContext): Promise<void> {
-    const paths = extractCardPaths(text, boardRoot);
+  async function associatePaths(paths: string[], ctx: ExtensionContext): Promise<void> {
     await Promise.all(
       paths.map(async (cardPath) => {
         associatedCards.add(cardPath);
@@ -59,20 +60,43 @@ export default function mdelloCompanion(pi: ExtensionAPI): void {
     );
   }
 
+  async function associate(text: string, ctx: ExtensionContext): Promise<void> {
+    await associatePaths(extractMarkdownPaths(text), ctx);
+  }
+
   pi.on('session_start', async (_event, ctx) => {
     currentStatus = 'idle';
-    const userEntries = ctx.sessionManager
+    const messageEntries = ctx.sessionManager
       .getBranch()
-      .filter(
-        (entry): entry is SessionMessageEntry =>
-          entry.type === 'message' && entry.message.role === 'user',
-      );
-    await associate(userEntries.map((entry) => messageText(entry.message.content)).join('\n'), ctx);
+      .filter((entry): entry is SessionMessageEntry => entry.type === 'message');
+    await Promise.all([
+      associate(
+        messageEntries
+          .filter((entry) => entry.message.role === 'user')
+          .map((entry) => messageText(entry.message.content))
+          .join('\n'),
+        ctx,
+      ),
+      associatePaths(
+        successfulModificationPaths(
+          messageEntries.map((entry) => entry.message),
+          ctx.cwd,
+        ),
+        ctx,
+      ),
+    ]);
   });
 
   pi.on('input', async (event, ctx) => {
     await associate(event.text, ctx);
     return { action: 'continue' };
+  });
+
+  pi.on('tool_result', async (event, ctx) => {
+    if (!isModificationToolName(event.toolName) || event.isError) return;
+    const input = event.input as { path?: unknown };
+    if (typeof input.path !== 'string' || !input.path.toLowerCase().endsWith('.md')) return;
+    await associatePaths([resolve(ctx.cwd, input.path)], ctx);
   });
 
   pi.on('agent_start', async (_event, ctx) => updateStatus('running', ctx));

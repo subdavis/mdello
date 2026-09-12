@@ -5,6 +5,7 @@ import BoardSwitcher from './components/BoardSwitcher.vue';
 import CompanionStatus from './components/CompanionStatus.vue';
 import Toast from './components/Toast.vue';
 import { useBoard } from './composables/useBoard';
+import { backfillBoard } from './composables/useCompanion';
 import { isMarkdownFile, useMarkdownImport } from './composables/useMarkdownImport';
 import { showToast } from './composables/useToast';
 
@@ -44,6 +45,17 @@ async function onFocus(): Promise<void> {
   if (board.locked.value) return board.retry();
   if (board.watching.value) return;
   await board.reload();
+}
+
+async function refresh(): Promise<void> {
+  await board.reload();
+  if (!board.companionEnabled.value) return;
+
+  try {
+    await backfillBoard(board.boardUuid.value, board.rootPath.value);
+  } catch {
+    showToast('Companion backfill failed');
+  }
 }
 
 /** Card drags carry no files, so this never competes with the board's own drag handling. */
@@ -135,7 +147,7 @@ onBeforeUnmount(() => {
     <button
       v-if="board.access.value.state === 'ready' && !board.locked.value"
       type="button"
-      @click="board.reload()"
+      @click="refresh"
     >
       Refresh
     </button>

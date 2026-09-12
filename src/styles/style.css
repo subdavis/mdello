@@ -360,25 +360,30 @@ main {
   background: linear-gradient(to right, #e2b203 50%, transparent 50%);
 }
 
-.card-status-indicator.is-ready_for_review::before,
-.card-status-indicator.is-closed::before {
+.card-status-indicator.is-ready_for_review::before {
   position: absolute;
   top: -5px;
-  font-size: 15px;
+  content: "✓";
+  color: #1f845a;
+  font-size: 20px;
   font-weight: 700;
   line-height: 1;
 }
 
-.card-status-indicator.is-ready_for_review::before {
-  content: "✓";
-  font-size: 20px;
-  color: #1f845a;
+.card-status-indicator.is-closed {
+  border-radius: 50%;
+  background: var(--muted);
 }
 
 .card-status-indicator.is-closed::before {
-  content: "×";
-  font-size: 20px;
-  color: var(--muted);
+  position: absolute;
+  top: 6px;
+  left: 3px;
+  width: 8px;
+  height: 2px;
+  border-radius: 1px;
+  background: #fff;
+  content: "";
 }
 
 .card-meta {

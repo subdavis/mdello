@@ -1,21 +1,8 @@
 import { computed, onScopeDispose, type Ref, reactive, readonly, ref, watch } from 'vue';
+import { type Association, type AssociationStatus, associationKey } from '../associations.ts';
 import type { Card } from '../fs/board';
 
-export type AssociationStatus =
-  | 'idle'
-  | 'running'
-  | 'waiting_for_input'
-  | 'ready_for_review'
-  | 'closed';
-
-export interface Association {
-  cardPath: string;
-  harness: string;
-  sessionId: string;
-  sessionFile?: string;
-  status: AssociationStatus;
-  updatedAt: string;
-}
+export type { Association, AssociationStatus };
 
 const STATUS_PRIORITY: Record<AssociationStatus, number> = {
   closed: 0,
@@ -32,7 +19,7 @@ export function aggregateStatus(entries: Association[]): AssociationStatus | und
   }, undefined);
 }
 
-const endpoint = (import.meta.env.VITE_MDELLO_COMPANION_URL ?? 'http://127.0.0.1:31337').replace(
+const endpoint = (import.meta.env?.VITE_MDELLO_COMPANION_URL ?? 'http://127.0.0.1:31337').replace(
   /\/$/,
   '',
 );
@@ -40,14 +27,43 @@ export type CompanionConnectionStatus = 'disabled' | 'connecting' | 'connected' 
 
 const associations = reactive(new Map<string, Association>());
 const connectionStatus = ref<CompanionConnectionStatus>('disabled');
-let eventSource: EventSource | undefined;
+const RECONNECT_DELAY_MS = 1_000;
 
-function key(association: Pick<Association, 'cardPath' | 'harness' | 'sessionId'>): string {
-  return `${association.cardPath}\0${association.harness}\0${association.sessionId}`;
-}
+let eventSource: EventSource | undefined;
+let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 
 function accept(association: Association): void {
-  associations.set(key(association), association);
+  associations.set(associationKey(association), association);
+}
+
+export async function fetchCardAssociations(
+  boardUuid: string,
+  cardUuid: string,
+): Promise<Association[]> {
+  const query = new URLSearchParams({ boardUuid, cardUuid });
+  const response = await fetch(`${endpoint}/associations?${query}`);
+  if (!response.ok) throw new Error(`Loading companion associations failed: ${response.status}`);
+  return (await response.json()) as Association[];
+}
+
+export async function expungeCardAssociations(boardUuid: string, cardUuid: string): Promise<void> {
+  const query = new URLSearchParams({ boardUuid, cardUuid });
+  const response = await fetch(`${endpoint}/associations?${query}`, { method: 'DELETE' });
+  if (!response.ok) throw new Error(`Expunging companion associations failed: ${response.status}`);
+  for (const [key, association] of associations) {
+    if (association.boardUuid === boardUuid && association.cardUuid === cardUuid) {
+      associations.delete(key);
+    }
+  }
+}
+
+export async function backfillBoard(boardUuid: string, boardPath: string): Promise<void> {
+  const response = await fetch(`${endpoint}/backfill`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ boardUuid, boardPath }),
+  });
+  if (!response.ok) throw new Error(`Companion backfill failed: ${response.status}`);
 }
 
 export async function acknowledgeReadyForReview(entries: Association[]): Promise<void> {
@@ -64,7 +80,13 @@ export async function acknowledgeReadyForReview(entries: Association[]): Promise
   );
 }
 
+function clearReconnectTimer(): void {
+  if (reconnectTimer !== undefined) clearTimeout(reconnectTimer);
+  reconnectTimer = undefined;
+}
+
 function disconnect(): void {
+  clearReconnectTimer();
   const source = eventSource;
   eventSource = undefined;
   source?.close();
@@ -72,21 +94,40 @@ function disconnect(): void {
   connectionStatus.value = 'disabled';
 }
 
-function connect(): void {
-  if (eventSource) return;
+function scheduleReconnect(boardUuid: string, boardPath: string): void {
+  clearReconnectTimer();
+  connectionStatus.value = 'disconnected';
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = undefined;
+    connect(boardUuid, boardPath);
+  }, RECONNECT_DELAY_MS);
+}
+
+function connect(boardUuid: string, boardPath: string): void {
+  if (eventSource || !boardUuid || !boardPath) return;
   if (typeof EventSource === 'undefined') {
     connectionStatus.value = 'disconnected';
     return;
   }
 
   connectionStatus.value = 'connecting';
-  const source = new EventSource(`${endpoint}/events`);
+  const query = new URLSearchParams({ boardUuid, boardPath });
+  let source: EventSource;
+  try {
+    source = new EventSource(`${endpoint}/events?${query}`);
+  } catch {
+    scheduleReconnect(boardUuid, boardPath);
+    return;
+  }
   eventSource = source;
   source.addEventListener('open', () => {
     if (eventSource === source) connectionStatus.value = 'connected';
   });
   source.addEventListener('error', () => {
-    if (eventSource === source) connectionStatus.value = 'disconnected';
+    if (eventSource !== source) return;
+    eventSource = undefined;
+    source.close();
+    scheduleReconnect(boardUuid, boardPath);
   });
   source.addEventListener('snapshot', (event) => {
     if (eventSource !== source) return;
@@ -100,8 +141,17 @@ function connect(): void {
 
 export function useCompanionConnectionStatus(
   enabled: Readonly<Ref<boolean>>,
+  boardUuid: Readonly<Ref<string>>,
+  boardPath: Readonly<Ref<string>>,
 ): Readonly<Ref<CompanionConnectionStatus>> {
-  watch(enabled, (next) => (next ? connect() : disconnect()), { immediate: true });
+  watch(
+    [enabled, boardUuid, boardPath],
+    ([nextEnabled, nextUuid, nextPath]) => {
+      disconnect();
+      if (nextEnabled) connect(nextUuid, nextPath);
+    },
+    { immediate: true },
+  );
   onScopeDispose(disconnect);
   return readonly(connectionStatus);
 }
@@ -114,7 +164,10 @@ export function useCompanion(rootPath: Ref<string>, card: Card) {
 
   return computed(() =>
     [...associations.values()]
-      .filter((association) => association.cardPath === cardPath.value)
+      .filter(
+        (association) =>
+          association.cardUuid === card.uuid || association.cardPath === cardPath.value,
+      )
       .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)),
   );
 }

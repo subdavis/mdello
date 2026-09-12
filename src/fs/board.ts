@@ -1,6 +1,6 @@
 import { findReferences, type Reference } from '../references';
 import { type CardAttachment, readAttachments } from './attachments';
-import { CONFIG_FILE, DEFAULT_CONFIG, writeConfig } from './config';
+import { CONFIG_FILE, createBoardConfig, writeConfig } from './config';
 import {
   ensureCardUuid,
   type Frontmatter,
@@ -262,14 +262,16 @@ const STARTER_CARDS: Array<{
 
 /** Scaffolds config, archive, and starter cards into an empty folder. */
 export async function initBoard(root: FileSystemDirectoryHandle): Promise<void> {
-  await writeConfig(root, {
-    ...DEFAULT_CONFIG,
-    columns: STARTER_COLUMNS,
-    labels: [
-      { name: SETUP_TAG, color: SETUP_COLOR },
-      { name: TUTORIAL_TAG, color: TUTORIAL_COLOR },
-    ],
-  });
+  await writeConfig(
+    root,
+    createBoardConfig({
+      columns: STARTER_COLUMNS,
+      labels: [
+        { name: SETUP_TAG, color: SETUP_COLOR },
+        { name: TUTORIAL_TAG, color: TUTORIAL_COLOR },
+      ],
+    }),
+  );
   await root.getDirectoryHandle(ARCHIVE_DIR, { create: true });
 
   const orders: Record<string, number> = {};
@@ -339,9 +341,4 @@ export async function unarchiveCard(
   const [archive, month] = archived.dir.split('/');
   const source = await (await root.getDirectoryHandle(archive)).getDirectoryHandle(month);
   return moveFile(source, archived.name, root);
-}
-
-/** Archives loaded cards in a column. Files unrelated to cards remain untouched. */
-export async function archiveColumn(root: FileSystemDirectoryHandle, cards: Card[]): Promise<void> {
-  for (const card of cards) await archiveCard(root, card);
 }

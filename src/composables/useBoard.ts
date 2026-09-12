@@ -1,4 +1,5 @@
 import { computed, markRaw, ref, shallowRef, watch } from 'vue';
+import { archiveWithSessionAssociations } from '../archiveAssociations';
 import {
   ATTACHMENTS_DIR,
   type CardAttachment,
@@ -10,7 +11,6 @@ import { readBackground, writeBackground } from '../fs/background';
 import {
   ARCHIVE_DIR,
   archiveCard,
-  archiveColumn,
   type Card,
   type Column,
   createCard,
@@ -26,6 +26,7 @@ import {
   DEFAULT_CONFIG,
   editorName,
   editorUrl,
+  ensureBoardUuid,
   readConfig,
   writeConfig,
 } from '../fs/config';
@@ -45,6 +46,7 @@ import { changePaths, watchBoard } from '../fs/watch';
 import { parseMarkdownImport } from '../importMarkdown';
 import { promptForColumnMigration } from '../migrations/folderColumns';
 import { findReferences } from '../references';
+import { expungeCardAssociations, fetchCardAssociations } from './useCompanion';
 import { labels, takeLegacyLabels } from './useLabels';
 import { showToast } from './useToast';
 
@@ -80,6 +82,7 @@ async function loadConfig(): Promise<void> {
   if (!root.value) return;
 
   const loaded = await readConfig(requireRoot());
+  const identityCreated = ensureBoardUuid(loaded);
   const legacy = loaded.labels.length === 0 ? takeLegacyLabels() : [];
   loaded.labels = legacy.length ? legacy : loaded.labels;
 
@@ -92,7 +95,7 @@ async function loadConfig(): Promise<void> {
   const id = activeId.value;
   if (id && (await noteBoardPath(id, loaded.path))) await refreshBoards();
 
-  if (legacy.length) await saveConfig();
+  if (legacy.length || identityCreated) await saveConfig();
 }
 
 async function refreshBoards(): Promise<void> {
@@ -345,6 +348,21 @@ function queueSave(card: Card): void {
   );
 }
 
+/** Archives one card, first folding any live companion sessions into its frontmatter. */
+async function archiveOne(card: Card): Promise<{ dir: string; name: string }> {
+  const loaded = requireConfig();
+  if (!loaded.companion) return archiveCard(requireRoot(), card);
+
+  const current = await fetchCardAssociations(loaded.uuid, card.uuid);
+  return archiveWithSessionAssociations(card.data, current, {
+    persist: async () => {
+      card.modified = await writeCard(requireRoot(), card);
+    },
+    expunge: () => expungeCardAssociations(loaded.uuid, card.uuid),
+    move: () => archiveCard(requireRoot(), card),
+  });
+}
+
 /** Renaming a label rewrites loaded cards only; archived files keep the old tag. */
 function renameTag(from: string, to: string): void {
   for (const column of columns.value) {
@@ -366,6 +384,7 @@ export function useBoard() {
     columns,
     editorName: computed(() => editorName(config.value ?? DEFAULT_CONFIG)),
     rootPath: computed(() => config.value?.path ?? ''),
+    boardUuid: computed(() => config.value?.uuid ?? ''),
     configReady: computed(() => config.value !== null),
     companionEnabled: computed(() => config.value?.companion ?? false),
     background,
@@ -561,7 +580,7 @@ export function useBoard() {
       await flushPending();
       const moved = column.cards.length;
       const done = await guard(async () => {
-        await archiveColumn(requireRoot(), column.cards);
+        for (const card of column.cards) await archiveOne(card);
         columns.value = columns.value.filter((entry) => entry !== column);
         requireConfig().columns = columns.value.map((entry) => entry.name);
         await saveConfig();
@@ -642,7 +661,7 @@ export function useBoard() {
       await flushCard(card);
       const from = columns.value.find((column) => column.name === card.column);
       const index = from ? from.cards.indexOf(card) : 0;
-      const archived = await guard(async () => archiveCard(requireRoot(), card));
+      const archived = await guard(async () => archiveOne(card));
       if (archived === undefined) return;
       if (from) from.cards = from.cards.filter((entry) => entry.id !== card.id);
 

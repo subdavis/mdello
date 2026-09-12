@@ -95,11 +95,12 @@ yarn companion
 Backfill associations from existing Pi session files, then exit without starting the server:
 
 ```bash
-yarn companion backfill
+yarn companion backfill /absolute/path/to/board
 ```
 
-Backfill is idempotent: existing live associations keep their status, and only missing historical
-associations are appended as `closed`.
+Backfill replaces associations for that board from the last 30 days of Pi sessions. Associations
+for other boards remain untouched. When companion is enabled, Mdello's Refresh button performs the
+same active-board backfill after reloading board files.
 
 Clear persisted companion session data before restarting the sidecar:
 
@@ -138,13 +139,13 @@ the choice is stored as `companion: true` or `companion: false` in `mdello.yml`.
 frontend connects to `http://127.0.0.1:31337` and displays each associated session in card modal
 metadata. Status follows Pi lifecycle: `idle`, `running`, `waiting_for_input`,
 `ready_for_review`, or `closed`. Opening a ready card acknowledges it back to `idle`. Set
-`MDELLO_COMPANION_PORT`, `MDELLO_COMPANION_DATA`,
-`MDELLO_COMPANION_URL`, or `MDELLO_BOARD_PATH` for extension/sidecar overrides. Set
-`VITE_MDELLO_COMPANION_URL` when frontend endpoint differs.
+`MDELLO_COMPANION_PORT`, `MDELLO_COMPANION_DATA`, or `MDELLO_COMPANION_URL` for
+extension/sidecar overrides. Set `VITE_MDELLO_COMPANION_URL` when frontend endpoint differs.
 
-Associations include a `harness` identifier (`pi` for the Pi extension) and use absolute card paths.
-Moving a card between columns keeps its identity because the file remains in the board root;
-archiving still changes its path.
+Pi discovers associations from absolute Markdown paths in user input and from successful `edit`
+or `write` tool calls, including relative paths resolved against the session working directory. Associations
+include a `harness` identifier (`pi` for the Pi extension) and are keyed by stable board and card
+UUIDs. Moving or renaming a card therefore keeps its identity.
 
 ## Local development
 

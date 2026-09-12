@@ -1,0 +1,21 @@
+# Demo board configuration
+columns:
+  - Backlog
+  - Ready
+  - Cleaning
+  - Shiny
+path: /Users/brandon.davis/github.com/mdello/demo-board
+editor: vscode://file{path}
+labels:
+  - name: tech-debt
+    color: '#8b5cf6'
+  - name: cleanup
+    color: '#0ea5e9'
+  - name: tests
+    color: '#f59e0b'
+  - name: docs
+    color: '#22c55e'
+  - name: quick-win
+    color: '#ec4899'
+  - name: blocked
+    color: '#ef4444'
