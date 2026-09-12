@@ -1,0 +1,19 @@
+{
+  "name": "@mdello/claude-extension",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "rolldown index.ts --file dist/index.js --format esm --platform node",
+    "test": "node --experimental-strip-types --test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mdello/common": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "rolldown": "^1.2.4",
+    "typescript": "^5"
+  }
+}

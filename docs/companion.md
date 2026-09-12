@@ -48,6 +48,8 @@ mdello-companion backfill /absolute/board  Rebuild one board, then exit
 mdello-companion status                    List tracked boards and event counts
 mdello-companion purge                     Clear association history
 mdello-companion reset                     Alias for purge
+mdello-companion install [macos|pi|claude] Install integrations, or one of them
+mdello-companion uninstall [macos|pi|claude]  Remove integrations, or one of them
 ```
 
 Configuration: `MDELLO_COMPANION_PORT` (default `31337`), `MDELLO_COMPANION_DATA` (default `~/.mdello/companion.jsonl`), and `MDELLO_COMPANION_CONFIG` (default `~/.mdello/companion.json`). Set `DEBUG=1` for structured stderr logs.
@@ -57,5 +59,5 @@ Configuration: `MDELLO_COMPANION_PORT` (default `31337`), `MDELLO_COMPANION_DATA
 - **Persistence:** updates append to JSONL; loading folds events by association identity. Card deletion expunges history instead of appending a tombstone.
 - **Board registration:** subscribing or backfilling records stable board UUID + current absolute path. Registration rejects a UUID that does not match the board's `mdello.yml`.
 - **Reconciliation:** subscription refreshes moved paths from card UUIDs and removes associations for cards no longer active.
-- **Backfill:** scans Pi JSONL sessions modified within 30 days. It associates absolute card paths found in user messages and successful Markdown `edit` or `write` calls. It replaces only the requested board, preserves other boards, retains a matching live non-`closed` status, marks recovered sessions `closed`, and removes stale matches.
+- **Backfill:** scans Pi JSONL sessions modified within 30 days; it does not read Claude Code transcripts, whose live associations come from the hook extension only. It associates absolute card paths found in user messages and successful Markdown `edit` or `write` calls. It replaces only the requested board, preserves other boards, retains a matching live non-`closed` status, marks recovered sessions `closed`, and removes stale matches.
 - **Subscription:** each client receives only its board. Initial/reconciliation/backfill/delete state uses `snapshot`; live updates use `association`. Browser reconnects after one second and replaces local state on snapshots.

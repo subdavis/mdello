@@ -1,0 +1,20 @@
+{
+  "name": "@mdello/common",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./associations": "./src/associations.ts",
+    "./frontmatter": "./src/frontmatter.ts",
+    "./paths": "./src/paths.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "js-yaml": "^5.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "^5"
+  }
+}

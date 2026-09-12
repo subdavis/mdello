@@ -57,7 +57,7 @@
       }
     },
     {
-      "includes": ["src/assets/icons/*.svg"],
+      "includes": ["packages/client/src/assets/icons/*.svg"],
       "linter": {
         "enabled": false
       }

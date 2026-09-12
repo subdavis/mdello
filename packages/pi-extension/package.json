@@ -1,0 +1,27 @@
+{
+  "name": "@mdello/pi-extension",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "pi": {
+    "extensions": [
+      "./dist/index.js"
+    ]
+  },
+  "scripts": {
+    "build": "rolldown index.ts --file dist/index.js --format esm --platform node --external @earendil-works/pi-coding-agent",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mdello/common": "workspace:*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.85.1",
+    "@types/node": "^26.2.0",
+    "rolldown": "^1.2.4",
+    "typescript": "^5"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}

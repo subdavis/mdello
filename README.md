@@ -1,5 +1,5 @@
 <p align="center">
-<img src="./public/Mdello.png" width="260px">
+<img src="./packages/client/public/Mdello.png" width="260px">
 </p>
 
 Trello-style board that reads and writes plain markdown files on your local disk.
@@ -16,11 +16,11 @@ Trello-style board that reads and writes plain markdown files on your local disk
 
 | Your files                              | Your board                                 |
 | --------------------------------------- | ------------------------------------------ |
-| ![Filesystem](./public/filesystem2.png) | ![PWA Screenshot](./public/screenshot.png) |
+| ![Filesystem](./packages/client/public/filesystem2.png) | ![PWA Screenshot](./packages/client/public/screenshot.png) |
 
 Mdello can be installed as a PWA.
 
-![Install PWA](./public/install-pwa.png)
+![Install PWA](./packages/client/public/install-pwa.png)
 
 Recommend creating the folder at `~/Documents/mdello`
 
@@ -83,69 +83,72 @@ See `mdello.yml` in your mdello board folder to configure:
 
 Drag any image onto the window to set the background image.
 
-## Agent companion
+### Install companion integrations
 
-Companion proof of concept associates cards with Pi sessions when a user prompt contains an
-absolute card path. Start local HTTP/SSE sidecar:
-
-```bash
-yarn companion
-```
-
-Backfill associations from existing Pi session files, then exit without starting the server:
+From a cloned repository, build the agent extension bundles, then install every supported
+integration for the current platform:
 
 ```bash
-yarn companion backfill /absolute/path/to/board
+yarn build:pi-extension
+yarn build:claude-extension
+npx mdello-companion install
+npx mdello-companion install macos
+npx mdello-companion install pi
+npx mdello-companion install claude
 ```
 
-Backfill replaces associations for that board from the last 30 days of Pi sessions. Associations
-for other boards remain untouched. When companion is enabled, Mdello's Refresh button performs the
-same active-board backfill after reloading board files.
+Both agent installs link a bundle out of the repository, so rebuild after changing extension or
+`@mdello/common` sources:
 
-Clear persisted companion session data before restarting the sidecar:
+| Integration | Installs |
+| --- | --- |
+| `macos` | `~/Library/LaunchAgents/com.mdello.companion.plist`, started with `launchctl` |
+| `pi` | `packages/pi-extension/dist/index.js` symlinked into `~/.pi/agent/extensions` |
+| `claude` | `packages/claude-extension/dist/index.js` symlinked into `~/.claude/hooks`, plus `hooks` entries in `~/.claude/settings.json` |
+
+Every install command is safe to rerun and updates its existing installation. The Claude install
+rewrites only its own `hooks` entries and leaves the rest of `settings.json` untouched; it refuses
+to run at all when that file is not valid JSON.
+
+Remove every integration, or one integration, with:
 
 ```bash
-yarn companion reset
+npx mdello-companion uninstall
 ```
 
-Stop any running companion sidecar first; its in-memory associations remain until it restarts.
-
-### Run continuously with launchd (macOS)
-
-Install a per-user `LaunchAgent` so the companion starts at login and restarts after it exits.
-
-```bash
-./companion/install-launchd.sh
-```
-
-To stop and remove agent:
-
-```bash
-launchctl bootout "gui/$(id -u)" ~/Library/LaunchAgents/com.mdello.companion.plist
-rm ~/Library/LaunchAgents/com.mdello.companion.plist
-```
+After installing or removing the Pi integration, run `/reload` in Pi. Claude Code picks up hook
+changes in its next session.
 
 ### Agent plugins
-
-Install Pi extension globally as a directory so its sibling modules resolve, then run `/reload`
-in Pi:
-
-```bash
-ln -s "$(pwd)/companion" ~/.pi/agent/extensions/mdello-companion
-```
 
 Companion integration is disabled by default. Click the companion badge in the toolbar to toggle it;
 the choice is stored as `companion: true` or `companion: false` in `mdello.yml`. When enabled, the
 frontend connects to `http://127.0.0.1:31337` and displays each associated session in card modal
-metadata. Status follows Pi lifecycle: `idle`, `running`, `waiting_for_input`,
+metadata. Status follows the agent lifecycle: `idle`, `running`, `waiting_for_input`,
 `ready_for_review`, or `closed`. Opening a ready card acknowledges it back to `idle`. Set
 `MDELLO_COMPANION_PORT`, `MDELLO_COMPANION_DATA`, or `MDELLO_COMPANION_URL` for
 extension/sidecar overrides. Set `VITE_MDELLO_COMPANION_URL` when frontend endpoint differs.
 
-Pi discovers associations from absolute Markdown paths in user input and from successful `edit`
-or `write` tool calls, including relative paths resolved against the session working directory. Associations
-include a `harness` identifier (`pi` for the Pi extension) and are keyed by stable board and card
-UUIDs. Moving or renaming a card therefore keeps its identity.
+Pi and Claude Code both discover associations from absolute Markdown paths in user input and from
+successful Markdown edit or write tool calls, including relative paths resolved against the session
+working directory. On session start each one also rescans its own session history, so a card
+associates even when the companion was down at the time. Associations include a `harness`
+identifier (`pi` or `claude`) and are keyed by stable board and card UUIDs, so moving or renaming a
+card keeps its identity. The session badge in a card modal copies a resume command for that
+harness (`pi --session …` or `claude --resume …`).
+
+See [`docs/agent-extension.md`](docs/agent-extension.md) for the lifecycle event mapping and the
+contract a new harness must satisfy.
+
+## Repository layout
+
+This repository is a Yarn workspace monorepo:
+
+- `packages/client` — Vue PWA deployed to GitHub Pages
+- `packages/companion` — local sidecar and CLI; private until ready for npm
+- `packages/pi-extension` — Pi lifecycle integration
+- `packages/claude-extension` — Claude Code lifecycle integration, installed as hooks
+- `packages/common` — shared association, frontmatter, and path helpers
 
 ## Local development
 
@@ -154,3 +157,6 @@ mise install
 yarn install
 yarn dev
 ```
+
+Root scripts delegate to workspaces. Use `yarn companion` to start sidecar and `yarn test`,
+`yarn typecheck`, or `yarn build` to validate repository.

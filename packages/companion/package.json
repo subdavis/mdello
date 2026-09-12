@@ -1,0 +1,19 @@
+{
+  "name": "mdello-companion",
+  "private": true,
+  "type": "module",
+  "bin": "./src/cli.ts",
+  "scripts": {
+    "start": "node --experimental-strip-types src/cli.ts",
+    "test": "node --experimental-strip-types --test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mdello/common": "workspace:*",
+    "js-yaml": "^5.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "^5"
+  }
+}
