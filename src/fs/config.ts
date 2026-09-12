@@ -1,5 +1,5 @@
 import { dump, load } from 'js-yaml';
-import { openWritable } from './writable';
+import { openWritable } from './writable.ts';
 
 export const CONFIG_FILE = 'mdello.yml';
 
@@ -9,23 +9,32 @@ export interface Label {
 }
 
 export interface BoardConfig {
+  /** Ordered column names. Cards select one with their `column` frontmatter key. */
+  columns: string[];
   /** Absolute path of the board folder on disk; only the user can supply it. */
   path: string;
   /** URL template used to open a card in an external editor. */
   editor: string;
+  /** Whether the web app should connect to the local companion sidecar. */
+  companion: boolean;
   labels: Label[];
 }
 
 const DEFAULT_EDITOR = 'vscode://file{path}';
 
 export const DEFAULT_CONFIG: BoardConfig = {
+  columns: [],
   path: '',
   editor: DEFAULT_EDITOR,
+  companion: false,
   labels: [],
 };
 
 /** Comments are re-emitted on every write because js-yaml's dump() cannot keep them. */
 const HEADER = `# mdello board config — written by the app, safe to hand-edit.
+#
+# columns Ordered column names. Cards live in this folder and select a column with
+#         their frontmatter column key.
 #
 # path    Absolute path of THIS folder. The browser's File System Access API never
 #         reveals real paths, so mdello cannot fill this in for you. Once it is set,
@@ -38,12 +47,26 @@ const HEADER = `# mdello board config — written by the app, safe to hand-edit.
 #           cursor://file{path}          Cursor
 #           obsidian://open?path={path}  Obsidian
 #
+# companion  Connect to the optional local companion sidecar. Disabled by default.
+#
 # Wallpaper: drop a file named background.<ext> in this folder. Any format the browser
 #            can render works; it is drawn centred and cropped to cover.
 #
 # labels  Tag colours. They live here so they travel with the board instead of
 #         being stuck in one browser's local storage.
 `;
+
+function readColumns(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return [
+    ...new Set(
+      value
+        .filter((entry): entry is string => typeof entry === 'string')
+        .map((entry) => entry.trim())
+        .filter(Boolean),
+    ),
+  ];
+}
 
 function readLabels(value: unknown): Label[] {
   if (!Array.isArray(value)) return [];
@@ -68,8 +91,10 @@ export async function readConfig(root: FileSystemDirectoryHandle): Promise<Board
 
   const data = (raw ?? {}) as Record<string, unknown>;
   return {
+    columns: readColumns(data.columns),
     path: typeof data.path === 'string' ? data.path.trim() : '',
     editor: typeof data.editor === 'string' && data.editor ? data.editor : DEFAULT_EDITOR,
+    companion: data.companion === true,
     labels: readLabels(data.labels),
   };
 }
@@ -85,16 +110,13 @@ export async function writeConfig(
 }
 
 /** Builds the editor URL for a card, or undefined while `path` is unset. */
-export function editorUrl(
-  config: BoardConfig,
-  card: { column: string; name: string },
-): string | undefined {
+export function editorUrl(config: BoardConfig, card: { name: string }): string | undefined {
   if (!config.path) return undefined;
 
   // Windows paths need forward slashes and a leading one to be valid in a URL.
   let root = config.path.replaceAll('\\', '/');
   while (root.endsWith('/')) root = root.slice(0, -1);
-  const absolute = `${root.startsWith('/') ? '' : '/'}${root}/${card.column}/${card.name}`;
+  const absolute = `${root.startsWith('/') ? '' : '/'}${root}/${card.name}`;
 
   return config.editor.replace('{path}', encodeURI(absolute));
 }

@@ -34,9 +34,6 @@
      Popovers stay below overlays: a popover always lives inside one. */
   --z-popover: 15;
   --z-overlay: 20;
-  /* A blocking layer outranks a dismissible one: it is waiting on the filesystem, and a
-     panel floating over it would offer actions against a board that is mid-move. */
-  --z-blocking: 25;
   --z-toast: 100;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   font-size: 13px;
@@ -346,8 +343,8 @@ main {
   position: absolute;
   top: 6px;
   right: 6px;
-  width: 10px;
-  height: 10px;
+  width: 14px;
+  height: 14px;
   box-sizing: border-box;
 }
 
@@ -614,8 +611,7 @@ main {
   color: #ae2a19;
 }
 
-/* overlays: the scrim and panel shared by the card modal, board switcher and busy
-   indicator. See components/Overlay.vue. */
+/* overlays: scrim and panel shared by card modal and board switcher. */
 
 .scrim {
   position: fixed;
@@ -644,12 +640,6 @@ main {
 .scrim-center {
   place-items: center;
   padding: 24px 12px;
-}
-
-/* Nothing to click, and the pointer should say so. */
-.scrim.is-blocking {
-  z-index: var(--z-blocking);
-  cursor: progress;
 }
 
 .panel {
@@ -1219,35 +1209,6 @@ main {
 
 .ref:hover {
   filter: brightness(0.92);
-}
-
-/* busy panel: shown while a column folder operation moves files */
-
-.busy {
-  flex-direction: row;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 16px;
-}
-
-.busy p {
-  margin: 0;
-}
-
-.busy-spinner {
-  flex: none;
-  width: 14px;
-  height: 14px;
-  border: 2px solid var(--line);
-  border-top-color: var(--muted);
-  border-radius: 50%;
-  animation: busy-spin 0.7s linear infinite;
-}
-
-@keyframes busy-spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 
 /* board switcher: a quick-open panel dropped from the top of the window, plus the

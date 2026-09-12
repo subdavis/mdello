@@ -1,9 +1,7 @@
 <script setup lang="ts">
 /**
- * The scrim every full-window layer sits on: the card modal, the board switcher and the
- * busy indicator. Teleported to <body> so a layer is never trapped by an ancestor's
- * `overflow` or stacking context — the card modal used to render inside the horizontally
- * scrolling `.board`, below the column menus.
+ * Shared scrim for full-window layers. Teleporting keeps layers out of ancestor overflow and
+ * stacking contexts.
  */
 import { ref } from 'vue';
 import { useLayer } from '../composables/useLayer';
@@ -12,14 +10,12 @@ const props = withDefaults(
   defineProps<{
     /** Where the panel sits: `drop` hugs the top edge, `top` leaves room to breathe. */
     place?: 'drop' | 'top' | 'center';
-    /** A layer that reports progress rather than asks a question cannot be dismissed. */
-    blocking?: boolean;
     /** Sizing and padding for this particular panel; the chrome comes from `.panel`. */
     panelClass?: string;
     panelStyle?: Record<string, string>;
     label?: string;
   }>(),
-  { place: 'top', blocking: false },
+  { place: 'top' },
 );
 
 const emit = defineEmits<{ close: []; escape: [] }>();
@@ -36,17 +32,17 @@ function onMouseup(event: MouseEvent): void {
   const onScrim = event.target === event.currentTarget;
   const dismiss = pressed.value && onScrim;
   pressed.value = false;
-  if (dismiss && !props.blocking) emit('close');
+  if (dismiss) emit('close');
 }
 
-if (!props.blocking) useLayer(() => emit('escape'));
+useLayer(() => emit('escape'));
 </script>
 
 <template>
   <Teleport to="body">
     <div
       class="scrim"
-      :class="[`scrim-${place}`, { 'is-blocking': blocking }]"
+      :class="`scrim-${place}`"
       @mousedown="onMousedown"
       @mouseup="onMouseup"
     >
@@ -54,9 +50,8 @@ if (!props.blocking) useLayer(() => emit('escape'));
         class="panel"
         :class="panelClass"
         :style="panelStyle"
-        :role="blocking ? 'status' : 'dialog'"
-        :aria-modal="blocking ? undefined : 'true'"
-        :aria-live="blocking ? 'polite' : undefined"
+        role="dialog"
+        aria-modal="true"
         :aria-label="label"
       >
         <slot />

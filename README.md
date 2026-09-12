@@ -5,7 +5,7 @@
 Trello-style board that reads and writes plain markdown files on your local disk.
 
 - 100% local, no server, no database.
-- folders are columns, `.md` files are cards, frontmatter is metadata.
+- `.md` files are cards; ordered columns live in `mdello.yml` and card frontmatter.
 - Uses the Filesystem API, requires a [Chromium-based browser](https://caniuse.com/filesystem)
 - Designed to share your personal TODOs with AI agents - No MCP, tools or auth needed.
 - 🍻 Pronounced like the beer
@@ -48,16 +48,20 @@ npx skills add https://github.com/subdavis/mdello/blob/main/skills/mdello-board
 
 ```
 content/
-  mdello.yml                # Local config file
-  1-todo/card.md            # numeric prefix sets column order
-  2-doing/card.md
-  3-done/card.md
+  mdello.yml                # Config, including ordered columns
+  fix-a-bug.md              # column selected by frontmatter
+  ship-release.md
   archive/2026-08/card.md   # never scanned, never shown
 ```
 
+Opening a legacy board with folder-based columns prompts once to migrate it. Mdello moves each card
+to the board root, adds `column` and `uuid` frontmatter, and writes ordered columns to `mdello.yml`.
+
 ### Frontmatter
 
+- `uuid` is stable card identity; Mdello creates it for new cards and backfills missing values
 - `title` is editable
+- `column` selects a name from the ordered `columns` list in `mdello.yml`
 - `order` is managed by drag order
 - `tags`, `assignee` and `created` are read-only
 - modification time comes from the file itself.
@@ -71,8 +75,9 @@ above the description and open in a full-size viewer. Other file types open in t
 
 ### Configuration & Customization
 
-See `mdello.yml` in your mdello board folder to configure additional features
+See `mdello.yml` in your mdello board folder to configure:
 
+- Ordered column names
 - Open-in-editor setup
 - Tag customization
 
@@ -96,20 +101,25 @@ yarn companion backfill
 Backfill is idempotent: existing live associations keep their status, and only missing historical
 associations are appended as `closed`.
 
-Install Pi extension globally, then run `/reload` in Pi:
+Install Pi extension globally as a directory so its sibling modules resolve, then run `/reload`
+in Pi:
 
 ```bash
-ln -s "$(pwd)/companion/pi-extension.ts" ~/.pi/agent/extensions/mdello-companion.ts
+ln -s "$(pwd)/companion" ~/.pi/agent/extensions/mdello-companion
 ```
 
-Frontend connects to `http://127.0.0.1:31337` and displays each associated session in card modal
+Companion integration is disabled by default. Click the companion badge in the toolbar to toggle it;
+the choice is stored as `companion: true` or `companion: false` in `mdello.yml`. When enabled, the
+frontend connects to `http://127.0.0.1:31337` and displays each associated session in card modal
 metadata. Status follows Pi lifecycle: `idle`, `running`, `waiting_for_input`,
 `ready_for_review`, or `closed`. Opening a ready card acknowledges it back to `idle`. Set
 `MDELLO_COMPANION_PORT`, `MDELLO_COMPANION_DATA`,
 `MDELLO_COMPANION_URL`, or `MDELLO_BOARD_PATH` for extension/sidecar overrides. Set
 `VITE_MDELLO_COMPANION_URL` when frontend endpoint differs.
 
-Associations currently use absolute card paths, so moving a card creates a new identity.
+Associations include a `harness` identifier (`pi` for the Pi extension) and use absolute card paths.
+Moving a card between columns keeps its identity because the file remains in the board root;
+archiving still changes its path.
 
 ## Local development
 

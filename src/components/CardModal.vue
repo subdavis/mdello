@@ -33,13 +33,13 @@ const editor = ref<InstanceType<typeof MarkdownEditor> | null>(null);
 const modalWidth = ref(storedModalWidth());
 const modalStyle = computed(() => ({ width: `${modalWidth.value}px` }));
 const rendered = computed(() => renderMarkdown(props.card.body || '_No description_'));
-const fullPath = computed(() => `${board.boardName.value}/${props.card.column}/${props.card.name}`);
+const fullPath = computed(() => `${board.boardName.value}/${props.card.name}`);
 const clipboardPath = computed(() => {
   const root = board.rootPath.value;
   if (!root) return fullPath.value;
 
   const separator = root.includes('\\') && !root.includes('/') ? '\\' : '/';
-  return [root.replace(/[\\/]+$/, ''), props.card.column, props.card.name].join(separator);
+  return [root.replace(/[\\/]+$/, ''), props.card.name].join(separator);
 });
 /** Undefined until `path` is filled in inside the board's mdello.yml. */
 const editorLink = computed(() => board.cardUrl(props.card));
@@ -271,12 +271,12 @@ function onEscape(): void {
         <dd class="session-list">
           <span
             v-for="association in associations"
-            :key="association.sessionId"
+            :key="`${association.harness}:${association.sessionId}`"
             class="session-item"
             :class="`is-${association.status}`"
             :title="association.sessionFile"
           >
-            Session <code>{{ association.sessionId }}</code>
+            <code>{{ association.harness }}:{{ association.sessionId.split('-').at(-1) }}</code>
             <strong>{{ association.status.replaceAll('_', ' ') }}</strong>
           </span>
         </dd>

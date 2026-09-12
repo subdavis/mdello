@@ -14,13 +14,8 @@ import {
   type Card,
   type Column,
   createCard,
-  createColumn,
   initBoard,
-  moveCard,
-  persistColumnOrder,
   persistOrder,
-  readColumn,
-  renameColumn,
   scanBoard,
   unarchiveCard,
   writeCard,
@@ -48,6 +43,7 @@ import {
 import { acquireBoardLock, releaseBoardLock } from '../fs/lock';
 import { changePaths, watchBoard } from '../fs/watch';
 import { parseMarkdownImport } from '../importMarkdown';
+import { promptForColumnMigration } from '../migrations/folderColumns';
 import { findReferences } from '../references';
 import { labels, takeLegacyLabels } from './useLabels';
 import { showToast } from './useToast';
@@ -68,6 +64,7 @@ const pendingSaves = new Map<string, ReturnType<typeof setTimeout>>();
 const inFlightSaves = new Set<string>();
 
 const config = ref<BoardConfig>({ ...DEFAULT_CONFIG });
+const configLoaded = ref(false);
 /** Blob URL for `background.<ext>` in the board root, empty when the board has none. */
 const background = ref('');
 
@@ -91,6 +88,7 @@ async function loadConfig(): Promise<void> {
   config.value = loaded;
   labels.value = loaded.labels;
   applyingConfig = false;
+  configLoaded.value = true;
 
   // The switcher lists boards by path where it can: every board folder is called `content`.
   const id = activeId.value;
@@ -103,12 +101,16 @@ async function refreshBoards(): Promise<void> {
   boards.value = await listBoards();
 }
 
-async function saveConfig(): Promise<void> {
-  if (!root.value) return;
+async function saveConfig(): Promise<boolean> {
+  if (!root.value || !configLoaded.value) return false;
   config.value.labels = [...labels.value];
   lastConfigWrite = Date.now();
-  await guard(async () => writeConfig(requireRoot(), config.value));
+  const saved = await guard(async () => {
+    await writeConfig(requireRoot(), config.value);
+    return true;
+  });
   lastConfigWrite = Date.now();
+  return saved === true;
 }
 
 // flush: 'sync' is load-bearing, not a tuning choice. The default pre-flush runs the
@@ -134,55 +136,42 @@ let watchTimer: ReturnType<typeof setTimeout> | undefined;
 let lastConfigWrite = 0;
 let configChanged = false;
 let backgroundChanged = false;
-/** Columns touched since the last reload; null means "unknown, rescan the board". */
-let dirtyColumns: Set<string> | null = new Set();
+let cardsChanged = false;
 
-function markDirty(column: string | null): void {
-  if (dirtyColumns === null) return;
-  if (column === null) dirtyColumns = null;
-  else dirtyColumns.add(column);
-}
-
-function isIgnoredDirectory(name: string): boolean {
-  return name === ARCHIVE_DIR || name === ATTACHMENTS_DIR || name.startsWith('.');
-}
-
-/** Observer also reports our own writes, so debounce and skip while saves are pending. */
+/** Observer also reports our own writes, so debounce and scan the cheap flat card list once. */
 function onFileChange(records: FileSystemChangeRecord[]): void {
   for (const record of records) {
     for (const path of changePaths(record)) {
       const [top, ...rest] = path;
-
-      // A record with no path (errored/unknown) could be anything: reload everything.
       if (top === undefined) {
         configChanged = true;
-        markDirty(null);
+        backgroundChanged = true;
+        cardsChanged = true;
       } else if (top === CONFIG_FILE && rest.length === 0) configChanged = true;
-      // OS litter (.DS_Store and friends) is never a card; do not rescan for it.
-      else if (path.at(-1)?.startsWith('.')) continue;
       else if (rest.length === 0 && /^background\./i.test(top)) backgroundChanged = true;
-      else if (isIgnoredDirectory(top)) continue;
-      // A change on a top-level entry is a column appearing or disappearing.
-      else markDirty(rest.length === 0 ? null : top);
+      else if (rest.length === 0 && top.endsWith('.md') && !top.startsWith('.'))
+        cardsChanged = true;
+      else if (top === ARCHIVE_DIR || top === ATTACHMENTS_DIR || top.startsWith('.')) continue;
     }
   }
 
   clearTimeout(watchTimer);
   watchTimer = setTimeout(() => {
-    // Our own config write echoes back as a change; ignore that window.
-    if (configChanged && Date.now() - lastConfigWrite > ECHO_WINDOW) void loadConfig();
-    configChanged = false;
-
-    if (backgroundChanged) void loadBackground();
-    backgroundChanged = false;
-
-    // Keep the dirty set; our own writes land first. Column moves rename folders file by file,
-    // so re-scanning mid-flight would blank out columns that are about to reappear.
-    if (pendingSaves.size > 0 || inFlightSaves.size > 0 || busy.value) return;
-    const dirty = dirtyColumns;
-    dirtyColumns = new Set();
-    if (dirty === null) void refresh();
-    else if (dirty.size) void refreshColumns([...dirty]);
+    void (async () => {
+      const externalConfig = configChanged && Date.now() - lastConfigWrite > ECHO_WINDOW;
+      configChanged = false;
+      if (externalConfig) {
+        await loadConfig();
+        cardsChanged = true;
+      }
+      if (backgroundChanged) await loadBackground();
+      backgroundChanged = false;
+      if (pendingSaves.size > 0 || inFlightSaves.size > 0) return;
+      if (cardsChanged) {
+        cardsChanged = false;
+        await refresh();
+      }
+    })();
   }, WATCH_DELAY);
 }
 
@@ -222,6 +211,9 @@ async function openBoard(): Promise<void> {
     return;
   }
 
+  const migration = await guard(async () => promptForColumnMigration(requireRoot()));
+  if (migration === undefined) return;
+
   await loadConfig();
   await loadBackground();
   await refresh();
@@ -241,6 +233,7 @@ async function closeBoard(): Promise<void> {
   background.value = '';
   columns.value = [];
   config.value = { ...DEFAULT_CONFIG };
+  configLoaded.value = false;
 
   // The guard is what makes clearing labels safe: their watcher is flush:'sync', so it runs
   // inside this assignment and would otherwise write the empty list straight back into the
@@ -250,9 +243,9 @@ async function closeBoard(): Promise<void> {
   labels.value = [];
   applyingConfig = false;
 
-  dirtyColumns = new Set();
   configChanged = false;
   backgroundChanged = false;
+  cardsChanged = false;
   lastConfigWrite = 0;
   columnSnapshot = null;
   saveState.value = 'idle';
@@ -317,12 +310,11 @@ function mergeCards(current: Card[], fresh: Card[]): Card[] {
 
 /** Column objects are reused too: identity is what `placeCard` compares. */
 function mergeColumns(fresh: Column[]): Column[] {
-  const byDir = new Map(columns.value.map((column) => [column.dir, column]));
+  const byName = new Map(columns.value.map((column) => [column.name, column]));
 
   return fresh.map((next) => {
-    const existing = byDir.get(next.dir);
+    const existing = byName.get(next.name);
     if (!existing) return next;
-    existing.label = next.label;
     existing.cards = mergeCards(existing.cards, next.cards);
     return existing;
   });
@@ -332,33 +324,9 @@ export async function refresh(): Promise<void> {
   if (!root.value) return;
   loading.value = true;
   await guard(async () => {
-    columns.value = mergeColumns(await scanBoard(requireRoot()));
+    columns.value = mergeColumns(await scanBoard(requireRoot(), config.value.columns));
   });
   loading.value = false;
-}
-
-/** Re-reads only the columns the watcher flagged; falls back to a full scan on any surprise. */
-async function refreshColumns(dirs: string[]): Promise<void> {
-  if (!root.value) return;
-
-  const known = new Map(columns.value.map((column) => [column.dir, column]));
-  if (dirs.some((dir) => !known.has(dir))) return refresh();
-
-  try {
-    const handle = requireRoot();
-    const fresh = await Promise.all(dirs.map((dir) => readColumn(handle, dir)));
-
-    for (const next of fresh) {
-      const existing = known.get(next.dir);
-      if (!existing) return refresh();
-      existing.label = next.label;
-      existing.cards = mergeCards(existing.cards, next.cards);
-    }
-    error.value = null;
-  } catch {
-    // Column vanished mid-read, or something else moved: re-derive the whole board.
-    await refresh();
-  }
 }
 
 /** Debounced write. Card object is mutated first so the UI stays immediate. */
@@ -394,11 +362,12 @@ export function useBoard() {
     columns,
     editorName: computed(() => editorName(config.value)),
     rootPath: computed(() => config.value.path),
+    configLoaded,
+    companionEnabled: computed(() => config.value.companion),
     background,
-    cardUrl: (card: Pick<Card, 'column' | 'name'>) => editorUrl(config.value, card),
+    cardUrl: (card: Pick<Card, 'name'>) => editorUrl(config.value, card),
     loading,
     error,
-    busy,
     saveState,
     boardName: computed(() => ('handle' in access.value ? access.value.handle.name : '')),
 
@@ -459,6 +428,14 @@ export function useBoard() {
       });
       await loadBackground();
       return done === true;
+    },
+
+    async setCompanionEnabled(enabled: boolean): Promise<void> {
+      if (!root.value || locked.value || !configLoaded.value || config.value.companion === enabled)
+        return;
+      const previous = config.value.companion;
+      config.value.companion = enabled;
+      if (!(await saveConfig())) config.value.companion = previous;
     },
 
     /** Config + cards, for the manual button and the focus fallback. */
@@ -525,33 +502,47 @@ export function useBoard() {
     },
 
     async addColumn(label: string): Promise<void> {
+      const name = label.trim();
+      if (!name) return;
       await guard(async () => {
-        const column = await createColumn(requireRoot(), label, columns.value.length + 1);
-        columns.value = [...columns.value, column];
+        if (columns.value.some((column) => column.name === name)) {
+          throw new Error(`Column "${name}" already exists`);
+        }
+        columns.value = [...columns.value, { name, cards: [] }];
+        config.value.columns = columns.value.map((column) => column.name);
+        await saveConfig();
       });
     },
 
-    /** Folder rename moves every card file, so pending card writes go out first. */
+    /** Renaming changes config plus affected cards; filenames stay stable. */
     async renameColumn(column: Column, label: string): Promise<void> {
       const next = label.trim();
-      if (!next || next === column.label) return;
+      if (!next || next === column.name) return;
+      if (columns.value.some((entry) => entry !== column && entry.name === next)) {
+        error.value = `Column "${next}" already exists`;
+        return;
+      }
 
-      await withBusy(`Renaming "${column.label}" to "${next}"…`, async () => {
-        await flushPending();
-        await guard(async () => renameColumn(requireRoot(), column.dir, next));
+      await flushPending();
+      const previous = column.name;
+      const done = await guard(async () => {
+        column.name = next;
+        for (const card of column.cards) {
+          card.column = next;
+          card.modified = await writeCard(requireRoot(), card);
+        }
+        config.value.columns = columns.value.map((entry) => entry.name);
+        await saveConfig();
+        return true;
       });
+      if (!done) column.name = previous;
     },
 
-    /**
-     * Live preview while a column header is dragged: the board reorders under the cursor and
-     * nothing touches disk until the drop. Swapping in place keeps the held column under the
-     * pointer, so the next dragover is a no-op instead of a fight.
-     */
-    previewColumnOrder(dir: string, index: number): void {
-      const current = columns.value.findIndex((column) => column.dir === dir);
+    /** Live preview while a column header is dragged; config changes only on drop. */
+    previewColumnOrder(name: string, index: number): void {
+      const current = columns.value.findIndex((column) => column.name === name);
       if (current === -1 || current === index) return;
-
-      columnSnapshot ??= columns.value.map((column) => column.dir);
+      columnSnapshot ??= columns.value.map((column) => column.name);
 
       const next = [...columns.value];
       const [moved] = next.splice(current, 1);
@@ -559,52 +550,46 @@ export function useBoard() {
       columns.value = next;
     },
 
-    /** Cards go to `archive/YYYY-MM/` and the folder goes away. Files stay recoverable. */
+    /** Archives every card, then removes column from config. */
     async archiveColumn(column: Column): Promise<void> {
-      await withBusy(`Archiving "${column.label}"…`, async () => {
-        await flushPending();
-        const moved = await guard(async () => archiveColumn(requireRoot(), column.dir));
-        if (moved !== undefined) {
-          showToast(`Archived "${column.label}" and ${moved} card${moved === 1 ? '' : 's'}`);
-        }
+      await flushPending();
+      const moved = column.cards.length;
+      const done = await guard(async () => {
+        await archiveColumn(requireRoot(), column.cards);
+        columns.value = columns.value.filter((entry) => entry !== column);
+        config.value.columns = columns.value.map((entry) => entry.name);
+        await saveConfig();
+        return true;
       });
+      if (done) showToast(`Archived "${column.name}" and ${moved} card${moved === 1 ? '' : 's'}`);
+      else await refresh();
     },
 
-    /** Drop: renumber the folder prefixes to match what the user is already looking at. */
     async commitColumnOrder(): Promise<void> {
       const before = columnSnapshot;
       columnSnapshot = null;
       if (!before) return;
-
-      const dirs = columns.value.map((column) => column.dir);
-      if (dirs.every((dir, index) => dir === before[index])) return;
-
-      await withBusy('Reordering columns…', async () => {
-        await flushPending();
-        await guard(async () =>
-          persistColumnOrder(requireRoot(), dirs, (done, total) => {
-            busy.value = `Reordering columns… ${done} of ${total} folders`;
-          }),
-        );
-      });
+      const names = columns.value.map((column) => column.name);
+      if (names.every((name, index) => name === before[index])) return;
+      config.value.columns = names;
+      await saveConfig();
     },
 
-    /** Drag cancelled (escape, or dropped outside): put the preview back. */
+    /** Drag cancelled (escape, or dropped outside): put preview back. */
     cancelColumnOrder(): void {
       const before = columnSnapshot;
       columnSnapshot = null;
       if (!before) return;
-
-      const byDir = new Map(columns.value.map((column) => [column.dir, column]));
-      columns.value = before.flatMap((dir) => {
-        const column = byDir.get(dir);
+      const byName = new Map(columns.value.map((column) => [column.name, column]));
+      columns.value = before.flatMap((name) => {
+        const column = byName.get(name);
         return column ? [column] : [];
       });
     },
 
     async addCard(column: Column, title: string): Promise<Card | undefined> {
       return guard(async () => {
-        const card = await createCard(requireRoot(), column.dir, title, 1);
+        const card = await createCard(requireRoot(), column.name, title, 1);
         column.cards.unshift(card);
         await persistOrder(requireRoot(), column);
         return card;
@@ -615,60 +600,52 @@ export function useBoard() {
       return guard(async () => {
         const { title, body } = parseMarkdownImport(file.name, await file.text());
         const destination = Math.min(index, column.cards.length);
-        const card = await createCard(requireRoot(), column.dir, title, destination + 1, body);
+        const card = await createCard(requireRoot(), column.name, title, destination + 1, body);
         column.cards.splice(destination, 0, card);
         await persistOrder(requireRoot(), column);
         return card;
       });
     },
 
-    /** Drops a card at an explicit slot, then renumbers that column on disk. */
+    /** Drops a card at an explicit slot, then persists frontmatter and ordering. */
     async placeCard(card: Card, toColumn: Column, index: number): Promise<void> {
       await flushCard(card);
-      const from = columns.value.find((column) => column.dir === card.column);
+      const from = columns.value.find((column) => column.name === card.column);
 
       if (from === toColumn) {
         const current = toColumn.cards.indexOf(card);
         if (current === -1) return;
-
-        // The slot index counts the dragged card itself, so dropping lower shifts by one.
         const destination = index > current ? index - 1 : index;
         if (destination === current) return;
-
         toColumn.cards.splice(current, 1);
         toColumn.cards.splice(destination, 0, card);
       } else {
-        const moved = await guard(async () => moveCard(requireRoot(), card, toColumn.dir));
-        if (moved === undefined) return;
-
         if (from) from.cards = from.cards.filter((entry) => entry.id !== card.id);
-        card.column = toColumn.dir;
-        card.name = moved;
-        card.id = `${toColumn.dir}/${moved}`;
+        card.column = toColumn.name;
+        card.order = undefined;
         toColumn.cards.splice(Math.min(index, toColumn.cards.length), 0, card);
       }
 
-      await guard(async () => persistOrder(requireRoot(), toColumn));
+      await guard(async () => {
+        if (from && from !== toColumn) await persistOrder(requireRoot(), from);
+        await persistOrder(requireRoot(), toColumn);
+      });
     },
 
     async archive(card: Card): Promise<void> {
       await flushCard(card);
-      const from = columns.value.find((column) => column.dir === card.column);
+      const from = columns.value.find((column) => column.name === card.column);
       const index = from ? from.cards.indexOf(card) : 0;
-
       const archived = await guard(async () => archiveCard(requireRoot(), card));
       if (archived === undefined) return;
-
       if (from) from.cards = from.cards.filter((entry) => entry.id !== card.id);
 
       showToast(`Archived "${card.title}"`, 5000, {
         label: 'Undo',
         run: async () => {
-          const name = await guard(async () => unarchiveCard(requireRoot(), archived, card.column));
+          const name = await guard(async () => unarchiveCard(requireRoot(), archived));
           if (name === undefined || !from) return;
-
           card.name = name;
-          card.id = `${card.column}/${name}`;
           from.cards.splice(Math.min(index, from.cards.length), 0, card);
           await guard(async () => persistOrder(requireRoot(), from));
         },
@@ -680,28 +657,7 @@ export function useBoard() {
 /** Column order as it was before the current drag started; null when no drag is previewing. */
 let columnSnapshot: string[] | null = null;
 
-/** Non-null while a blocking folder operation runs; the string is what the overlay shows. */
-const busy = ref<string | null>(null);
-
-/** Held for a beat even on fast boards, so the overlay reads as progress and not a flash. */
-const BUSY_MIN = 1000;
-
-/** Blocks the UI and mutes the watcher for the duration of a multi-file folder operation. */
-async function withBusy(label: string, action: () => Promise<void>): Promise<void> {
-  busy.value = label;
-  const started = Date.now();
-  try {
-    await action();
-  } finally {
-    const left = BUSY_MIN - (Date.now() - started);
-    if (left > 0) await new Promise((resolve) => setTimeout(resolve, left));
-    busy.value = null;
-    // Whatever the watcher swallowed while blocked is picked up by this one scan.
-    await refresh();
-  }
-}
-
-/** Column folder ops move files out from under queued card writes; drain them first. */
+/** Drain debounced writes before board switches or bulk column changes. */
 async function flushPending(): Promise<void> {
   for (const column of columns.value) {
     for (const card of column.cards) await flushCard(card);

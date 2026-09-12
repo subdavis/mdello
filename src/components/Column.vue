@@ -36,7 +36,7 @@ onMounted(() => document.addEventListener('pointerdown', onPointerDown));
 onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown));
 
 const slot = computed(() =>
-  drag.target.value?.column === props.column.dir ? drag.target.value.index : null,
+  drag.target.value?.column === props.column.name ? drag.target.value.index : null,
 );
 const slotStyle = computed(() => ({ height: `${drag.slotHeight.value}px` }));
 
@@ -55,7 +55,7 @@ function slotAt(event: DragEvent): number {
 /** Index of the held card when it came from this column, else -1. */
 const sourceIndex = computed(() => {
   const held = drag.dragging.value;
-  if (held?.column !== props.column.dir) return -1;
+  if (held?.column !== props.column.name) return -1;
   return props.column.cards.findIndex((card) => card.id === held.id);
 });
 
@@ -65,7 +65,7 @@ const sourceIndex = computed(() => {
  */
 function onDragover(event: DragEvent): void {
   if (markdownImport.draggingMarkdown.value) {
-    drag.overImport(event, props.column.dir, slotAt(event));
+    drag.overImport(event, props.column.name, slotAt(event));
     return;
   }
 
@@ -73,7 +73,7 @@ function onDragover(event: DragEvent): void {
   const held = drag.column.value;
   if (held) {
     drag.overColumn(event);
-    if (held !== props.column.dir) emit('hover', held, props.index);
+    if (held !== props.column.name) emit('hover', held, props.index);
     return;
   }
 
@@ -87,7 +87,7 @@ function onDragover(event: DragEvent): void {
     return;
   }
 
-  drag.over(event, props.column.dir, index);
+  drag.over(event, props.column.name, index);
 }
 
 async function startAdding(): Promise<void> {
@@ -108,7 +108,7 @@ function submitDraft(): void {
 async function startRenaming(): Promise<void> {
   menuOpen.value = false;
   renaming.value = true;
-  draftLabel.value = props.column.label;
+  draftLabel.value = props.column.name;
   await nextTick();
   labelInput.value?.select();
 }
@@ -124,9 +124,10 @@ function submitLabel(): void {
 function archiveColumn(): void {
   menuOpen.value = false;
   const count = props.column.cards.length;
-  const detail = count ? `Its ${count} card${count === 1 ? '' : 's'} move to the archive.` : '';
+  const noun = count === 1 ? 'card' : 'cards';
+  const detail = count ? `Its ${count} ${noun} move to the archive.` : '';
   // Cards survive in archive/, the folder does not: worth one confirmation.
-  if (!confirm(`Archive "${props.column.label}"? ${detail}`)) return;
+  if (!confirm(`Archive "${props.column.name}"? ${detail}`)) return;
 
   emit('archive', props.column);
 }
@@ -136,14 +137,14 @@ function archiveColumn(): void {
   <section
     ref="root"
     class="column"
-    :class="{ 'is-dragging': drag.column.value === column.dir }"
+    :class="{ 'is-dragging': drag.column.value === column.name }"
     @dragover="onDragover"
   >
     <header
       ref="head"
       class="column-head"
       :draggable="!renaming"
-      @dragstart="drag.startColumn($event, column.dir, root)"
+      @dragstart="drag.startColumn($event, column.name, root)"
     >
       <form v-if="renaming" class="rename-form" @submit.prevent="submitLabel">
         <input
@@ -159,7 +160,7 @@ function archiveColumn(): void {
       </form>
       <template v-else>
         <h2 title="Double-click to rename, drag to reorder" @dblclick="startRenaming">
-          {{ column.label }}
+          {{ column.name }}
         </h2>
         <span class="count">{{ column.cards.length }}</span>
         <button

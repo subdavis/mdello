@@ -39,7 +39,7 @@ function playArchiveWarp(
 
   clone.classList.remove('is-dragging');
   clone.classList.add('archive-warp-clone');
-  clone.removeAttribute('data-card-id');
+  delete clone.dataset.cardId;
   clone.setAttribute('aria-hidden', 'true');
   clone.style.setProperty('--archive-dx', `${deltaX}px`);
   clone.style.setProperty('--archive-dy', `${deltaY}px`);
@@ -66,6 +66,28 @@ function playArchiveWarp(
   return { finished, source: cardElement };
 }
 
+type DropTarget = NonNullable<typeof drag.target.value>;
+type ArchiveWarp = NonNullable<ReturnType<typeof playArchiveWarp>>;
+
+async function importMarkdown(file: File | undefined, target: DropTarget | null): Promise<boolean> {
+  if (!file || !target || target.column === ARCHIVE_DIR) return false;
+  const column = board.columns.value.find((entry) => entry.name === target.column);
+  if (!column) return true;
+
+  const card = await board.importCard(column, file, target.index);
+  if (card) openCard.value = card;
+  return true;
+}
+
+async function dropIntoArchive(card: Card, warp: ArchiveWarp | null): Promise<void> {
+  try {
+    await Promise.all([board.archive(card), warp?.finished]);
+  } finally {
+    if (warp) warp.source.style.visibility = '';
+    archiveWarping.value = false;
+  }
+}
+
 // Drops bubble up from columns and archive, so one handler covers whole board.
 async function onDrop(event: DragEvent): Promise<void> {
   const source = drag.dragging.value;
@@ -78,36 +100,15 @@ async function onDrop(event: DragEvent): Promise<void> {
   drag.end();
   markdownImport.end();
 
-  if (file && target && target.column !== ARCHIVE_DIR) {
-    const column = board.columns.value.find((entry) => entry.dir === target.column);
-    if (!column) return;
-
-    const card = await board.importCard(column, file, target.index);
-    if (card) openCard.value = card;
-    return;
-  }
-
-  if (movedColumn) {
-    await board.commitColumnOrder();
-    return;
-  }
-
+  if (await importMarkdown(file, target)) return;
+  if (movedColumn) return board.commitColumnOrder();
   if (!source || !target) return;
 
   const card = findCard(source.id);
   if (!card) return;
+  if (target.column === ARCHIVE_DIR) return dropIntoArchive(card, warp);
 
-  if (target.column === ARCHIVE_DIR) {
-    try {
-      await Promise.all([board.archive(card), warp?.finished]);
-    } finally {
-      if (warp) warp.source.style.visibility = '';
-      archiveWarping.value = false;
-    }
-    return;
-  }
-
-  const column = board.columns.value.find((entry) => entry.dir === target.column);
+  const column = board.columns.value.find((entry) => entry.name === target.column);
   if (column) await board.placeCard(card, column, target.index);
 }
 
@@ -143,7 +144,7 @@ function onArchiveDragover(event: DragEvent): void {
   >
     <Column
       v-for="(column, index) in board.columns.value"
-      :key="column.dir"
+      :key="column.name"
       :column="column"
       :index="index"
       @open="openCard = $event"

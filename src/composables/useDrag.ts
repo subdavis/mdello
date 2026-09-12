@@ -40,12 +40,12 @@ export function useDrag() {
     column,
 
     /** The header is the handle, but `el` (the whole column) is what the ghost shows. */
-    startColumn(event: DragEvent, dir: string, el: HTMLElement | null): void {
-      column.value = dir;
+    startColumn(event: DragEvent, name: string, el: HTMLElement | null): void {
+      column.value = name;
       if (!event.dataTransfer) return;
 
       event.dataTransfer.effectAllowed = 'move';
-      event.dataTransfer.setData('text/plain', dir);
+      event.dataTransfer.setData('text/plain', name);
 
       if (!el) return;
       const rect = el.getBoundingClientRect();

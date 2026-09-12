@@ -34,6 +34,16 @@ export function readString(data: Frontmatter, key: string): string | undefined {
   return undefined;
 }
 
+/** Ensures every card has stable identity independent of filename and column. */
+export function ensureCardUuid(data: Frontmatter): { uuid: string; created: boolean } {
+  const existing = readString(data, 'uuid')?.trim();
+  if (existing) return { uuid: existing, created: false };
+
+  const uuid = crypto.randomUUID();
+  data.uuid = uuid;
+  return { uuid, created: true };
+}
+
 export function readNumber(data: Frontmatter, key: string): number | undefined {
   const value = data[key];
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;

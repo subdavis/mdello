@@ -2,7 +2,7 @@
 import { nextTick, onBeforeUnmount, onMounted, ref, watchEffect } from 'vue';
 import Board from './components/Board.vue';
 import BoardSwitcher from './components/BoardSwitcher.vue';
-import Overlay from './components/Overlay.vue';
+import CompanionStatus from './components/CompanionStatus.vue';
 import Toast from './components/Toast.vue';
 import { useBoard } from './composables/useBoard';
 import { isMarkdownFile, useMarkdownImport } from './composables/useMarkdownImport';
@@ -82,9 +82,6 @@ async function onDrop(event: DragEvent): Promise<void> {
 function onKeydown(event: KeyboardEvent): void {
   if (event.key !== 'p' || event.altKey || !(event.metaKey || event.ctrlKey)) return;
   event.preventDefault();
-  // A folder operation is mid-flight and the overlay is blocking the board; do not let the
-  // shortcut open a panel on top of it and swap the root out from under those moves.
-  if (board.busy.value) return;
   switching.value = !switching.value;
 }
 
@@ -145,6 +142,7 @@ onBeforeUnmount(() => {
     <button v-if="board.access.value.state !== 'unsupported'" type="button" @click="board.pick()">
       Open folder…
     </button>
+    <CompanionStatus />
   </header>
 
   <p v-if="board.error.value" class="error">{{ board.error.value }}</p>
@@ -155,7 +153,7 @@ onBeforeUnmount(() => {
     </p>
 
     <div v-else-if="board.access.value.state === 'none'" class="gate">
-      <p>Pick a board folder containing your columns (e.g. <code>content/</code>).</p>
+      <p>Pick a board folder containing <code>mdello.yml</code> and markdown cards.</p>
       <button type="button" class="primary" @click="board.pick()">Open folder…</button>
     </div>
 
@@ -177,11 +175,6 @@ onBeforeUnmount(() => {
 
   <BoardSwitcher v-if="switching" @close="switching = false" />
 
-  <!-- Folder renames move files one by one; block interaction rather than let the board churn. -->
-  <Overlay v-if="board.busy.value" place="center" panel-class="busy" blocking>
-    <span class="busy-spinner" />
-    <p>{{ board.busy.value }}</p>
-  </Overlay>
 
   <Toast />
 </template>
