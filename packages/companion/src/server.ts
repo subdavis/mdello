@@ -20,6 +20,7 @@ import {
   resolveCard,
 } from './boards.ts';
 import { createDebugLogger } from './debug.ts';
+import { findAdapter, harnessFromPath, hookAssociationInputs } from './hooks.ts';
 
 export type { Association, AssociationStatus };
 export { associationKey };
@@ -115,6 +116,53 @@ async function readBody(request: NodeJS.ReadableStream): Promise<unknown> {
   return JSON.parse(body);
 }
 
+type AssociationInput = Partial<Association> & { markdownPath?: string };
+
+/** Resolves one card, records it, and broadcasts it. Returns undefined for an unknown card. */
+async function recordAssociation(
+  input: AssociationInput,
+  dataFile: string,
+  associations: Map<string, Association>,
+  clients: Map<ServerResponse, string>,
+  boards: BoardRegistration[],
+): Promise<Association | 'unknown_card' | 'invalid'> {
+  const requestedPath = input.markdownPath ?? input.cardPath;
+  const card =
+    typeof requestedPath === 'string' ? await resolveCard(requestedPath, boards) : undefined;
+  if (!card) {
+    debug('association ignored', { requestedPath, reason: 'unknown_card' });
+    return 'unknown_card';
+  }
+
+  const association = normalizeAssociation(
+    { ...input, ...card, updatedAt: new Date().toISOString() },
+    'unknown',
+  );
+  if (!association) return 'invalid';
+
+  // A harness that publishes per event may omit the session file on some of them; it belongs to
+  // the session, so keep the last one we were told rather than dropping it.
+  const key = associationKey(association);
+  const previous = associations.get(key);
+  if (!association.sessionFile && previous?.sessionFile) {
+    association.sessionFile = previous.sessionFile;
+  }
+
+  associations.set(key, association);
+  await appendFile(dataFile, `${JSON.stringify(association)}\n`);
+  debug('association recorded', {
+    boardUuid: association.boardUuid,
+    cardUuid: association.cardUuid,
+    harness: association.harness,
+    sessionId: association.sessionId,
+    status: association.status,
+  });
+  for (const [client, boardUuid] of clients) {
+    if (boardUuid === association.boardUuid) writeSse(client, 'association', association);
+  }
+  return association;
+}
+
 async function handleAssociationPost(
   request: IncomingMessage,
   response: ServerResponse,
@@ -124,41 +172,90 @@ async function handleAssociationPost(
   boards: BoardRegistration[],
 ): Promise<void> {
   try {
-    const input = (await readBody(request)) as Partial<Association> & { markdownPath?: string };
-    const requestedPath = input.markdownPath ?? input.cardPath;
-    const card =
-      typeof requestedPath === 'string' ? await resolveCard(requestedPath, boards) : undefined;
-    if (!card) {
-      debug('association ignored', { requestedPath, reason: 'unknown_card' });
+    const input = (await readBody(request)) as AssociationInput;
+    const result = await recordAssociation(input, dataFile, associations, clients, boards);
+    if (result === 'unknown_card') {
       sendJson(response, 202, { ignored: true, reason: 'unknown_card' });
       return;
     }
-    const association = normalizeAssociation(
-      { ...input, ...card, updatedAt: new Date().toISOString() },
-      'unknown',
-    );
-    if (!association) {
+    if (result === 'invalid') {
       sendJson(response, 400, { error: 'Invalid association' });
       return;
     }
-
-    associations.set(associationKey(association), association);
-    await appendFile(dataFile, `${JSON.stringify(association)}\n`);
-    debug('association recorded', {
-      boardUuid: association.boardUuid,
-      cardUuid: association.cardUuid,
-      harness: association.harness,
-      sessionId: association.sessionId,
-      status: association.status,
-    });
-    for (const [client, boardUuid] of clients) {
-      if (boardUuid === association.boardUuid) writeSse(client, 'association', association);
-    }
-    sendJson(response, 202, association);
+    sendJson(response, 202, result);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     debug('association request failed', { error: message });
     sendJson(response, 400, { error: message });
+  }
+}
+
+/**
+ * Harness webhook endpoint. Agents that spawn a process per lifecycle event post the raw payload
+ * here; the harness adapter translates it, so no agent-specific knowledge lives in the sidecar.
+ *
+ * Deliberately omits CORS headers: this route reads a caller-supplied session file, so it must not
+ * be reachable from a browser page the way the board-facing routes are.
+ */
+async function handleHookPost(
+  request: IncomingMessage,
+  response: ServerResponse,
+  harness: string,
+  dataFile: string,
+  associations: Map<string, Association>,
+  clients: Map<ServerResponse, string>,
+  boards: BoardRegistration[],
+): Promise<void> {
+  const adapter = findAdapter(harness);
+  if (!adapter) {
+    response.writeHead(404, { 'Content-Type': 'application/json' });
+    response.end(JSON.stringify({ error: `Unknown harness: ${harness}` }));
+    return;
+  }
+
+  // Withholding CORS headers only hides the response; the side effect would still run. Requiring
+  // a JSON content type forces a preflight that this route rejects, so a browser page cannot
+  // reach it at all. Both hook transports send this header.
+  if (!request.headers['content-type']?.includes('application/json')) {
+    debug('hook rejected', { harness, reason: 'content_type' });
+    response.writeHead(415, { 'Content-Type': 'application/json' });
+    response.end(JSON.stringify({ error: 'Expected application/json' }));
+    return;
+  }
+
+  // A harness may parse this response and act on it — Claude Code errors on a non-JSON body — so
+  // answer with an inert object whatever happens.
+  const reply = (status: number) => {
+    response.writeHead(status, { 'Content-Type': 'application/json' });
+    response.end('{}');
+  };
+
+  try {
+    const event = await adapter.translate(await readBody(request));
+    if (!event) {
+      debug('hook ignored', { harness });
+      reply(202);
+      return;
+    }
+
+    let recorded = 0;
+    for (const input of hookAssociationInputs(event, harness, associations.values())) {
+      const result = await recordAssociation(input, dataFile, associations, clients, boards);
+      if (typeof result === 'object') recorded += 1;
+    }
+    debug('hook recorded', {
+      harness,
+      sessionId: event.sessionId,
+      status: event.status,
+      recorded,
+    });
+    reply(202);
+  } catch (error) {
+    debug('hook request failed', {
+      harness,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    reply(400);
   }
 }
 
@@ -423,9 +520,21 @@ export async function createCompanionServer(options: CompanionOptions = {}): Pro
     debug('request received', { method: request.method, path: `${url.pathname}${url.search}` });
 
     if (request.method === 'OPTIONS') {
+      // Refuse the preflight for harness hooks so no browser origin is ever granted access.
+      if (harnessFromPath(url.pathname)) {
+        response.writeHead(404);
+        response.end();
+        return;
+      }
       setCors(response);
       response.writeHead(204);
       response.end();
+      return;
+    }
+
+    const harness = request.method === 'POST' ? harnessFromPath(url.pathname) : undefined;
+    if (harness) {
+      await handleHookPost(request, response, harness, dataFile, associations, clients, boards);
       return;
     }
 

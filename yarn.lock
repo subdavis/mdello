@@ -912,13 +912,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@mdello/claude-extension@workspace:packages/claude-extension":
+"@mdello/claude-extension@workspace:*, @mdello/claude-extension@workspace:packages/claude-extension":
   version: 0.0.0-use.local
   resolution: "@mdello/claude-extension@workspace:packages/claude-extension"
   dependencies:
     "@mdello/common": "workspace:*"
     "@types/node": "npm:^26.2.0"
-    rolldown: "npm:^1.2.4"
     typescript: "npm:^5"
   languageName: unknown
   linkType: soft
@@ -2297,6 +2296,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "mdello-companion@workspace:packages/companion"
   dependencies:
+    "@mdello/claude-extension": "workspace:*"
     "@mdello/common": "workspace:*"
     "@types/node": "npm:^26.2.0"
     js-yaml: "npm:^5.3.0"

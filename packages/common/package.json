@@ -5,6 +5,7 @@
   "exports": {
     "./associations": "./src/associations.ts",
     "./frontmatter": "./src/frontmatter.ts",
+    "./harness": "./src/harness.ts",
     "./paths": "./src/paths.ts"
   },
   "scripts": {

@@ -1,13 +1,15 @@
 import { readFile } from 'node:fs/promises';
-import type { Association, AssociationStatus } from '@mdello/common/associations';
+import type { AssociationStatus } from '@mdello/common/associations';
+import type { HarnessAdapter, HarnessHookEvent } from '@mdello/common/harness';
 import { extractMarkdownPaths } from '@mdello/common/paths';
 import { modificationPath, parseTranscript, transcriptPaths } from './transcript.ts';
 
-const DEFAULT_URL = 'http://127.0.0.1:31337';
-const HARNESS = 'claude';
-const TIMEOUT_MS = 1000;
+export const HARNESS = 'claude';
 
-interface HookInput {
+/** Path the companion serves for this harness; also the marker that identifies our hooks. */
+export const HOOK_PATH = `/hooks/${HARNESS}`;
+
+interface HookPayload {
   hook_event_name?: unknown;
   session_id?: unknown;
   transcript_path?: unknown;
@@ -31,108 +33,99 @@ function text(value: unknown): string | undefined {
   return typeof value === 'string' && value ? value : undefined;
 }
 
-async function readHookInput(): Promise<HookInput | undefined> {
-  let body = '';
-  process.stdin.setEncoding('utf8');
-  for await (const chunk of process.stdin) body += chunk;
-  try {
-    return JSON.parse(body) as HookInput;
-  } catch {
-    return undefined;
-  }
-}
-
-async function sendAssociation(
-  endpoint: string,
-  cardPath: string,
-  status: AssociationStatus,
-  input: HookInput,
-): Promise<void> {
-  try {
-    await fetch(`${endpoint}/associations`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        markdownPath: cardPath,
-        harness: HARNESS,
-        sessionId: input.session_id,
-        sessionFile: text(input.transcript_path),
-        status,
-      }),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
-  } catch {
-    // Companion is optional; Claude Code work must continue when it is not running.
-  }
-}
-
-/**
- * Every hook runs in a fresh process, so the companion holds this session's card list rather than
- * the extension. Ask it which cards the session already touched before publishing a status change.
- */
-async function sessionCardPaths(endpoint: string, sessionId: string): Promise<string[]> {
-  try {
-    const response = await fetch(`${endpoint}/associations`, {
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
-    if (!response.ok) return [];
-    const associations = (await response.json()) as Association[];
-    return associations
-      .filter(
-        (association) => association.harness === HARNESS && association.sessionId === sessionId,
-      )
-      .map((association) => association.cardPath);
-  } catch {
-    return [];
-  }
-}
-
-async function transcriptCardPaths(input: HookInput): Promise<string[]> {
-  const transcript = text(input.transcript_path);
+async function transcriptCardPaths(payload: HookPayload): Promise<string[]> {
+  const transcript = text(payload.transcript_path);
   if (!transcript) return [];
   try {
-    return transcriptPaths(parseTranscript(await readFile(transcript, 'utf8')), text(input.cwd));
+    return transcriptPaths(parseTranscript(await readFile(transcript, 'utf8')), text(payload.cwd));
   } catch {
-    // A new session has no transcript yet.
+    // A fresh session has no transcript yet.
     return [];
   }
 }
 
 /**
- * Cards this event reveals. `undefined` means the event carries nothing relevant, so the hook
- * skips the companion entirely instead of republishing a status.
+ * Cards an event reveals. `undefined` means the event is irrelevant, which keeps a tool call on a
+ * non-Markdown file from republishing the session's status.
  */
-async function discoverCardPaths(event: string, input: HookInput): Promise<string[] | undefined> {
-  if (event === 'SessionStart') return transcriptCardPaths(input);
-  if (event === 'UserPromptSubmit') return extractMarkdownPaths(text(input.prompt) ?? '');
+async function discoverCardPaths(
+  event: string,
+  payload: HookPayload,
+): Promise<string[] | undefined> {
+  if (event === 'SessionStart') return transcriptCardPaths(payload);
+  if (event === 'UserPromptSubmit') return extractMarkdownPaths(text(payload.prompt) ?? '');
   if (event === 'PostToolUse') {
-    const path = modificationPath(input.tool_name, input.tool_input, text(input.cwd));
+    const path = modificationPath(payload.tool_name, payload.tool_input, text(payload.cwd));
     return path ? [path] : undefined;
   }
   return [];
 }
 
-async function main(): Promise<void> {
-  const input = await readHookInput();
-  const event = text(input?.hook_event_name);
-  const sessionId = text(input?.session_id);
-  const status = event ? EVENT_STATUSES[event] : undefined;
-  if (!input || !event || !sessionId || !status) return;
+export const claudeAdapter: HarnessAdapter = {
+  harness: HARNESS,
+  async translate(payload: unknown): Promise<HarnessHookEvent | undefined> {
+    if (!payload || typeof payload !== 'object') return undefined;
+    const hook = payload as HookPayload;
+    const event = text(hook.hook_event_name);
+    const sessionId = text(hook.session_id);
+    const status = event ? EVENT_STATUSES[event] : undefined;
+    if (!event || !sessionId || !status) return undefined;
 
-  const discovered = await discoverCardPaths(event, input);
-  if (!discovered) return;
+    const cardPaths = await discoverCardPaths(event, hook);
+    if (!cardPaths) return undefined;
 
-  const endpoint = (process.env.MDELLO_COMPANION_URL ?? DEFAULT_URL).replace(/\/$/, '');
-  const cardPaths = new Set([...discovered, ...(await sessionCardPaths(endpoint, sessionId))]);
-  await Promise.all(
-    [...cardPaths].map((cardPath) => sendAssociation(endpoint, cardPath, status, input)),
-  );
+    return { sessionId, sessionFile: text(hook.transcript_path), status, cardPaths };
+  },
+};
+
+export interface ClaudeHook {
+  type: 'http' | 'command';
+  url?: string;
+  command?: string;
+  timeout: number;
 }
 
-// Never write to stdout: Claude Code feeds hook stdout back as context on SessionStart and
-// UserPromptSubmit. Never fail either, so a companion problem can never block a session.
-try {
-  await main();
-} catch {
-  process.exitCode = 0;
+export interface ClaudeHookEntry {
+  matcher?: string;
+  hooks: ClaudeHook[];
+}
+
+/**
+ * Claude Code refuses `http` hooks on SessionStart, so those two per-session events post with
+ * curl instead. `|| true` keeps a stopped companion quiet: SessionEnd is the one event whose hook
+ * failures are written to stderr.
+ */
+const HTTP_EVENTS: { event: string; matcher?: string }[] = [
+  { event: 'UserPromptSubmit' },
+  { event: 'PostToolUse', matcher: 'Edit|MultiEdit|Write' },
+  { event: 'Notification', matcher: 'permission_prompt|idle_prompt|agent_needs_input' },
+  { event: 'Stop' },
+];
+const COMMAND_EVENTS = ['SessionStart', 'SessionEnd'];
+
+export function claudeHookSettings(endpoint: string): Record<string, ClaudeHookEntry[]> {
+  const url = `${endpoint.replace(/\/$/, '')}${HOOK_PATH}`;
+  const entries: Record<string, ClaudeHookEntry[]> = {};
+
+  for (const { event, matcher } of HTTP_EVENTS) {
+    entries[event] = [
+      { ...(matcher ? { matcher } : {}), hooks: [{ type: 'http', url, timeout: 2 }] },
+    ];
+  }
+  for (const event of COMMAND_EVENTS) {
+    const command = `curl -s -m 2 -X POST -H 'Content-Type: application/json' --data-binary @- ${url} > /dev/null 2>&1 || true`;
+    entries[event] = [{ hooks: [{ type: 'command', command, timeout: 5 }] }];
+  }
+  return entries;
+}
+
+/** Recognizes hooks this integration owns, across companion ports and past install layouts. */
+export function isCompanionHook(value: unknown): boolean {
+  const hook = value as { url?: unknown; command?: unknown } | null;
+  const fields = [hook?.url, hook?.command];
+  return fields.some(
+    (field) =>
+      typeof field === 'string' &&
+      (field.includes(HOOK_PATH) || field.includes('mdello-companion')),
+  );
 }

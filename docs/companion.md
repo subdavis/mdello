@@ -37,6 +37,7 @@ Default origin: `http://127.0.0.1:31337`. JSON request bodies are limited to 64 
 | `DELETE /associations?boardUuid=…&cardUuid=…` | Permanently removes all persisted events for that card and broadcasts fresh snapshots. |
 | `GET /events?boardUuid=…&boardPath=…` | Validates and registers board, reconciles stored paths/UUIDs, then opens SSE stream. Sends `snapshot` first and `association` after each update for that board. |
 | `POST /backfill` | Body: `{ boardUuid, boardPath }`. UUID must match `mdello.yml`. Rebuilds that board's associations and broadcasts fresh snapshots. |
+| `POST /hooks/<harness>` | Body is that harness's raw lifecycle payload. A registered [harness adapter](agent-extension.md) translates it; the companion publishes to the event's cards plus every card already held for that `(harness, sessionId)`. Always answers `{}`, and sends no CORS headers because it reads a caller-supplied session file. Unknown harness returns `404`. |
 
 Errors use `{ error: string }`. Invalid requests return `400`, internal backfill/delete failures `500`, and unknown routes `404`.
 

@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import { claudeHookSettings, HOOK_PATH, isCompanionHook } from '@mdello/claude-extension';
 
 const exec = promisify(execFile);
 const SERVICE_LABEL = 'com.mdello.companion';
@@ -20,6 +21,8 @@ interface InstallOptions {
   repoRoot?: string;
   misePath?: string;
   uid?: number;
+  /** Companion origin written into harness hook configuration. */
+  endpoint?: string;
   run?: (command: string, args: string[]) => Promise<CommandResult>;
 }
 
@@ -143,27 +146,14 @@ export async function uninstallPi(options: InstallOptions = {}): Promise<string>
   return `Removed Pi extension ${destination}`;
 }
 
-interface ClaudeHookEntry {
-  matcher?: string;
-  hooks: { type: 'command'; command: string; timeout: number }[];
+function claudeSettingsFile(home: string): string {
+  return join(home, '.claude/settings.json');
 }
 
-/** Claude Code lifecycle events the companion listens to, with the matcher that narrows each. */
-const CLAUDE_HOOK_EVENTS: { event: string; matcher?: string }[] = [
-  { event: 'SessionStart' },
-  { event: 'UserPromptSubmit' },
-  { event: 'PostToolUse', matcher: 'Edit|MultiEdit|Write' },
-  { event: 'Notification', matcher: 'permission_prompt|idle_prompt|agent_needs_input' },
-  { event: 'Stop' },
-  { event: 'SessionEnd' },
-];
-
-function claudePaths(home: string, repoRoot: string) {
-  return {
-    source: join(repoRoot, 'packages/claude-extension/dist/index.js'),
-    destination: join(home, '.claude/hooks/mdello-companion.js'),
-    settingsFile: join(home, '.claude/settings.json'),
-  };
+function companionEndpoint(options: InstallOptions): string {
+  if (options.endpoint) return options.endpoint;
+  const port = process.env.MDELLO_COMPANION_PORT ?? '31337';
+  return `http://127.0.0.1:${port}`;
 }
 
 async function readClaudeSettings(settingsFile: string): Promise<Record<string, unknown>> {
@@ -210,22 +200,14 @@ function readHookEvents(value: unknown, settingsFile: string): Record<string, un
   return events;
 }
 
-function isCompanionHook(value: unknown, destination: string): boolean {
-  const hook = value as { command?: unknown } | null;
-  return typeof hook?.command === 'string' && hook.command.includes(destination);
-}
-
-/** Drop only this installer's hooks, leaving every other hook and its ordering untouched. */
-function withoutCompanionHooks(
-  events: Record<string, unknown[]>,
-  destination: string,
-): Record<string, unknown[]> {
+/** Drop only this integration's hooks, leaving every other hook and its ordering untouched. */
+function withoutCompanionHooks(events: Record<string, unknown[]>): Record<string, unknown[]> {
   const remaining: Record<string, unknown[]> = {};
   for (const [event, entries] of Object.entries(events)) {
     const kept = entries.flatMap((entry) => {
       const group = entry as { hooks?: unknown } | null;
       if (!group || typeof group !== 'object' || !Array.isArray(group.hooks)) return [entry];
-      const hooks = group.hooks.filter((hook) => !isCompanionHook(hook, destination));
+      const hooks = group.hooks.filter((hook) => !isCompanionHook(hook));
       if (hooks.length === group.hooks.length) return [entry];
       return hooks.length > 0 ? [{ ...group, hooks }] : [];
     });
@@ -244,43 +226,56 @@ async function writeClaudeSettings(
   await rename(temporary, settingsFile);
 }
 
+/**
+ * Claude Code enforces `allowedHttpHookUrls` only when the key exists, so add the companion
+ * endpoint when the user opted into an allowlist and never create one for them.
+ */
+function withAllowedHookUrl(
+  settings: Record<string, unknown>,
+  endpoint: string,
+  settingsFile: string,
+): Record<string, unknown> {
+  const allowed = settings.allowedHttpHookUrls;
+  if (allowed === undefined) return settings;
+  if (!Array.isArray(allowed)) {
+    throw new Error(`Expected an array at "allowedHttpHookUrls" in ${settingsFile}.`);
+  }
+
+  const pattern = `${endpoint}/*`;
+  return allowed.includes(pattern)
+    ? settings
+    : { ...settings, allowedHttpHookUrls: [...allowed, pattern] };
+}
+
 export async function installClaude(options: InstallOptions = {}): Promise<string> {
   const config = defaults(options);
-  const { source, destination, settingsFile } = claudePaths(config.home, config.repoRoot);
-
-  if ((await pathKind(source)) === 'missing') {
-    throw new Error(
-      `Missing Claude extension bundle at ${source}. Run \`yarn build:claude-extension\`.`,
-    );
-  }
-
-  await removeManagedSymlink(destination, 'Cannot replace', 'Claude hook');
-  await mkdir(dirname(destination), { recursive: true });
-  await symlink(source, destination, 'file');
+  const settingsFile = claudeSettingsFile(config.home);
+  const endpoint = companionEndpoint(options);
 
   const settings = await readClaudeSettings(settingsFile);
-  const events = withoutCompanionHooks(readHookEvents(settings.hooks, settingsFile), destination);
-  for (const { event, matcher } of CLAUDE_HOOK_EVENTS) {
-    const entry: ClaudeHookEntry = {
-      ...(matcher ? { matcher } : {}),
-      hooks: [{ type: 'command', command: `node '${destination}'`, timeout: 10 }],
-    };
-    events[event] = [...(events[event] ?? []), entry];
+  const events = withoutCompanionHooks(readHookEvents(settings.hooks, settingsFile));
+  for (const [event, entries] of Object.entries(claudeHookSettings(endpoint))) {
+    events[event] = [...(events[event] ?? []), ...entries];
   }
-  await writeClaudeSettings(settingsFile, { ...settings, hooks: events });
+  await writeClaudeSettings(settingsFile, {
+    ...withAllowedHookUrl(settings, endpoint, settingsFile),
+    hooks: events,
+  });
 
-  return `Installed Claude hooks in ${settingsFile} -> ${destination}`;
+  return `Installed Claude hooks in ${settingsFile} -> ${endpoint}${HOOK_PATH}`;
 }
 
 export async function uninstallClaude(options: InstallOptions = {}): Promise<string> {
   const config = defaults(options);
-  const { destination, settingsFile } = claudePaths(config.home, config.repoRoot);
+  const settingsFile = claudeSettingsFile(config.home);
 
-  await removeManagedSymlink(destination, 'Refusing to remove', 'Claude hook');
+  // Earlier installs symlinked a hook script; remove it so an upgrade leaves nothing behind.
+  const legacyScript = join(config.home, '.claude/hooks/mdello-companion.js');
+  await removeManagedSymlink(legacyScript, 'Refusing to remove', 'Claude hook');
 
   const settings = await readClaudeSettings(settingsFile);
   if (settings.hooks !== undefined) {
-    const events = withoutCompanionHooks(readHookEvents(settings.hooks, settingsFile), destination);
+    const events = withoutCompanionHooks(readHookEvents(settings.hooks, settingsFile));
     await writeClaudeSettings(settingsFile, { ...settings, hooks: events });
   }
 

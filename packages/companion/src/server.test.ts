@@ -146,6 +146,85 @@ test('resolves subscribed live associations and defaults a missing harness', asy
   }
 });
 
+test('publishes a harness hook payload to the whole session', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mdello-server-'));
+  const boardPath = join(root, 'board');
+  const cardPath = join(boardPath, 'card.md');
+  const otherPath = join(boardPath, 'other.md');
+  await mkdir(boardPath);
+  await writeFile(cardPath, '---\nuuid: card-a\n---\n');
+  await writeFile(otherPath, '---\nuuid: card-b\n---\n');
+  const companion = await createCompanionServer({
+    port: 0,
+    dataFile: join(root, 'companion.jsonl'),
+    configFile: join(root, 'companion.json'),
+  });
+  const hook = (payload: unknown, headers: Record<string, string> = {}) =>
+    fetch(`${companion.url}/hooks/claude`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...headers },
+      body: JSON.stringify(payload),
+    });
+
+  try {
+    await registerBoard(companion.url, 'board-a', boardPath);
+
+    const discovered = await hook({
+      hook_event_name: 'UserPromptSubmit',
+      session_id: 'session-a',
+      transcript_path: join(root, 'session.jsonl'),
+      prompt: `work on ${cardPath} and ${otherPath}`,
+    });
+    assert.equal(discovered.status, 202);
+    assert.deepEqual(await discovered.json(), {}, 'hook replies with an inert JSON body');
+
+    // A later event carries no paths, yet must move every card the session touched.
+    assert.equal((await hook({ hook_event_name: 'Stop', session_id: 'session-a' })).status, 202);
+    const associations = (await (await fetch(`${companion.url}/associations`)).json()) as {
+      cardPath: string;
+      harness: string;
+      status: string;
+      sessionFile?: string;
+    }[];
+    assert.deepEqual(
+      associations.map((association) => [association.cardPath, association.status]).sort(),
+      [
+        [cardPath, 'ready_for_review'],
+        [otherPath, 'ready_for_review'],
+      ].sort(),
+    );
+    assert.equal(associations[0]?.harness, 'claude');
+    assert.equal(associations[0]?.sessionFile, join(root, 'session.jsonl'));
+
+    // An unknown harness, a non-JSON post, and a browser preflight all get nothing.
+    assert.equal((await hook({}, {})).status, 202);
+    assert.equal(
+      (
+        await fetch(`${companion.url}/hooks/nope`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: '{}',
+        })
+      ).status,
+      404,
+    );
+    const simple = await fetch(`${companion.url}/hooks/claude`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ hook_event_name: 'Stop', session_id: 'session-a' }),
+    });
+    assert.equal(simple.status, 415, 'a request a browser could send without preflight is refused');
+    const preflight = await fetch(`${companion.url}/hooks/claude`, { method: 'OPTIONS' });
+    assert.equal(preflight.status, 404);
+    assert.equal(preflight.headers.get('access-control-allow-origin'), null);
+    const allowed = await fetch(`${companion.url}/associations`, { method: 'OPTIONS' });
+    assert.equal(allowed.headers.get('access-control-allow-origin'), '*');
+  } finally {
+    await companion.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('backfills only the requested board', async () => {
   const root = await mkdtemp(join(tmpdir(), 'mdello-server-'));
   const sessionsRoot = join(root, 'sessions');

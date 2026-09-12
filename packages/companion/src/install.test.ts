@@ -35,13 +35,13 @@ async function fixture(): Promise<{ root: string; home: string; repoRoot: string
   const repoRoot = join(root, 'repo & clone');
   await mkdir(join(repoRoot, 'packages/companion'), { recursive: true });
   await mkdir(join(repoRoot, 'packages/pi-extension/dist'), { recursive: true });
-  await mkdir(join(repoRoot, 'packages/claude-extension/dist'), { recursive: true });
+  await mkdir(join(repoRoot, 'packages/claude-extension'), { recursive: true });
   await writeFile(join(repoRoot, 'packages/companion/com.mdello.companion.plist'), template);
   await writeFile(
     join(repoRoot, 'packages/pi-extension/dist/index.js'),
     'export default () => {};',
   );
-  await writeFile(join(repoRoot, 'packages/claude-extension/dist/index.js'), 'await 0;');
+  await writeFile(join(repoRoot, 'packages/claude-extension/index.ts'), 'export default 0;');
   return { root, home, repoRoot };
 }
 
@@ -171,39 +171,112 @@ test('Pi install and uninstall preserve non-symlink paths', async () => {
   }
 });
 
-test('Claude install links the hook and registers every lifecycle event', async () => {
+test('Claude install registers every lifecycle event without spawning per-turn processes', async () => {
   const { root, home, repoRoot } = await fixture();
-  const destination = join(home, '.claude/hooks/mdello-companion.js');
+  const endpoint = 'http://127.0.0.1:31337';
 
   try {
-    await installClaude({ home, repoRoot });
-    await installClaude({ home, repoRoot });
+    await installClaude({ home, repoRoot, endpoint });
+    await installClaude({ home, repoRoot, endpoint });
 
-    assert.equal(
-      await readlink(destination),
-      join(repoRoot, 'packages/claude-extension/dist/index.js'),
-    );
     const { hooks } = (await readSettings(home)) as unknown as {
-      hooks: Record<string, { matcher?: string; hooks: { command: string }[] }[]>;
+      hooks: Record<
+        string,
+        { matcher?: string; hooks: { type: string; url?: string; command?: string }[] }[]
+      >;
     };
-    assert.deepEqual(Object.keys(hooks), [
-      'SessionStart',
-      'UserPromptSubmit',
-      'PostToolUse',
+    assert.deepEqual(Object.keys(hooks).sort(), [
       'Notification',
-      'Stop',
+      'PostToolUse',
       'SessionEnd',
+      'SessionStart',
+      'Stop',
+      'UserPromptSubmit',
     ]);
     for (const entries of Object.values(hooks)) {
       assert.equal(entries.length, 1, 'reinstall must not duplicate entries');
-      assert.equal(entries[0]?.hooks[0]?.command, `node '${destination}'`);
+    }
+
+    // Claude Code rejects http hooks on SessionStart, so only those two shell out.
+    for (const event of ['UserPromptSubmit', 'PostToolUse', 'Notification', 'Stop']) {
+      const hook = hooks[event]?.[0]?.hooks[0];
+      assert.equal(hook?.type, 'http', `${event} must not spawn a process`);
+      assert.equal(hook?.url, `${endpoint}/hooks/claude`);
+    }
+    for (const event of ['SessionStart', 'SessionEnd']) {
+      const hook = hooks[event]?.[0]?.hooks[0];
+      assert.equal(hook?.type, 'command');
+      assert.match(hook?.command ?? '', /^curl .*\/hooks\/claude.*\|\| true$/);
     }
     assert.equal(hooks.PostToolUse?.[0]?.matcher, 'Edit|MultiEdit|Write');
-    assert.equal(hooks.SessionStart?.[0]?.matcher, undefined);
+    assert.equal(hooks.Stop?.[0]?.matcher, undefined);
 
     await uninstallClaude({ home, repoRoot });
     await uninstallClaude({ home, repoRoot });
-    await assert.rejects(lstat(destination));
+    assert.deepEqual((await readSettings(home)).hooks, {});
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('Claude install targets the configured companion port', async () => {
+  const { root, home, repoRoot } = await fixture();
+
+  try {
+    await installClaude({ home, repoRoot, endpoint: 'http://127.0.0.1:41337/' });
+    const { hooks } = (await readSettings(home)) as unknown as {
+      hooks: Record<string, { hooks: { url?: string; command?: string }[] }[]>;
+    };
+    assert.equal(hooks.Stop?.[0]?.hooks[0]?.url, 'http://127.0.0.1:41337/hooks/claude');
+    assert.match(hooks.SessionStart?.[0]?.hooks[0]?.command ?? '', /41337\/hooks\/claude/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('Claude install extends an existing http hook allowlist without creating one', async () => {
+  const { root, home, repoRoot } = await fixture();
+  const endpoint = 'http://127.0.0.1:31337';
+
+  try {
+    await installClaude({ home, repoRoot, endpoint });
+    assert.equal(
+      (await readSettings(home)).allowedHttpHookUrls,
+      undefined,
+      'must not opt the user into an allowlist',
+    );
+
+    await writeSettings(home, { allowedHttpHookUrls: ['http://example.test/*'] });
+    await installClaude({ home, repoRoot, endpoint });
+    await installClaude({ home, repoRoot, endpoint });
+    assert.deepEqual((await readSettings(home)).allowedHttpHookUrls, [
+      'http://example.test/*',
+      `${endpoint}/*`,
+    ]);
+
+    await writeSettings(home, { allowedHttpHookUrls: 'nope' });
+    await assert.rejects(
+      installClaude({ home, repoRoot, endpoint }),
+      /Expected an array at "allowedHttpHookUrls"/,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('Claude uninstall clears hooks left by the script-based install', async () => {
+  const { root, home, repoRoot } = await fixture();
+  const script = join(home, '.claude/hooks/mdello-companion.js');
+
+  try {
+    await mkdir(dirname(script), { recursive: true });
+    await symlink(join(repoRoot, 'packages/claude-extension/index.ts'), script, 'file');
+    await writeSettings(home, {
+      hooks: { Stop: [{ hooks: [{ type: 'command', command: `node '${script}'` }] }] },
+    });
+
+    await uninstallClaude({ home, repoRoot });
+    await assert.rejects(lstat(script));
     assert.deepEqual((await readSettings(home)).hooks, {});
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -226,12 +299,12 @@ test('Claude install preserves unrelated settings and hooks', async () => {
 
     const settings = (await readSettings(home)) as unknown as {
       theme: string;
-      hooks: Record<string, { hooks: { command: string }[] }[]>;
+      hooks: Record<string, { hooks: { type: string; command?: string }[] }[]>;
     };
     assert.equal(settings.theme, 'dark');
     assert.equal(settings.hooks.Stop?.length, 2, 'companion Stop hook appends to existing');
     assert.deepEqual(settings.hooks.Stop?.[0]?.hooks, [other]);
-    assert.match(settings.hooks.Stop?.[1]?.hooks[0]?.command ?? '', /mdello-companion\.js/);
+    assert.equal(settings.hooks.Stop?.[1]?.hooks[0]?.type, 'http');
     assert.deepEqual(settings.hooks.PreToolUse, [{ matcher: 'Bash', hooks: [other] }]);
 
     await uninstallClaude({ home, repoRoot });
@@ -265,18 +338,6 @@ test('Claude install leaves a companion hook sharing a group with another tool',
   }
 });
 
-test('Claude install requires a built bundle', async () => {
-  const { root, home, repoRoot } = await fixture();
-
-  try {
-    await rm(join(repoRoot, 'packages/claude-extension/dist'), { recursive: true, force: true });
-    await assert.rejects(installClaude({ home, repoRoot }), /yarn build:claude-extension/);
-    await assert.rejects(lstat(join(home, '.claude/hooks/mdello-companion.js')));
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-});
-
 test('Claude install refuses to rewrite settings it cannot understand', async () => {
   const { root, home, repoRoot } = await fixture();
 
@@ -295,16 +356,15 @@ test('Claude install refuses to rewrite settings it cannot understand', async ()
   }
 });
 
-test('Claude install and uninstall preserve a non-symlink hook path', async () => {
+test('Claude uninstall preserves a real file at the legacy hook path', async () => {
   const { root, home, repoRoot } = await fixture();
-  const destination = join(home, '.claude/hooks/mdello-companion.js');
+  const script = join(home, '.claude/hooks/mdello-companion.js');
 
   try {
-    await mkdir(dirname(destination), { recursive: true });
-    await writeFile(destination, 'mine');
-    await assert.rejects(installClaude({ home, repoRoot }), /Cannot replace non-symlink/);
+    await mkdir(dirname(script), { recursive: true });
+    await writeFile(script, 'mine');
     await assert.rejects(uninstallClaude({ home, repoRoot }), /Refusing to remove non-symlink/);
-    assert.equal(await readFile(destination, 'utf8'), 'mine');
+    assert.equal(await readFile(script, 'utf8'), 'mine');
   } finally {
     await rm(root, { recursive: true, force: true });
   }

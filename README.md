@@ -85,30 +85,27 @@ Drag any image onto the window to set the background image.
 
 ### Install companion integrations
 
-From a cloned repository, build the agent extension bundles, then install every supported
-integration for the current platform:
+From a cloned repository, build the Pi extension bundle, then install every supported integration
+for the current platform:
 
 ```bash
 yarn build:pi-extension
-yarn build:claude-extension
 npx mdello-companion install
 npx mdello-companion install macos
 npx mdello-companion install pi
 npx mdello-companion install claude
 ```
 
-Both agent installs link a bundle out of the repository, so rebuild after changing extension or
-`@mdello/common` sources:
-
 | Integration | Installs |
 | --- | --- |
 | `macos` | `~/Library/LaunchAgents/com.mdello.companion.plist`, started with `launchctl` |
-| `pi` | `packages/pi-extension/dist/index.js` symlinked into `~/.pi/agent/extensions` |
-| `claude` | `packages/claude-extension/dist/index.js` symlinked into `~/.claude/hooks`, plus `hooks` entries in `~/.claude/settings.json` |
+| `pi` | `packages/pi-extension/dist/index.js` symlinked into `~/.pi/agent/extensions`; rebuild after changing extension or `@mdello/common` sources |
+| `claude` | `hooks` entries in `~/.claude/settings.json` that post to the companion; nothing to build |
 
 Every install command is safe to rerun and updates its existing installation. The Claude install
 rewrites only its own `hooks` entries and leaves the rest of `settings.json` untouched; it refuses
-to run at all when that file is not valid JSON.
+to run at all when that file is not valid JSON. Hook URLs are written at install time from
+`MDELLO_COMPANION_PORT`, so rerun `install claude` after changing the port.
 
 Remove every integration, or one integration, with:
 
@@ -146,9 +143,9 @@ This repository is a Yarn workspace monorepo:
 
 - `packages/client` — Vue PWA deployed to GitHub Pages
 - `packages/companion` — local sidecar and CLI; private until ready for npm
-- `packages/pi-extension` — Pi lifecycle integration
-- `packages/claude-extension` — Claude Code lifecycle integration, installed as hooks
-- `packages/common` — shared association, frontmatter, and path helpers
+- `packages/pi-extension` — Pi lifecycle integration, loaded in-process by Pi
+- `packages/claude-extension` — Claude Code hook adapter, imported by the companion
+- `packages/common` — shared association, harness, frontmatter, and path helpers
 
 ## Local development
 
