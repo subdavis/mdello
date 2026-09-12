@@ -1,0 +1,144 @@
+.tag-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.labels-pop {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: var(--z-popover);
+  width: 280px;
+  margin-top: var(--space-1);
+  padding: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  background: var(--card-bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 16px rgb(9 30 66 / 25%);
+}
+
+.labels-head,
+.labels-item,
+.label-foot {
+  display: flex;
+  align-items: center;
+}
+
+.labels-head strong {
+  flex: 1;
+  text-align: center;
+}
+
+.labels-head .icon-button {
+  flex: none;
+}
+
+.labels-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.labels-item {
+  gap: var(--space-2);
+}
+
+.labels-item input[type="checkbox"] {
+  flex: none;
+  width: auto;
+  margin: 0;
+}
+
+.label-chip {
+  flex: 1;
+  padding: var(--space-2);
+  border: 0;
+  border-radius: var(--radius);
+  text-align: left;
+  color: #fff;
+  font-weight: 600;
+}
+
+.tag-row .tag:hover,
+.label-chip:hover {
+  background: var(--column-bg);
+  filter: brightness(0.92);
+}
+
+.label-chip.is-plain {
+  background: var(--column-bg);
+  color: var(--text);
+}
+
+.label-create {
+  color: var(--muted);
+}
+
+.label-preview {
+  display: grid;
+  place-items: center;
+  padding: var(--space-4) var(--space-2);
+  background: #f1f2f4;
+  border-radius: var(--radius);
+}
+
+.label-preview .label-chip {
+  flex: none;
+  min-width: 160px;
+  text-align: center;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.field > span {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.swatches {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: var(--space-1);
+}
+
+.swatch {
+  display: grid;
+  height: 28px;
+  place-items: center;
+  border: 2px solid transparent;
+  border-radius: var(--radius);
+  color: rgb(23 43 77 / 0.7);
+}
+
+.swatch:is(:hover, .is-active) {
+  border-color: var(--accent);
+  filter: none;
+}
+
+.label-foot {
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--line);
+}
+
+.danger {
+  margin-left: auto;
+  background: #ffecea;
+  border-color: #f3b8b0;
+  color: #ae2a19;
+}

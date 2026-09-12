@@ -1,17 +1,15 @@
-import { createReadStream } from 'node:fs';
-import { readdir, stat } from 'node:fs/promises';
+import type { Dirent } from 'node:fs';
+import { readdir, readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
-import { createInterface } from 'node:readline';
-import { extractCardPaths, messageText, successfulModificationPaths } from '@mdello/common/paths';
+import { scanTranscript } from '@mdello/claude-extension/transcript';
+import type { HarnessSessionScan } from '@mdello/common/harness';
 import {
-  DEFAULT_CONFIG_FILE,
-  findBoardForPath,
-  loadBoards,
-  readBoardUuid,
-  registerBoard,
-  resolveCard,
-} from './boards.ts';
+  extractMarkdownPaths,
+  messageText,
+  successfulModificationPaths,
+} from '@mdello/common/paths';
+import { DEFAULT_CONFIG_FILE, loadBoards, type ResolvedCard, resolveCard } from './boards.ts';
 import {
   type Association,
   associationKey,
@@ -21,8 +19,8 @@ import {
 } from './server.ts';
 
 export interface BackfillOptions {
+  harness: string;
   sessionsRoot?: string;
-  boardRoot: string;
   dataFile?: string;
   configFile?: string;
   now?: Date;
@@ -37,19 +35,91 @@ export interface BackfillResult {
   purgedAssociations: number;
 }
 
-interface SessionScan {
-  sessionId?: string;
-  timestamp?: string;
-  cwd?: string;
-  cardPaths: Set<string>;
-  messages: unknown[];
+/** Where one harness keeps its sessions, and how to read one. */
+interface SessionScanner {
+  sessionsRoot: string;
+  /** Override for the root, so a test or an unusual install need not move its sessions. */
+  envVar: string;
+  scan(contents: string): HarnessSessionScan;
 }
 
-const DEFAULT_SESSIONS_ROOT = resolve(homedir(), '.pi', 'agent', 'sessions');
 const MAX_LOOKBACK_MS = 30 * 24 * 60 * 60 * 1000;
 
+/** Pi opens a session file with a `session` entry, then appends one `message` entry per turn. */
+function scanPiSession(contents: string): HarnessSessionScan {
+  const cardPaths = new Set<string>();
+  const messages: unknown[] = [];
+  const scan: HarnessSessionScan = { cardPaths: [] };
+  let cwd: string | undefined;
+
+  for (const line of contents.split('\n')) {
+    if (!line.trim()) continue;
+    let entry: Record<string, unknown>;
+    try {
+      entry = JSON.parse(line) as Record<string, unknown>;
+    } catch {
+      // One damaged line should not hide associations elsewhere in the session.
+      continue;
+    }
+
+    const timestamp = entry.timestamp;
+    if (typeof timestamp === 'string' && (!scan.updatedAt || timestamp > scan.updatedAt)) {
+      scan.updatedAt = timestamp;
+    }
+    if (entry.type === 'session') {
+      if (typeof entry.id === 'string') scan.sessionId = entry.id;
+      if (typeof entry.cwd === 'string') cwd = entry.cwd;
+    }
+    if (entry.type !== 'message' || !entry.message || typeof entry.message !== 'object') continue;
+
+    const message = entry.message as Record<string, unknown>;
+    messages.push(message);
+    if (message.role !== 'user') continue;
+    for (const cardPath of extractMarkdownPaths(messageText(message.content))) {
+      cardPaths.add(cardPath);
+    }
+  }
+
+  for (const path of successfulModificationPaths(messages, cwd)) cardPaths.add(path);
+  return { ...scan, cardPaths: [...cardPaths] };
+}
+
+const SCANNERS: Record<string, SessionScanner> = {
+  claude: {
+    sessionsRoot: resolve(homedir(), '.claude', 'projects'),
+    envVar: 'CLAUDE_SESSIONS_DIR',
+    scan: scanTranscript,
+  },
+  pi: {
+    sessionsRoot: resolve(homedir(), '.pi', 'agent', 'sessions'),
+    envVar: 'PI_SESSIONS_DIR',
+    scan: scanPiSession,
+  },
+};
+
+export const BACKFILL_HARNESSES = Object.keys(SCANNERS);
+
+/** Where each harness keeps its sessions, so help output need not restate the defaults. */
+export const BACKFILL_SOURCES = Object.entries(SCANNERS).map(([harness, scanner]) => ({
+  harness,
+  envVar: scanner.envVar,
+  sessionsRoot: scanner.sessionsRoot,
+}));
+
+export function isBackfillHarness(value: unknown): value is string {
+  return typeof value === 'string' && value in SCANNERS;
+}
+
 async function listSessionFiles(root: string, cutoff: number): Promise<string[]> {
-  const entries = await readdir(root, { withFileTypes: true });
+  let entries: Dirent[];
+  try {
+    entries = await readdir(root, { withFileTypes: true });
+  } catch (error) {
+    // A harness that was never installed has no sessions directory, which is not a failure.
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw error;
+  }
+
   const nested = await Promise.all(
     entries.map(async (entry) => {
       const path = resolve(root, entry.name);
@@ -61,62 +131,34 @@ async function listSessionFiles(root: string, cutoff: number): Promise<string[]>
   return nested.flat();
 }
 
-function noteTimestamp(scan: SessionScan, value: unknown): void {
-  if (typeof value === 'string' && (!scan.timestamp || value > scan.timestamp)) {
-    scan.timestamp = value;
-  }
-}
-
-function noteMessage(scan: SessionScan, message: Record<string, unknown>, boardRoot: string): void {
-  scan.messages.push(message);
-  if (message.role !== 'user') return;
-  for (const cardPath of extractCardPaths(messageText(message.content), boardRoot)) {
-    scan.cardPaths.add(cardPath);
-  }
-}
-
-function noteEntry(scan: SessionScan, entry: Record<string, unknown>, boardRoot: string): void {
-  noteTimestamp(scan, entry.timestamp);
-  if (entry.type === 'session') {
-    if (typeof entry.id === 'string') scan.sessionId = entry.id;
-    if (typeof entry.cwd === 'string') scan.cwd = entry.cwd;
-  }
-  if (entry.type === 'message' && entry.message && typeof entry.message === 'object') {
-    noteMessage(scan, entry.message as Record<string, unknown>, boardRoot);
-  }
-}
-
-function noteSuccessfulModifications(scan: SessionScan, boardRoot: string): void {
-  for (const path of successfulModificationPaths(scan.messages, scan.cwd)) {
-    for (const cardPath of extractCardPaths(path, boardRoot)) scan.cardPaths.add(cardPath);
-  }
-}
-
-async function scanSession(file: string, boardRoot: string): Promise<SessionScan> {
-  const scan: SessionScan = { cardPaths: new Set(), messages: [] };
-  const lines = createInterface({
-    input: createReadStream(file),
-    crlfDelay: Number.POSITIVE_INFINITY,
-  });
-
-  for await (const line of lines) {
-    if (!line.trim()) continue;
-    try {
-      noteEntry(scan, JSON.parse(line) as Record<string, unknown>, boardRoot);
-    } catch {
-      // One damaged line should not hide associations elsewhere in the session.
-    }
-  }
-
-  noteSuccessfulModifications(scan, boardRoot);
-  return scan;
+function recoveredAssociation(
+  card: ResolvedCard,
+  harness: string,
+  sessionId: string,
+  sessionFile: string,
+  timestamp: string | undefined,
+  existing: Association | undefined,
+): Association {
+  const recovered: Association = {
+    ...card,
+    harness,
+    sessionId,
+    sessionFile,
+    status: 'closed',
+    updatedAt: timestamp ?? new Date().toISOString(),
+  };
+  if (!existing || existing.status === 'closed') return recovered;
+  return { ...recovered, status: existing.status, updatedAt: existing.updatedAt };
 }
 
 export async function backfillAssociations(options: BackfillOptions): Promise<BackfillResult> {
+  const { harness } = options;
+  const scanner = SCANNERS[harness];
+  if (!scanner) throw new Error(`Cannot backfill unknown harness: ${harness}`);
+
   const sessionsRoot = resolve(
-    options.sessionsRoot ?? process.env.PI_SESSIONS_DIR ?? DEFAULT_SESSIONS_ROOT,
+    options.sessionsRoot ?? process.env[scanner.envVar] ?? scanner.sessionsRoot,
   );
-  const boardRoot = resolve(options.boardRoot);
   const dataFile = resolve(
     options.dataFile ?? process.env.MDELLO_COMPANION_DATA ?? DEFAULT_DATA_FILE,
   );
@@ -124,14 +166,10 @@ export async function backfillAssociations(options: BackfillOptions): Promise<Ba
     options.configFile ?? process.env.MDELLO_COMPANION_CONFIG ?? DEFAULT_CONFIG_FILE,
   );
   const boards = await loadBoards(configFile);
-  const boardUuid = await readBoardUuid(boardRoot);
-  const board = await registerBoard(configFile, boards, { uuid: boardUuid, path: boardRoot });
   const events = await loadAssociationEvents(dataFile);
-  const belongsToBoard = (association: Association) =>
-    association.boardUuid === boardUuid ||
-    (!association.boardUuid && findBoardForPath(association.cardPath, [board]) !== undefined);
-  const replaced = events.filter(belongsToBoard);
-  const retained = events.filter((association) => !belongsToBoard(association));
+  // Only this harness is rebuilt from its sessions; every other harness's history is passed through.
+  const replaced = events.filter((association) => association.harness === harness);
+  const retained = events.filter((association) => association.harness !== harness);
   const existing = new Map(
     replaced.map((association) => [associationKey(association), association]),
   );
@@ -144,36 +182,31 @@ export async function backfillAssociations(options: BackfillOptions): Promise<Ba
   let existingAssociations = 0;
 
   for (const sessionFile of sessionFiles) {
-    const scan = await scanSession(sessionFile, boardRoot);
-    if (!scan.sessionId || scan.cardPaths.size === 0) continue;
-    matchedSessions += 1;
+    const scan = scanner.scan(await readFile(sessionFile, 'utf8'));
+    if (!scan.sessionId || scan.cardPaths.length === 0) continue;
+    let matched = false;
 
     for (const cardPath of scan.cardPaths) {
       const card = await resolveCard(cardPath, boards);
-      if (card?.boardUuid !== boardUuid) continue;
+      if (!card) continue;
+      matched = true;
       foundAssociations += 1;
-      const association: Association = {
-        ...card,
-        harness: 'pi',
-        sessionId: scan.sessionId,
-        sessionFile,
-        status: 'closed',
-        updatedAt: scan.timestamp ?? new Date().toISOString(),
-      };
-      const key = associationKey(association);
+      const key = associationKey({ ...card, harness, sessionId: scan.sessionId });
       const existingAssociation = existing.get(key);
       if (existingAssociation) existingAssociations += 1;
       replacement.set(
         key,
-        existingAssociation && existingAssociation.status !== 'closed'
-          ? {
-              ...association,
-              status: existingAssociation.status,
-              updatedAt: existingAssociation.updatedAt,
-            }
-          : association,
+        recoveredAssociation(
+          card,
+          harness,
+          scan.sessionId,
+          sessionFile,
+          scan.updatedAt,
+          existingAssociation,
+        ),
       );
     }
+    if (matched) matchedSessions += 1;
   }
 
   await saveAssociations(dataFile, [...retained, ...replacement.values()]);

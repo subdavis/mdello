@@ -55,6 +55,7 @@ async function discoverCardPaths(
   if (event === 'SessionStart') return transcriptCardPaths(payload);
   if (event === 'UserPromptSubmit') return extractMarkdownPaths(text(payload.prompt) ?? '');
   if (event === 'PostToolUse') {
+    if (payload.tool_name === 'AskUserQuestion') return [];
     const path = modificationPath(payload.tool_name, payload.tool_input, text(payload.cwd));
     return path ? [path] : undefined;
   }
@@ -97,8 +98,13 @@ export interface ClaudeHookEntry {
  */
 const HTTP_EVENTS: { event: string; matcher?: string }[] = [
   { event: 'UserPromptSubmit' },
-  { event: 'PostToolUse', matcher: 'Edit|MultiEdit|Write' },
-  { event: 'Notification', matcher: 'permission_prompt|idle_prompt|agent_needs_input' },
+  // AskUserQuestion completes only after the user submits an answer, so its PostToolUse event
+  // moves the session out of waiting_for_input.
+  { event: 'PostToolUse', matcher: 'AskUserQuestion|Edit|MultiEdit|Write' },
+  // Only notifications that genuinely block on the human. `idle_prompt` fires when a finished
+  // session has merely been sitting there, so subscribing to it reported every idle session as
+  // waiting_for_input and buried the ones actually asking a question.
+  { event: 'Notification', matcher: 'permission_prompt|agent_needs_input' },
   { event: 'Stop' },
 ];
 const COMMAND_EVENTS = ['SessionStart', 'SessionEnd'];
@@ -119,13 +125,30 @@ export function claudeHookSettings(endpoint: string): Record<string, ClaudeHookE
   return entries;
 }
 
-/** Recognizes hooks this integration owns, across companion ports and past install layouts. */
-export function isCompanionHook(value: unknown): boolean {
-  const hook = value as { url?: unknown; command?: unknown } | null;
-  const fields = [hook?.url, hook?.command];
-  return fields.some(
-    (field) =>
-      typeof field === 'string' &&
-      (field.includes(HOOK_PATH) || field.includes('mdello-companion')),
-  );
+export const PLUGIN_NAME = 'mdello-companion';
+
+/** Marks a plugin directory as ours, so uninstall never deletes someone else's plugin. */
+export const PLUGIN_MARKER = 'mdello-companion';
+
+/**
+ * Files of a Claude Code plugin that carries nothing but these hooks. Dropping this directory into
+ * a skills directory loads it as `<name>@skills-dir` on the next session, so the integration
+ * installs and uninstalls as one self-contained directory and never edits the user's settings.
+ */
+export function claudePluginFiles(endpoint: string): Record<string, string> {
+  const manifest = {
+    name: PLUGIN_NAME,
+    description: 'Publishes Claude Code session status to the mdello companion.',
+    metadata: { managedBy: PLUGIN_MARKER },
+  };
+  return {
+    '.claude-plugin/plugin.json': `${JSON.stringify(manifest, null, 2)}\n`,
+    'hooks/hooks.json': `${JSON.stringify({ hooks: claudeHookSettings(endpoint) }, null, 2)}\n`,
+  };
+}
+
+/** True when a parsed `plugin.json` describes a directory this installer owns. */
+export function isCompanionPlugin(manifest: unknown): boolean {
+  const metadata = (manifest as { metadata?: { managedBy?: unknown } } | null)?.metadata;
+  return metadata?.managedBy === PLUGIN_MARKER;
 }

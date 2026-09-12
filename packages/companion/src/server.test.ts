@@ -6,6 +6,7 @@ import test from 'node:test';
 import {
   associationKey,
   createCompanionServer,
+  isCompanionListening,
   loadAssociationEvents,
   loadAssociations,
   purgeAssociations,
@@ -22,7 +23,7 @@ async function registerBoard(baseUrl: string, boardUuid: string, boardPath: stri
   await response.body?.cancel();
 }
 
-test('keys associations by board and card UUID before mutable path', () => {
+test('keys associations by global card UUID before mutable board and path', () => {
   const association = {
     boardUuid: 'board-a',
     cardUuid: 'card-a',
@@ -30,10 +31,13 @@ test('keys associations by board and card UUID before mutable path', () => {
     sessionId: 'session-a',
   };
 
-  assert.equal(
-    associationKey({ ...association, harness: 'pi' }),
-    associationKey({ ...association, cardPath: '/moved/card.md', harness: 'pi' }),
-  );
+  const moved = {
+    ...association,
+    boardUuid: 'board-b',
+    cardPath: '/moved/card.md',
+    harness: 'pi',
+  };
+  assert.equal(associationKey({ ...association, harness: 'pi' }), associationKey(moved));
   assert.notEqual(
     associationKey({ ...association, harness: 'pi' }),
     associationKey({ ...association, harness: 'claude-code' }),
@@ -71,18 +75,19 @@ test('preserves active JSONL event history during board reconciliation', async (
   }
 });
 
-test('reconciles an association after its UUID-identified card moves', async () => {
+test('reconciles an association after its UUID-identified card moves between boards', async () => {
   const root = await mkdtemp(join(tmpdir(), 'mdello-server-'));
   try {
-    const boardPath = join(root, 'moved-board');
+    const oldBoardPath = join(root, 'old-board');
+    const boardPath = join(root, 'new-board');
     const cardPath = join(boardPath, 'renamed.md');
     const dataFile = join(root, 'companion.jsonl');
-    await mkdir(boardPath);
+    await Promise.all([mkdir(oldBoardPath), mkdir(boardPath)]);
     await writeFile(cardPath, '---\nuuid: card-a\n---\n');
     const association = {
       boardUuid: 'board-a',
       cardUuid: 'card-a',
-      cardPath: '/old-board/old-name.md',
+      cardPath: join(oldBoardPath, 'old-name.md'),
       harness: 'pi',
       sessionId: 'session-a',
       status: 'closed' as const,
@@ -92,11 +97,20 @@ test('reconciles an association after its UUID-identified card moves', async () 
     const result = await reconcileAssociations(
       dataFile,
       new Map([[associationKey(association), association]]),
-      [{ uuid: 'board-a', path: boardPath, updatedAt: '2026-01-02T00:00:00.000Z' }],
+      [
+        { uuid: 'board-a', path: oldBoardPath, updatedAt: '2026-01-02T00:00:00.000Z' },
+        { uuid: 'board-b', path: boardPath, updatedAt: '2026-01-02T00:00:00.000Z' },
+      ],
     );
 
     assert.equal(result.purgedAssociations, 0);
-    assert.equal([...result.associations.values()][0]?.cardPath, cardPath);
+    assert.deepEqual(
+      [...result.associations.values()].map(({ boardUuid, cardPath: path }) => ({
+        boardUuid,
+        cardPath: path,
+      })),
+      [{ boardUuid: 'board-b', cardPath }],
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -146,6 +160,52 @@ test('resolves subscribed live associations and defaults a missing harness', asy
   }
 });
 
+test('appends nothing when a republished status only moves the timestamp', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mdello-server-'));
+  const boardPath = join(root, 'board');
+  const cardPath = join(boardPath, 'card.md');
+  const dataFile = join(root, 'companion.jsonl');
+  await mkdir(boardPath);
+  await writeFile(cardPath, '---\nuuid: card-a\n---\n');
+  const companion = await createCompanionServer({
+    port: 0,
+    dataFile,
+    configFile: join(root, 'companion.json'),
+  });
+  const publish = (body: Record<string, unknown>) =>
+    fetch(`${companion.url}/associations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cardPath, sessionId: 'session-a', harness: 'pi', ...body }),
+    });
+
+  try {
+    await registerBoard(companion.url, 'board-a', boardPath);
+
+    const first = await publish({ status: 'running' });
+    const repeat = await publish({ status: 'running' });
+    assert.deepEqual(await repeat.json(), await first.json(), 'the stored record is echoed back');
+    assert.equal((await loadAssociationEvents(dataFile)).length, 1);
+
+    // A real status change still lands, and so does a field the log did not have yet.
+    await publish({ status: 'ready_for_review' });
+    await publish({ status: 'ready_for_review', sessionFile: join(root, 'session.jsonl') });
+    await publish({ status: 'ready_for_review', sessionFile: join(root, 'session.jsonl') });
+    const events = await loadAssociationEvents(dataFile);
+    assert.deepEqual(
+      events.map((event) => [event.status, event.sessionFile]),
+      [
+        ['running', undefined],
+        ['ready_for_review', undefined],
+        ['ready_for_review', join(root, 'session.jsonl')],
+      ],
+    );
+  } finally {
+    await companion.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('publishes a harness hook payload to the whole session', async () => {
   const root = await mkdtemp(join(tmpdir(), 'mdello-server-'));
   const boardPath = join(root, 'board');
@@ -187,11 +247,13 @@ test('publishes a harness hook payload to the whole session', async () => {
       sessionFile?: string;
     }[];
     assert.deepEqual(
-      associations.map((association) => [association.cardPath, association.status]).sort(),
+      associations
+        .map((association) => [association.cardPath, association.status])
+        .sort((left, right) => (left[0] ?? '').localeCompare(right[0] ?? '')),
       [
         [cardPath, 'ready_for_review'],
         [otherPath, 'ready_for_review'],
-      ].sort(),
+      ].sort((left, right) => (left[0] ?? '').localeCompare(right[0] ?? '')),
     );
     assert.equal(associations[0]?.harness, 'claude');
     assert.equal(associations[0]?.sessionFile, join(root, 'session.jsonl'));
@@ -225,69 +287,39 @@ test('publishes a harness hook payload to the whole session', async () => {
   }
 });
 
-test('backfills only the requested board', async () => {
+// Backfill rewrites the whole log, so it is a CLI maintenance command and not reachable over HTTP.
+test('serves no backfill route', async () => {
   const root = await mkdtemp(join(tmpdir(), 'mdello-server-'));
-  const sessionsRoot = join(root, 'sessions');
-  const firstBoard = join(root, 'first');
-  const secondBoard = join(root, 'second');
-  const firstCard = join(firstBoard, 'card.md');
-  const secondCard = join(secondBoard, 'card.md');
-  await Promise.all([mkdir(sessionsRoot), mkdir(firstBoard), mkdir(secondBoard)]);
-  await Promise.all([
-    writeFile(join(firstBoard, 'mdello.yml'), 'uuid: board-a\n'),
-    writeFile(join(secondBoard, 'mdello.yml'), 'uuid: board-b\n'),
-    writeFile(firstCard, '---\nuuid: card-a\n---\n'),
-    writeFile(secondCard, '---\nuuid: card-b\n---\n'),
-    writeFile(
-      join(sessionsRoot, 'session.jsonl'),
-      `${JSON.stringify({ type: 'session', id: 'backfilled-session' })}\n${JSON.stringify({
-        type: 'message',
-        timestamp: '2026-01-01T00:00:00.000Z',
-        message: { role: 'user', content: `Work on ${firstCard}` },
-      })}\n`,
-    ),
-  ]);
   const companion = await createCompanionServer({
     port: 0,
     dataFile: join(root, 'companion.jsonl'),
     configFile: join(root, 'companion.json'),
-    sessionsRoot,
   });
   try {
-    await registerBoard(companion.url, 'board-a', firstBoard);
-    await registerBoard(companion.url, 'board-b', secondBoard);
-    for (const [cardPath, sessionId] of [
-      [firstCard, 'old-first-session'],
-      [secondCard, 'live-second-session'],
-    ]) {
-      await fetch(`${companion.url}/associations`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cardPath, sessionId, status: 'running' }),
-      });
-    }
-
-    const response = await fetch(`${companion.url}/backfill`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ boardUuid: 'board-a', boardPath: firstBoard }),
-    });
-    assert.equal(response.status, 200);
-
-    const associations = (await (await fetch(`${companion.url}/associations`)).json()) as Array<
-      Record<string, unknown>
-    >;
-    assert.deepEqual(
-      associations.map(({ boardUuid, sessionId, status }) => ({ boardUuid, sessionId, status })),
-      [
-        { boardUuid: 'board-b', sessionId: 'live-second-session', status: 'running' },
-        { boardUuid: 'board-a', sessionId: 'backfilled-session', status: 'closed' },
-      ],
-    );
+    const response = await fetch(`${companion.url}/backfill`, { method: 'POST' });
+    assert.equal(response.status, 404);
+    assert.deepEqual(await response.json(), { error: 'Not found' });
   } finally {
     await companion.close();
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test('detects a listening companion so offline commands can refuse to run', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mdello-server-'));
+  const companion = await createCompanionServer({
+    port: 0,
+    dataFile: join(root, 'companion.jsonl'),
+    configFile: join(root, 'companion.json'),
+  });
+  const port = Number(new URL(companion.url).port);
+  try {
+    assert.equal(await isCompanionListening(port), true);
+  } finally {
+    await companion.close();
+    await rm(root, { recursive: true, force: true });
+  }
+  assert.equal(await isCompanionListening(port), false, 'a closed port reads as not listening');
 });
 
 test('requires board context for SSE and filters snapshots and live events', async () => {
@@ -362,7 +394,7 @@ test('requires board context for SSE and filters snapshots and live events', asy
   }
 });
 
-test('expunges every card event without touching same card UUID on another board', async () => {
+test('expunges every event for a global card UUID', async () => {
   const root = await mkdtemp(join(tmpdir(), 'mdello-server-'));
   const dataFile = join(root, 'companion.jsonl');
   const events = [
@@ -401,16 +433,13 @@ test('expunges every card event without touching same card UUID on another board
     configFile: join(root, 'companion.json'),
   });
   try {
-    const response = await fetch(
-      `${companion.url}/associations?boardUuid=board-a&cardUuid=shared-card`,
-      { method: 'DELETE' },
-    );
+    const response = await fetch(`${companion.url}/associations?cardUuid=shared-card`, {
+      method: 'DELETE',
+    });
 
     assert.equal(response.status, 200);
-    assert.deepEqual(await response.json(), { removedEvents: 2 });
-    const remaining = await loadAssociationEvents(dataFile);
-    assert.equal(remaining.length, 1);
-    assert.equal(remaining[0]?.boardUuid, 'board-b');
+    assert.deepEqual(await response.json(), { removedEvents: 3 });
+    assert.deepEqual(await loadAssociationEvents(dataFile), []);
   } finally {
     await companion.close();
     await rm(root, { recursive: true, force: true });

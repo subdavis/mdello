@@ -31,6 +31,7 @@ export type CompanionConnectionStatus = 'disabled' | 'connecting' | 'connected' 
 
 const associations = reactive(new Map<string, Association>());
 const connectionStatus = ref<CompanionConnectionStatus>('disabled');
+const herdrEnabled = ref(false);
 const RECONNECT_DELAY_MS = 1_000;
 
 let eventSource: EventSource | undefined;
@@ -50,24 +51,13 @@ export async function fetchCardAssociations(
   return (await response.json()) as Association[];
 }
 
-export async function expungeCardAssociations(boardUuid: string, cardUuid: string): Promise<void> {
-  const query = new URLSearchParams({ boardUuid, cardUuid });
+export async function expungeCardAssociations(cardUuid: string): Promise<void> {
+  const query = new URLSearchParams({ cardUuid });
   const response = await fetch(`${endpoint}/associations?${query}`, { method: 'DELETE' });
   if (!response.ok) throw new Error(`Expunging companion associations failed: ${response.status}`);
   for (const [key, association] of associations) {
-    if (association.boardUuid === boardUuid && association.cardUuid === cardUuid) {
-      associations.delete(key);
-    }
+    if (association.cardUuid === cardUuid) associations.delete(key);
   }
-}
-
-export async function backfillBoard(boardUuid: string, boardPath: string): Promise<void> {
-  const response = await fetch(`${endpoint}/backfill`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ boardUuid, boardPath }),
-  });
-  if (!response.ok) throw new Error(`Companion backfill failed: ${response.status}`);
 }
 
 export async function acknowledgeReadyForReview(entries: Association[]): Promise<void> {
@@ -84,6 +74,16 @@ export async function acknowledgeReadyForReview(entries: Association[]): Promise
   );
 }
 
+async function refreshHerdrEnabled(): Promise<void> {
+  try {
+    const response = await fetch(`${endpoint}/settings`);
+    const settings = response.ok ? ((await response.json()) as { herdrEnabled?: boolean }) : {};
+    herdrEnabled.value = settings.herdrEnabled === true;
+  } catch {
+    herdrEnabled.value = false;
+  }
+}
+
 function clearReconnectTimer(): void {
   if (reconnectTimer !== undefined) clearTimeout(reconnectTimer);
   reconnectTimer = undefined;
@@ -96,6 +96,7 @@ function disconnect(): void {
   source?.close();
   associations.clear();
   connectionStatus.value = 'disabled';
+  herdrEnabled.value = false;
 }
 
 function scheduleReconnect(boardUuid: string, boardPath: string): void {
@@ -125,7 +126,9 @@ function connect(boardUuid: string, boardPath: string): void {
   }
   eventSource = source;
   source.addEventListener('open', () => {
-    if (eventSource === source) connectionStatus.value = 'connected';
+    if (eventSource !== source) return;
+    connectionStatus.value = 'connected';
+    void refreshHerdrEnabled();
   });
   source.addEventListener('error', () => {
     if (eventSource !== source) return;
@@ -160,10 +163,46 @@ export function useCompanionConnectionStatus(
   return readonly(connectionStatus);
 }
 
+export function useHerdrEnabled(): Readonly<Ref<boolean>> {
+  return readonly(herdrEnabled);
+}
+
+export async function focusSession(association: Association): Promise<boolean> {
+  try {
+    const response = await fetch(`${endpoint}/actions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'focus',
+        harness: association.harness,
+        sessionId: association.sessionId,
+        sessionFile: association.sessionFile,
+      }),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+export function resumeCommand(association: Association): string | undefined {
+  if (association.harness === 'pi' || association.harness === 'unknown') {
+    return `pi --session ${association.sessionId}`;
+  }
+  if (association.harness === 'claude') {
+    return `claude --resume ${association.sessionId}`;
+  }
+  return undefined;
+}
+
+function cardFilePath(rootPath: string, card: Card): string {
+  const root = rootPath.replace(/[\\/]$/, '');
+  return root ? `${root}/${card.name}` : '';
+}
+
 export function useCompanion(rootPath: Ref<string>, card: Card) {
   const cardPath = computed(() => {
-    const root = rootPath.value.replace(/[\\/]$/, '');
-    return root ? `${root}/${card.name}` : '';
+    return cardFilePath(rootPath.value, card);
   });
 
   return computed(() =>

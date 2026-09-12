@@ -22,3 +22,5 @@ async function run(): Promise<void> {
     </button>
   </output>
 </template>
+
+<style scoped src="../styles/Toast.css"></style>

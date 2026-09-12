@@ -1,6 +1,7 @@
 import { createReadStream } from 'node:fs';
 import { appendFile, mkdir, open, writeFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { connect } from 'node:net';
 import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -10,12 +11,13 @@ import {
   associationKey,
   isAssociationStatus,
 } from '@mdello/common/associations';
+import { performAction } from './actions.ts';
 import {
   type BoardRegistration,
   DEFAULT_CONFIG_FILE,
   listActiveCards,
   loadBoards,
-  readBoardUuid,
+  loadHerdrBundleId,
   registerBoard,
   resolveCard,
 } from './boards.ts';
@@ -30,7 +32,6 @@ export interface CompanionOptions {
   port?: number;
   dataFile?: string;
   configFile?: string;
-  sessionsRoot?: string;
 }
 
 export interface ReconcileResult {
@@ -39,10 +40,29 @@ export interface ReconcileResult {
 }
 
 const DEFAULT_HOST = '127.0.0.1';
-const DEFAULT_PORT = 31337;
+export const DEFAULT_PORT = 31337;
 export const DEFAULT_DATA_FILE = resolve(homedir(), '.mdello', 'companion.jsonl');
 const MAX_BODY_BYTES = 64 * 1024;
+const PROBE_TIMEOUT_MS = 250;
 const debug = createDebugLogger();
+
+/**
+ * Whether a companion already holds the port. It keeps its associations in memory and rewrites the
+ * whole log on reconciliation, so an offline command that edits the file must refuse to run.
+ */
+export function isCompanionListening(port: number, host = DEFAULT_HOST): Promise<boolean> {
+  return new Promise((resolveProbe) => {
+    const socket = connect({ port, host });
+    const settle = (listening: boolean) => {
+      socket.destroy();
+      resolveProbe(listening);
+    };
+    socket.setTimeout(PROBE_TIMEOUT_MS);
+    socket.once('connect', () => settle(true));
+    socket.once('timeout', () => settle(false));
+    socket.once('error', () => settle(false));
+  });
+}
 
 function writeSse(response: ServerResponse, event: string, data: unknown): void {
   response.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
@@ -118,6 +138,12 @@ async function readBody(request: NodeJS.ReadableStream): Promise<unknown> {
 
 type AssociationInput = Partial<Association> & { markdownPath?: string };
 
+/** Key-sorted so two records built from differently shaped inputs still compare equal. */
+function associationFingerprint(association: Association): string {
+  const { updatedAt: _timestamp, ...rest } = association;
+  return JSON.stringify(Object.entries(rest).sort(([left], [right]) => left.localeCompare(right)));
+}
+
 /** Resolves one card, records it, and broadcasts it. Returns undefined for an unknown card. */
 async function recordAssociation(
   input: AssociationInput,
@@ -146,6 +172,19 @@ async function recordAssociation(
   const previous = associations.get(key);
   if (!association.sessionFile && previous?.sessionFile) {
     association.sessionFile = previous.sessionFile;
+  }
+
+  // Both harnesses republish the current status on every prompt and every Markdown edit, and the
+  // log is replayed last-write-wins. A record that moved only its timestamp therefore adds nothing
+  // a client does not already hold, so keep the one we have instead of growing the log.
+  if (previous && associationFingerprint(previous) === associationFingerprint(association)) {
+    debug('association unchanged', {
+      cardUuid: previous.cardUuid,
+      harness: previous.harness,
+      sessionId: previous.sessionId,
+      status: previous.status,
+    });
+    return previous;
   }
 
   associations.set(key, association);
@@ -186,6 +225,35 @@ async function handleAssociationPost(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     debug('association request failed', { error: message });
+    sendJson(response, 400, { error: message });
+  }
+}
+
+const ACTION_ERROR_STATUS: Record<string, number> = {
+  herdr_not_configured: 409,
+  session_not_found: 404,
+};
+
+async function handleActionsPost(
+  request: IncomingMessage,
+  response: ServerResponse,
+  herdrBundleId: string | undefined,
+): Promise<void> {
+  try {
+    const input = await readBody(request);
+    const result = await performAction(input, { herdrBundleId });
+    if (result === 'invalid') {
+      sendJson(response, 400, { error: 'Invalid action' });
+      return;
+    }
+    if (!result.ok) {
+      sendJson(response, ACTION_ERROR_STATUS[result.error] ?? 500, { error: result.error });
+      return;
+    }
+    sendJson(response, 200, { ok: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    debug('action request failed', { error: message });
     sendJson(response, 400, { error: message });
   }
 }
@@ -311,17 +379,12 @@ export async function loadAssociations(dataFile: string): Promise<Map<string, As
 export async function expungeCardAssociations(
   dataFile: string,
   associations: Map<string, Association>,
-  boardUuid: string,
   cardUuid: string,
 ): Promise<number> {
   const events = await loadAssociationEvents(dataFile);
-  const remaining = events.filter(
-    (association) => association.boardUuid !== boardUuid || association.cardUuid !== cardUuid,
-  );
+  const remaining = events.filter((association) => association.cardUuid !== cardUuid);
   for (const [key, association] of associations) {
-    if (association.boardUuid === boardUuid && association.cardUuid === cardUuid) {
-      associations.delete(key);
-    }
+    if (association.cardUuid === cardUuid) associations.delete(key);
   }
   await saveAssociations(dataFile, remaining);
   return events.length - remaining.length;
@@ -333,9 +396,7 @@ export async function reconcileAssociations(
   boards: BoardRegistration[],
 ): Promise<ReconcileResult> {
   const activeCards = (await Promise.all(boards.map((board) => listActiveCards(board)))).flat();
-  const activeByIdentity = new Map(
-    activeCards.map((card) => [`${card.boardUuid}\0${card.cardUuid}`, card]),
-  );
+  const activeByUuid = new Map(activeCards.map((card) => [card.cardUuid, card]));
   const persistedEvents = await loadAssociationEvents(dataFile);
   const events = persistedEvents.length > 0 ? persistedEvents : [...associations.values()];
   const retainedEvents: Association[] = [];
@@ -343,10 +404,7 @@ export async function reconcileAssociations(
   let changed = false;
 
   for (const association of events) {
-    let identity =
-      association.boardUuid && association.cardUuid
-        ? activeByIdentity.get(`${association.boardUuid}\0${association.cardUuid}`)
-        : undefined;
+    let identity = association.cardUuid ? activeByUuid.get(association.cardUuid) : undefined;
     identity ??= await resolveCard(association.cardPath, boards);
     if (!identity) {
       changed = true;
@@ -379,66 +437,20 @@ async function handleAssociationDelete(
   associations: Map<string, Association>,
   clients: Map<ServerResponse, string>,
 ): Promise<void> {
-  const boardUuid = url.searchParams.get('boardUuid');
   const cardUuid = url.searchParams.get('cardUuid');
-  if (!boardUuid || !cardUuid) {
-    sendJson(response, 400, { error: 'boardUuid and cardUuid are required' });
+  if (!cardUuid) {
+    sendJson(response, 400, { error: 'cardUuid is required' });
     return;
   }
   try {
-    const removedEvents = await expungeCardAssociations(
-      dataFile,
-      associations,
-      boardUuid,
-      cardUuid,
-    );
+    const removedEvents = await expungeCardAssociations(dataFile, associations, cardUuid);
     writeBoardSnapshots(clients, associations);
-    debug('card associations expunged', { boardUuid, cardUuid, removedEvents });
+    debug('card associations expunged', { cardUuid, removedEvents });
     sendJson(response, 200, { removedEvents });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    debug('card association expunge failed', { boardUuid, cardUuid, error: message });
+    debug('card association expunge failed', { cardUuid, error: message });
     sendJson(response, 500, { error: message });
-  }
-}
-
-async function handleBackfillPost(
-  request: IncomingMessage,
-  response: ServerResponse,
-  configFile: string,
-  dataFile: string,
-  sessionsRoot: string | undefined,
-  associations: Map<string, Association>,
-  clients: Map<ServerResponse, string>,
-): Promise<Map<string, Association>> {
-  try {
-    const input = (await readBody(request)) as { boardUuid?: unknown; boardPath?: unknown };
-    if (typeof input.boardUuid !== 'string' || typeof input.boardPath !== 'string') {
-      sendJson(response, 400, { error: 'boardUuid and boardPath are required' });
-      return associations;
-    }
-    if ((await readBoardUuid(input.boardPath)) !== input.boardUuid) {
-      sendJson(response, 400, { error: 'Board UUID does not match mdello.yml' });
-      return associations;
-    }
-
-    const { backfillAssociations } = await import('./backfill.ts');
-    const result = await backfillAssociations({
-      boardRoot: input.boardPath,
-      configFile,
-      dataFile,
-      sessionsRoot,
-    });
-    associations = await loadAssociations(dataFile);
-    writeBoardSnapshots(clients, associations);
-    debug('board backfilled', { boardUuid: input.boardUuid, ...result });
-    sendJson(response, 200, result);
-    return associations;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    debug('board backfill failed', { error: message });
-    sendJson(response, 500, { error: message });
-    return associations;
   }
 }
 
@@ -499,6 +511,35 @@ async function handleEventsGet(
   return associations;
 }
 
+async function handleEarlyRequest(
+  request: IncomingMessage,
+  response: ServerResponse,
+  url: URL,
+  dataFile: string,
+  associations: Map<string, Association>,
+  clients: Map<ServerResponse, string>,
+  boards: BoardRegistration[],
+): Promise<boolean> {
+  if (request.method === 'OPTIONS') {
+    // Refuse the preflight for harness hooks so no browser origin is ever granted access.
+    if (harnessFromPath(url.pathname)) {
+      response.writeHead(404);
+      response.end();
+      return true;
+    }
+    setCors(response);
+    response.writeHead(204);
+    response.end();
+    return true;
+  }
+
+  if (request.method !== 'POST') return false;
+  const harness = harnessFromPath(url.pathname);
+  if (!harness) return false;
+  await handleHookPost(request, response, harness, dataFile, associations, clients, boards);
+  return true;
+}
+
 export async function createCompanionServer(options: CompanionOptions = {}): Promise<{
   server: Server;
   url: string;
@@ -511,6 +552,7 @@ export async function createCompanionServer(options: CompanionOptions = {}): Pro
     options.configFile ?? process.env.MDELLO_COMPANION_CONFIG ?? DEFAULT_CONFIG_FILE;
   let associations = await loadAssociations(dataFile);
   const boards = await loadBoards(configFile);
+  const herdrBundleId = await loadHerdrBundleId(configFile);
   const clients = new Map<ServerResponse, string>();
   await mkdir(dirname(dataFile), { recursive: true });
   await open(dataFile, 'a').then((file) => file.close());
@@ -519,35 +561,7 @@ export async function createCompanionServer(options: CompanionOptions = {}): Pro
     const url = new URL(request.url ?? '/', `http://${request.headers.host ?? host}`);
     debug('request received', { method: request.method, path: `${url.pathname}${url.search}` });
 
-    if (request.method === 'OPTIONS') {
-      // Refuse the preflight for harness hooks so no browser origin is ever granted access.
-      if (harnessFromPath(url.pathname)) {
-        response.writeHead(404);
-        response.end();
-        return;
-      }
-      setCors(response);
-      response.writeHead(204);
-      response.end();
-      return;
-    }
-
-    const harness = request.method === 'POST' ? harnessFromPath(url.pathname) : undefined;
-    if (harness) {
-      await handleHookPost(request, response, harness, dataFile, associations, clients, boards);
-      return;
-    }
-
-    if (request.method === 'POST' && url.pathname === '/backfill') {
-      associations = await handleBackfillPost(
-        request,
-        response,
-        configFile,
-        dataFile,
-        options.sessionsRoot,
-        associations,
-        clients,
-      );
+    if (await handleEarlyRequest(request, response, url, dataFile, associations, clients, boards)) {
       return;
     }
 
@@ -581,6 +595,16 @@ export async function createCompanionServer(options: CompanionOptions = {}): Pro
 
     if (request.method === 'POST' && url.pathname === '/associations') {
       await handleAssociationPost(request, response, dataFile, associations, clients, boards);
+      return;
+    }
+
+    if (request.method === 'GET' && url.pathname === '/settings') {
+      sendJson(response, 200, { herdrEnabled: Boolean(herdrBundleId) });
+      return;
+    }
+
+    if (request.method === 'POST' && url.pathname === '/actions') {
+      await handleActionsPost(request, response, herdrBundleId);
       return;
     }
 

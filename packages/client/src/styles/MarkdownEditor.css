@@ -1,0 +1,102 @@
+.editor-stack {
+  flex: 0 1 auto;
+  min-height: 240px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow-y: auto;
+}
+
+.editor-inner {
+  position: relative;
+  min-height: 100%;
+}
+
+.editor-layer {
+  margin: 0;
+  padding: var(--space-2);
+  border: 0;
+  font: inherit;
+  font-family: var(--mono);
+  font-size: var(--font-sm);
+  font-weight: 450;
+  line-height: 19px;
+  tab-size: 2;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.editor-layer code {
+  font: inherit;
+}
+
+.editor-layer.hljs {
+  min-height: 100%;
+  background: none;
+  color: #24292e;
+}
+
+.editor-layer .hljs-section {
+  color: #225c9f;
+  font-weight: 900;
+}
+
+.editor-layer .hljs-strong {
+  color: #005cc5;
+  font-weight: 900;
+}
+
+.editor-layer .hljs-emphasis {
+  color: #24292e;
+  font-style: italic;
+}
+
+.editor-layer .hljs-code {
+  color: #193d4d;
+  background: #ecedf1;
+}
+
+.editor-layer .hljs-bullet {
+  color: #735c0f;
+  font-weight: 900;
+}
+
+.editor-layer .hljs-quote {
+  color: #22863a;
+}
+
+.editor-layer .hljs-link {
+  color: #225c9f;
+  text-decoration: underline;
+}
+
+.editor-layer .hljs-symbol {
+  color: #6f42c1;
+}
+
+.editor-layer .hljs-string {
+  color: #02731b;
+}
+
+.editor-layer .hljs-literal {
+  color: #d73a49;
+}
+
+.editor-input {
+  position: absolute;
+  inset: 0;
+  resize: none;
+  overflow: hidden;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--text);
+  border-radius: 0;
+}
+
+.editor-input:focus {
+  outline: none;
+}
+
+.editor-input::selection {
+  background: #024ba433;
+}

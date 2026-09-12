@@ -2,8 +2,7 @@
 import hljs from 'highlight.js/lib/core';
 import markdown from 'highlight.js/lib/languages/markdown';
 import { computed, ref } from 'vue';
-
-// Token colors live in style.css (.editor-layer .hljs-*), GitHub light palette.
+import { focusEditorAtLine } from '../editorFocus';
 
 // The stock markdown grammar only knows [text](url); add bare URLs and <autolinks>,
 // the way VS Code highlights them. Unshifted so it beats the html-tag rule on <autolinks>;
@@ -140,17 +139,8 @@ function onKeydown(event: KeyboardEvent): void {
 
 /** Focus the textarea, putting the caret at the start of `line` and scrolling it into view. */
 function focus(line = 0): void {
-  const el = area.value;
-  if (!el) return;
-  const offset = model.value
-    .split('\n')
-    .slice(0, line)
-    .reduce((sum, text) => sum + text.length + 1, 0);
-  el.focus();
-  el.setSelectionRange(offset, offset);
-  if (!stack.value) return;
-  const lineHeight = parseFloat(getComputedStyle(el).lineHeight) || 1;
-  stack.value.scrollTop = Math.max(0, line * lineHeight - stack.value.clientHeight / 3);
+  if (!area.value || !stack.value) return;
+  focusEditorAtLine(area.value, stack.value, model.value, line);
 }
 
 defineExpose({ focus });
@@ -173,3 +163,5 @@ defineExpose({ focus });
     </div>
   </div>
 </template>
+
+<style src="../styles/MarkdownEditor.css"></style>

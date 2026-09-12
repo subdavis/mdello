@@ -1,0 +1,36 @@
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-overlay);
+  background: var(--scrim);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.scrim-drop {
+  place-items: start center;
+  padding: var(--space-2) var(--space-3);
+}
+
+.scrim-top {
+  place-items: start center;
+  padding: var(--space-6) var(--space-3);
+}
+
+.scrim-center {
+  place-items: center;
+  padding: var(--space-6) var(--space-3);
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--panel-shadow);
+  max-width: 100%;
+  max-height: 100%;
+}

@@ -13,6 +13,7 @@ export interface BoardRegistration {
 
 interface CompanionConfig {
   boards: BoardRegistration[];
+  herdrBundleId?: string;
 }
 
 export interface ResolvedCard {
@@ -61,20 +62,39 @@ function validBoard(value: unknown): value is BoardRegistration {
   );
 }
 
-export async function loadBoards(configFile = DEFAULT_CONFIG_FILE): Promise<BoardRegistration[]> {
+/** The whole config file, so callers reading one key never clobber another on save. */
+async function loadConfig(configFile: string): Promise<Partial<CompanionConfig>> {
   try {
-    const parsed = JSON.parse(await readFile(configFile, 'utf8')) as Partial<CompanionConfig>;
-    return Array.isArray(parsed.boards) ? parsed.boards.filter(validBoard) : [];
+    const parsed = JSON.parse(await readFile(configFile, 'utf8'));
+    return parsed && typeof parsed === 'object' ? (parsed as Partial<CompanionConfig>) : {};
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT' || error instanceof SyntaxError)
-      return [];
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT' || error instanceof SyntaxError) {
+      return {};
+    }
     throw error;
   }
 }
 
+export async function loadBoards(configFile = DEFAULT_CONFIG_FILE): Promise<BoardRegistration[]> {
+  const config = await loadConfig(configFile);
+  return Array.isArray(config.boards) ? config.boards.filter(validBoard) : [];
+}
+
+/** User-edited settings that live alongside board registrations in the same config file. */
+export async function loadHerdrBundleId(
+  configFile = DEFAULT_CONFIG_FILE,
+): Promise<string | undefined> {
+  const { herdrBundleId } = await loadConfig(configFile);
+  return typeof herdrBundleId === 'string' && herdrBundleId.trim()
+    ? herdrBundleId.trim()
+    : undefined;
+}
+
+/** Preserves every other top-level key (e.g. herdrBundleId) instead of overwriting the file. */
 async function saveBoards(configFile: string, boards: BoardRegistration[]): Promise<void> {
+  const config = await loadConfig(configFile);
   await mkdir(dirname(configFile), { recursive: true });
-  await writeFile(configFile, `${JSON.stringify({ boards }, null, 2)}\n`);
+  await writeFile(configFile, `${JSON.stringify({ ...config, boards }, null, 2)}\n`);
 }
 
 export async function registerBoard(

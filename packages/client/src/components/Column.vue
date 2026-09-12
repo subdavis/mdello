@@ -4,6 +4,7 @@ import { useDrag } from '../composables/useDrag';
 import { useMarkdownImport } from '../composables/useMarkdownImport';
 import type { Card as CardType, Column } from '../fs/board';
 import CardTile from './Card.vue';
+import IconGlyph from './IconGlyph.vue';
 
 const props = defineProps<{ column: Column; index: number }>();
 const emit = defineEmits<{
@@ -165,12 +166,12 @@ function archiveColumn(): void {
         <span class="count">{{ column.cards.length }}</span>
         <button
           type="button"
-          class="kebab"
+          class="kebab icon-button icon-button--small"
           :aria-expanded="menuOpen"
           title="Column actions"
           @click="menuOpen = !menuOpen"
         >
-          ⋮
+          <IconGlyph name="more" aria-hidden="true" />
         </button>
         <div v-if="menuOpen" class="column-menu">
           <button type="button" @click="startRenaming">Rename</button>
@@ -201,6 +202,11 @@ function archiveColumn(): void {
         "
       />
     </form>
-    <button v-else type="button" class="add-button" @click="startAdding">+ Add card</button>
+    <button v-else type="button" class="add-button" @click="startAdding">
+      <IconGlyph name="plus" aria-hidden="true" />
+      Add card
+    </button>
   </section>
 </template>
+
+<style scoped src="../styles/Column.css"></style>

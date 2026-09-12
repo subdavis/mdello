@@ -1,3 +1,38 @@
+.init-gate {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  text-align: center;
+  color: var(--muted);
+}
+
+.init-gate h1 {
+  margin: 0;
+  font-size: var(--font-lg);
+  line-height: 26px;
+}
+
+.init-gate p {
+  margin: 0;
+}
+
+.init-button {
+  padding: var(--space-3) var(--space-5);
+  font-size: var(--font-md);
+}
+
+.board {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  overflow-x: auto;
+  width: 100%;
+}
+
 .archive-column {
   height: 260px;
   overflow: hidden;
@@ -12,8 +47,8 @@
   overflow: hidden;
   border: 1px dashed #8c8f95;
   border-radius: var(--radius);
-  color: #27282b;
-  background: #d8d9dc;
+  color: var(--muted);
+  background: var(--column-bg);
 }
 
 .archive-dropzone::before,
@@ -34,7 +69,6 @@
   transition: filter 120ms ease;
 }
 
-/* Inline SVG turbulence creates monochrome film grain without another asset. */
 .archive-dropzone::after {
   z-index: 0;
   opacity: 0;
@@ -46,13 +80,12 @@
 
 .archive-label {
   z-index: 1;
-  padding: 7px 11px;
+  padding: var(--space-2) var(--space-3);
   border: 1px solid rgb(0 0 0 / 0.24);
   border-radius: var(--radius);
   background: rgb(244 244 244 / 0.86);
   box-shadow: 0 2px 2px rgb(9 30 66 / 25%);
   font-weight: 650;
-  letter-spacing: 0.04em;
 }
 
 .archive-dropzone.is-over,
@@ -61,7 +94,6 @@
   border-color: #111;
 }
 
-/* Separate layer lets the spiral crossfade over permanent stripes. */
 .archive-vortex {
   position: absolute;
   left: 50%;
@@ -80,25 +112,13 @@
   animation: archive-vortex 18s linear infinite;
 }
 
-.archive-dropzone.is-over .archive-vortex,
-.archive-dropzone.is-warping .archive-vortex {
+.archive-dropzone:is(.is-over, .is-warping) .archive-vortex {
   opacity: 1;
 }
 
-.archive-dropzone.is-over::after,
-.archive-dropzone.is-warping::after {
+.archive-dropzone:is(.is-over, .is-warping)::after {
   opacity: 0.48;
   animation: archive-grain 120ms steps(2) infinite;
-}
-
-.archive-warp-clone {
-  position: fixed;
-  z-index: calc(var(--z-toast) + 1);
-  margin: 0;
-  pointer-events: none;
-  transform-origin: center;
-  will-change: transform, opacity;
-  animation: archive-warp 150ms linear forwards;
 }
 
 @keyframes archive-vortex {
@@ -121,6 +141,16 @@
   }
 }
 
+.archive-warp-clone {
+  position: fixed;
+  z-index: calc(var(--z-toast) + 1);
+  margin: 0;
+  pointer-events: none;
+  transform-origin: center;
+  will-change: transform, opacity;
+  animation: archive-warp 150ms linear forwards;
+}
+
 @keyframes archive-warp {
   from {
     opacity: 1;
@@ -135,8 +165,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .archive-vortex,
-  .archive-dropzone.is-over::after,
-  .archive-dropzone.is-warping::after {
+  .archive-dropzone:is(.is-over, .is-warping)::after {
     animation: none;
   }
 

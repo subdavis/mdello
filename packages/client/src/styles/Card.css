@@ -1,0 +1,75 @@
+.card {
+  position: relative;
+  background: var(--card-bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+  box-shadow: 0 1px 0 rgb(9 30 66 / 0.1);
+}
+
+.card:hover {
+  border-color: #b3bac5;
+}
+
+.card.is-dragging {
+  opacity: 0.4;
+}
+
+.card-title {
+  margin: 0;
+  font-size: var(--font-sm);
+  font-weight: 500;
+}
+
+.card-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--muted);
+  font-size: var(--font-xs);
+  margin-top: var(--space-1);
+}
+
+.card-meta .stamp {
+  margin-right: auto;
+}
+
+.card-attachments,
+.card-refs {
+  display: flex;
+  align-items: center;
+}
+
+.attachment-icon {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.card-refs {
+  gap: var(--space-1);
+}
+
+.card-refs .ref-icon {
+  width: 1rem;
+  height: 1rem;
+}
+
+.card .card-status-indicator {
+  width: 1rem;
+  height: 1rem;
+}
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin: var(--space-1) 0 0;
+  padding: 0;
+  list-style: none;
+}

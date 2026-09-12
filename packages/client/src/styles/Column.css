@@ -1,0 +1,100 @@
+.column.is-dragging {
+  opacity: 0.4;
+}
+
+.column-head {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  cursor: grab;
+}
+
+.column-head h2 {
+  margin: 0;
+  font-size: var(--font-md);
+  font-weight: 600;
+}
+
+.rename-form {
+  flex: 1;
+  display: flex;
+}
+
+.rename-form input {
+  padding: 0 var(--space-1);
+  font-size: var(--font-md);
+}
+
+.count {
+  color: var(--muted);
+}
+
+.kebab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+}
+
+.kebab:hover {
+  color: inherit;
+  background: rgb(9 30 66 / 0.06);
+}
+
+.column-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  font-size: var(--font-sm);
+  z-index: var(--z-popover);
+  margin-top: var(--space-1);
+  min-width: 120px;
+  display: flex;
+  flex-direction: column;
+  background: var(--card-bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 12px rgb(9 30 66 / 0.2);
+  overflow: hidden;
+}
+
+.column-menu button {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+  padding: var(--space-1) var(--space-2);
+}
+
+.column-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  overflow-y: auto;
+  min-height: 8px;
+}
+
+.add-button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  text-align: left;
+  background: transparent;
+  border-color: transparent;
+  color: var(--muted);
+}
+
+.add-button .icon-glyph {
+  width: 12px;
+  height: 12px;
+}
+
+.slot {
+  flex: none;
+  border-radius: var(--radius);
+  background: rgb(9 30 66 / 0.08);
+}

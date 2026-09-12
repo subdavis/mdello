@@ -358,7 +358,7 @@ async function archiveOne(card: Card): Promise<{ dir: string; name: string }> {
     persist: async () => {
       card.modified = await writeCard(requireRoot(), card);
     },
-    expunge: () => expungeCardAssociations(loaded.uuid, card.uuid),
+    expunge: () => expungeCardAssociations(card.uuid),
     move: () => archiveCard(requireRoot(), card),
   });
 }

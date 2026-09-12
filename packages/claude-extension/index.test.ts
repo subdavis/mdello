@@ -3,7 +3,12 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { claudeAdapter, claudeHookSettings, isCompanionHook } from './index.ts';
+import {
+  claudeAdapter,
+  claudeHookSettings,
+  claudePluginFiles,
+  isCompanionPlugin,
+} from './index.ts';
 
 test('maps each lifecycle event to a companion status', async () => {
   const events: [string, string][] = [
@@ -51,6 +56,17 @@ test('discovers a card from a tool call, resolving against the session directory
   });
 
   assert.deepEqual(event?.cardPaths, ['/workspace/cards/one.md']);
+});
+
+test('moves a session back to running when the user answers a question', async () => {
+  const event = await claudeAdapter.translate({
+    hook_event_name: 'PostToolUse',
+    session_id: 's1',
+    tool_name: 'AskUserQuestion',
+  });
+
+  assert.equal(event?.status, 'running');
+  assert.deepEqual(event?.cardPaths, []);
 });
 
 test('ignores a tool call that cannot touch a card', async () => {
@@ -147,17 +163,42 @@ test('keeps per-turn events off the process spawn path', () => {
   }
 });
 
-test('recognizes its own hooks across ports and past install layouts', () => {
-  assert.equal(isCompanionHook({ type: 'http', url: 'http://127.0.0.1:41337/hooks/claude' }), true);
-  assert.equal(isCompanionHook({ type: 'command', command: 'curl … /hooks/claude || true' }), true);
-  assert.equal(
-    isCompanionHook({
-      type: 'command',
-      command: "node '/home/u/.claude/hooks/mdello-companion.js'",
-    }),
-    true,
+test('subscribes to question answers', () => {
+  const matcher = claudeHookSettings('http://127.0.0.1:31337').PostToolUse?.[0]?.matcher ?? '';
+
+  assert.ok(matcher.split('|').includes('AskUserQuestion'));
+});
+
+test('subscribes only to notifications that block on the human', () => {
+  const matcher = claudeHookSettings('http://127.0.0.1:31337').Notification?.[0]?.matcher ?? '';
+  const types = matcher.split('|');
+
+  assert.ok(types.includes('permission_prompt'), 'a permission prompt blocks on the human');
+  assert.ok(types.includes('agent_needs_input'), 'an asked question blocks on the human');
+  // A finished session sitting idle is ready_for_review, not waiting_for_input.
+  assert.ok(!types.includes('idle_prompt'), 'idle is not waiting for input');
+  assert.ok(matcher, 'an empty matcher would subscribe to every notification type');
+});
+
+test('emits a loadable plugin whose hooks carry the companion endpoint', () => {
+  const files = claudePluginFiles('http://127.0.0.1:41337');
+  assert.deepEqual(Object.keys(files).sort(), ['.claude-plugin/plugin.json', 'hooks/hooks.json']);
+
+  const manifest = JSON.parse(files['.claude-plugin/plugin.json'] ?? '');
+  assert.equal(manifest.name, 'mdello-companion');
+  assert.ok(manifest.description, 'a plugin listing needs a description');
+
+  const { hooks } = JSON.parse(files['hooks/hooks.json'] ?? '');
+  assert.equal(hooks.Stop[0].hooks[0].url, 'http://127.0.0.1:41337/hooks/claude');
+  assert.match(hooks.SessionStart[0].hooks[0].command, /41337\/hooks\/claude/);
+});
+
+test('marks its own plugin directory so uninstall spares everyone else', () => {
+  const manifest = JSON.parse(
+    claudePluginFiles('http://127.0.0.1:31337')['.claude-plugin/plugin.json'] ?? '',
   );
-  assert.equal(isCompanionHook({ type: 'command', command: 'tput bel > /dev/tty' }), false);
-  assert.equal(isCompanionHook({ type: 'http', url: 'http://example.test/hooks/other' }), false);
-  assert.equal(isCompanionHook(null), false);
+  assert.equal(isCompanionPlugin(manifest), true);
+  assert.equal(isCompanionPlugin({ name: 'mdello-companion' }), false);
+  assert.equal(isCompanionPlugin({ metadata: { managedBy: 'someone-else' } }), false);
+  assert.equal(isCompanionPlugin(undefined), false);
 });

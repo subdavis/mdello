@@ -1,29 +1,15 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import type { Association } from '../composables/useCompanion';
-import { showToast } from '../composables/useToast';
+import IconGlyph from './IconGlyph.vue';
 
-const props = defineProps<{ association: Association }>();
+const props = defineProps<{ association: Association; resumeCommand?: string }>();
+const emit = defineEmits<{ copy: [] }>();
 
 const statusLabel = computed(() => props.association.status.replaceAll('_', ' '));
 const sessionLabel = computed(
   () => `${props.association.harness}:${props.association.sessionId.split('-').at(-1)}`,
 );
-const resumeCommand = computed(() => {
-  if (props.association.harness === 'pi' || props.association.harness === 'unknown') {
-    return `pi --session ${props.association.sessionId}`;
-  }
-  if (props.association.harness === 'claude') {
-    return `claude --resume ${props.association.sessionId}`;
-  }
-  return undefined;
-});
-
-async function copyResumeCommand(): Promise<void> {
-  if (!resumeCommand.value) return;
-  await navigator.clipboard.writeText(resumeCommand.value);
-  showToast('Copied session resume command');
-}
 </script>
 
 <template>
@@ -33,9 +19,10 @@ async function copyResumeCommand(): Promise<void> {
     :class="`is-${association.status}`"
     :disabled="!resumeCommand"
     :title="resumeCommand ? `Copy: ${resumeCommand}` : `Resume unsupported for ${association.harness}`"
-    @click="copyResumeCommand"
+    @click="emit('copy')"
   >
-    <span
+    <IconGlyph
+      :name="`status-${association.status}`"
       class="card-status-indicator session-status-icon"
       :class="`is-${association.status}`"
       aria-hidden="true"
@@ -44,48 +31,3 @@ async function copyResumeCommand(): Promise<void> {
     <strong>{{ statusLabel }}</strong>
   </button>
 </template>
-
-<style scoped>
-.session-status-details {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5em;
-  width: fit-content;
-  max-width: 100%;
-  color: var(--muted);
-  font-size: inherit;
-  text-align: left;
-}
-
-
-.session-status-details.is-idle,
-.session-status-details.is-ready_for_review {
-  color: #1f845a;
-}
-
-.session-status-details.is-running {
-  color: #b38600;
-}
-
-.session-status-details.is-waiting_for_input {
-  color: var(--accent);
-}
-
-.session-status-icon {
-  position: relative;
-  top: auto;
-  right: auto;
-  flex: none;
-}
-
-.session-status-details code {
-  overflow: hidden;
-  color: inherit;
-  text-overflow: ellipsis;
-}
-
-.session-status-details strong {
-  color: inherit;
-  white-space: nowrap;
-}
-</style>

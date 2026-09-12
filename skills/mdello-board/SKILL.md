@@ -1,35 +1,28 @@
 ---
 name: mdello-board
 description: >
-  Read and write the user's personal kanban board, which lives as plain markdown files in
-  ~/Documents/mdello. Cards are root-level .md files, ordered columns live in mdello.yml, and each
+  Read and write the user's personal kanban board, which lives as plain markdown files.
+  Cards are root-level .md files, ordered columns live in mdello.yml, and each
   card selects its column in YAML frontmatter. Use whenever the user mentions "my board", "mdello",
   kanban columns/cards, todo/doing/done, or asks to add, move, update, archive, or summarize cards.
 ---
 
 # mdello board
 
-Board root: `~/Documents/mdello`. No server, database, or API. Edit files with normal filesystem
+No server, database, or API. Edit files with normal filesystem
 tools. App reads disk on refresh. Human may have app open—touch only cards needed.
 
 ## Layout
 
 ```text
-~/Documents/mdello/
+BOARD_ROOT/
   mdello.yml
   some-card.md
   other-card.md
   archive/2026-08/old.md
 ```
 
-`mdello.yml` defines ordered columns:
-
-```yaml
-columns:
-  - Todo
-  - Doing
-  - Done
-```
+`mdello.yml` defines ordered columns.
 
 Cards live directly in board root. `column` frontmatter must exactly match one configured name.
 Archive is cold storage and never shown.
@@ -43,7 +36,7 @@ title: This is my ticket name
 column: Todo
 tags: [poc, mdello]
 created: '2026-08-14T14:59:43.813Z'
-assignee: brandon
+assignee: yourname
 order: 3
 ---
 
@@ -65,8 +58,8 @@ Body is markdown description.
 **Read board**
 
 ```bash
-read ~/Documents/mdello/mdello.yml
-rg --files ~/Documents/mdello -g '*.md' -g '!archive/**'
+read BOARD_ROOT/mdello.yml
+rg --files BOARD_ROOT -g '*.md' -g '!archive/**'
 ```
 
 Read configured columns first, then group root card files by `column`.

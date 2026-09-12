@@ -100,12 +100,15 @@ npx mdello-companion install claude
 | --- | --- |
 | `macos` | `~/Library/LaunchAgents/com.mdello.companion.plist`, started with `launchctl` |
 | `pi` | `packages/pi-extension/dist/index.js` symlinked into `~/.pi/agent/extensions`; rebuild after changing extension or `@mdello/common` sources |
-| `claude` | `hooks` entries in `~/.claude/settings.json` that post to the companion; nothing to build |
+| `claude` | a plugin at `~/.claude/skills/mdello-companion` whose hooks post to the companion; nothing to build |
 
 Every install command is safe to rerun and updates its existing installation. The Claude install
-rewrites only its own `hooks` entries and leaves the rest of `settings.json` untouched; it refuses
-to run at all when that file is not valid JSON. Hook URLs are written at install time from
-`MDELLO_COMPANION_PORT`, so rerun `install claude` after changing the port.
+writes one self-contained plugin directory and never edits `settings.json`; uninstall deletes that
+directory, and refuses if anything else owns it. Claude Code loads it as
+`mdello-companion@skills-dir` in the next session — check with `claude plugin list`, turn it off
+without uninstalling with `claude plugin disable mdello-companion@skills-dir`. Hook URLs are
+written at install time from `MDELLO_COMPANION_PORT`, so rerun `install claude` after changing the
+port.
 
 Remove every integration, or one integration, with:
 
@@ -113,8 +116,8 @@ Remove every integration, or one integration, with:
 npx mdello-companion uninstall
 ```
 
-After installing or removing the Pi integration, run `/reload` in Pi. Claude Code picks up hook
-changes in its next session.
+After installing or removing the Pi integration, run `/reload` in Pi. For Claude Code, run
+`/reload-plugins` or start a new session.
 
 ### Agent plugins
 
@@ -130,8 +133,9 @@ Pi and Claude Code both discover associations from absolute Markdown paths in us
 successful Markdown edit or write tool calls, including relative paths resolved against the session
 working directory. On session start each one also rescans its own session history, so a card
 associates even when the companion was down at the time. Associations include a `harness`
-identifier (`pi` or `claude`) and are keyed by stable board and card UUIDs, so moving or renaming a
-card keeps its identity. The session badge in a card modal copies a resume command for that
+identifier (`pi` or `claude`) and are keyed by global card UUIDs, so moving or renaming a card—even
+between registered boards—keeps its identity. Board UUID and path remain mutable routing metadata.
+The session badge in a card modal copies a resume command for that
 harness (`pi --session …` or `claude --resume …`).
 
 See [`docs/agent-extension.md`](docs/agent-extension.md) for the lifecycle event mapping and the

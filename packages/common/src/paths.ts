@@ -62,11 +62,6 @@ export function successfulModificationPaths(messages: unknown[], cwd?: string): 
   return [...paths];
 }
 
-export function extractCardPaths(text: string, boardRoot: string): string[] {
-  const root = boardRoot.replace(/[\\/]$/, '');
-  return extractMarkdownPaths(text).filter((path) => path.startsWith(`${root}/`));
-}
-
 export function messageText(content: unknown): string {
   if (typeof content === 'string') return content;
   if (!Array.isArray(content)) return '';

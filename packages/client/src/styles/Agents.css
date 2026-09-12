@@ -1,0 +1,129 @@
+/* Agent status presentation shared by card tiles and card session details. */
+.card.status-running {
+  background: color-mix(in srgb, var(--card-bg) 88%, #e2b203);
+}
+
+.card.status-waiting_for_input {
+  background: color-mix(in srgb, var(--card-bg) 88%, #579dff);
+}
+
+.card.status-ready_for_review {
+  background: color-mix(in srgb, var(--card-bg) 88%, #4bce97);
+}
+
+.card.has-status .card-title {
+  padding-right: var(--space-4);
+}
+
+.card-status-indicator {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  width: calc(1rem + 4px);
+  height: calc(1rem + 4px);
+}
+
+.card-status-indicator.is-idle,
+.card-status-indicator.is-ready_for_review {
+  color: #1f845a;
+}
+
+.card-status-indicator.is-running {
+  color: #b38600;
+}
+
+.card-status-indicator.is-running .icon-glyph-fill {
+  fill: #e2b203;
+}
+
+.card-status-indicator.is-waiting_for_input {
+  color: var(--accent);
+}
+
+.card-status-indicator.is-ready_for_review {
+  stroke-width: 2.5;
+}
+
+.card-status-indicator.is-closed {
+  color: var(--muted);
+}
+
+.session-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.session-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: fit-content;
+  max-width: 100%;
+  padding-right: var(--space-2);
+}
+
+.session-focus-button {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.1s ease;
+}
+
+.session-row:hover .session-focus-button,
+.session-focus-button:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.session-focus-button:is(.is-idle, .is-ready_for_review) {
+  color: #1f845a;
+}
+
+.session-focus-button.is-running {
+  color: #b38600;
+}
+
+.session-focus-button.is-waiting_for_input {
+  color: var(--accent);
+}
+
+.session-status-details {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  width: fit-content;
+  max-width: 100%;
+  color: var(--muted);
+  text-align: left;
+}
+
+.session-status-details:is(.is-idle, .is-ready_for_review) {
+  color: #1f845a;
+}
+
+.session-status-details.is-running {
+  color: #b38600;
+}
+
+.session-status-details.is-waiting_for_input {
+  color: var(--accent);
+}
+
+.session-status-icon {
+  position: relative;
+  top: auto;
+  right: auto;
+  flex: none;
+}
+
+.session-status-details code {
+  overflow: hidden;
+  color: inherit;
+  text-overflow: ellipsis;
+}
+
+.session-status-details strong {
+  color: inherit;
+  white-space: nowrap;
+}
+

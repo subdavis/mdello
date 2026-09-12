@@ -14,16 +14,17 @@ async function writeCard(path: string, uuid: string): Promise<void> {
   await writeFile(path, `---\nuuid: ${uuid}\n---\n`);
 }
 
-test('replaces one board backfill while preserving live statuses and other boards', async () => {
+test('backfills all registered boards while preserving live statuses and other harnesses', async () => {
   const root = await mkdtemp(join(tmpdir(), 'mdello-backfill-'));
   try {
     const sessionsRoot = join(root, 'sessions');
     const boardRoot = join(root, 'board');
+    const otherBoardRoot = join(root, 'other-board');
     const dataFile = join(root, 'state', 'companion.jsonl');
     const configFile = join(root, 'state', 'companion.json');
     const firstCard = join(boardRoot, 'first.md');
     const secondCard = join(boardRoot, 'second.md');
-    const thirdCard = join(boardRoot, 'third.md');
+    const thirdCard = join(otherBoardRoot, 'third.md');
     const writtenCard = join(boardRoot, 'written.md');
     const existing: Association = {
       boardUuid: 'board-a',
@@ -46,8 +47,8 @@ test('replaces one board backfill while preserving live statuses and other board
     const otherBoard: Association = {
       boardUuid: 'board-b',
       cardUuid: 'card-z',
-      cardPath: join(root, 'other-board', 'card.md'),
-      harness: 'pi',
+      cardPath: join(otherBoardRoot, 'card.md'),
+      harness: 'claude',
       sessionId: 'other-session',
       status: 'running',
       updatedAt: '2026-01-04T00:00:00.000Z',
@@ -56,8 +57,17 @@ test('replaces one board backfill while preserving live statuses and other board
     await mkdir(join(sessionsRoot, 'project-a'), { recursive: true });
     await mkdir(join(sessionsRoot, 'project-b'), { recursive: true });
     await mkdir(boardRoot, { recursive: true });
+    await mkdir(otherBoardRoot, { recursive: true });
     await mkdir(dirname(dataFile), { recursive: true });
-    await writeFile(join(boardRoot, 'mdello.yml'), 'uuid: board-a\n');
+    await writeFile(
+      configFile,
+      JSON.stringify({
+        boards: [
+          { uuid: 'board-a', path: boardRoot, updatedAt: '2026-01-01T00:00:00.000Z' },
+          { uuid: 'board-b', path: otherBoardRoot, updatedAt: '2026-01-01T00:00:00.000Z' },
+        ],
+      }),
+    );
     await Promise.all([
       writeCard(firstCard, 'card-a'),
       writeCard(secondCard, 'card-b'),
@@ -115,8 +125,8 @@ test('replaces one board backfill while preserving live statuses and other board
     );
 
     const first = await backfillAssociations({
+      harness: 'pi',
       sessionsRoot,
-      boardRoot,
       dataFile,
       configFile,
     });
@@ -137,7 +147,7 @@ test('replaces one board backfill while preserving live statuses and other board
     assert.deepEqual(associations[0], otherBoard);
     assert.deepEqual(
       associations
-        .filter(({ boardUuid }) => boardUuid === 'board-a')
+        .filter(({ harness }) => harness === 'pi')
         .map(({ boardUuid, cardUuid, harness, sessionId, status }) => ({
           boardUuid,
           cardUuid,
@@ -161,7 +171,7 @@ test('replaces one board backfill while preserving live statuses and other board
           status: 'closed',
         },
         {
-          boardUuid: 'board-a',
+          boardUuid: 'board-b',
           cardUuid: 'card-c',
           harness: 'pi',
           sessionId: 'session-b',
@@ -177,7 +187,12 @@ test('replaces one board backfill while preserving live statuses and other board
       ],
     );
 
-    const second = await backfillAssociations({ sessionsRoot, boardRoot, dataFile, configFile });
+    const second = await backfillAssociations({
+      harness: 'pi',
+      sessionsRoot,
+      dataFile,
+      configFile,
+    });
     assert.equal(second.addedAssociations, 0);
     assert.equal(second.existingAssociations, 4);
     assert.equal(second.purgedAssociations, 0);
@@ -187,6 +202,152 @@ test('replaces one board backfill while preserving live statuses and other board
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test('recovers Claude Code transcripts and leaves another harness alone', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mdello-backfill-'));
+  try {
+    const sessionsRoot = join(root, 'projects', '-Users-someone-board');
+    const boardRoot = join(root, 'board');
+    const dataFile = join(root, 'companion.jsonl');
+    const configFile = join(root, 'companion.json');
+    const promptedCard = join(boardRoot, 'prompted.md');
+    const writtenCard = join(boardRoot, 'written.md');
+    const failedCard = join(boardRoot, 'failed.md');
+    const piAssociation: Association = {
+      boardUuid: 'board-a',
+      cardUuid: 'card-a',
+      cardPath: promptedCard,
+      harness: 'pi',
+      sessionId: 'pi-session',
+      status: 'running',
+      updatedAt: '2026-01-09T00:00:00.000Z',
+    };
+
+    await mkdir(sessionsRoot, { recursive: true });
+    await mkdir(boardRoot, { recursive: true });
+    await writeFile(
+      configFile,
+      JSON.stringify({
+        boards: [{ uuid: 'board-a', path: boardRoot, updatedAt: '2026-01-01T00:00:00.000Z' }],
+      }),
+    );
+    await Promise.all([
+      writeCard(promptedCard, 'card-a'),
+      writeCard(writtenCard, 'card-b'),
+      writeCard(failedCard, 'card-c'),
+    ]);
+    await writeFile(dataFile, jsonl([piAssociation]));
+
+    // Claude repeats identity on every entry and wraps tool calls in content blocks.
+    const entry = (type: string, timestamp: string, message: unknown) => ({
+      type,
+      sessionId: 'claude-session',
+      cwd: boardRoot,
+      timestamp,
+      message,
+    });
+    await writeFile(
+      join(sessionsRoot, 'claude-session.jsonl'),
+      jsonl([
+        { type: 'mode', sessionId: 'claude-session', mode: 'default' },
+        entry('user', '2026-01-10T00:00:00.000Z', {
+          role: 'user',
+          content: `Work on ${promptedCard}`,
+        }),
+        entry('assistant', '2026-01-10T00:01:00.000Z', {
+          role: 'assistant',
+          content: [
+            { type: 'tool_use', id: 'call-1', name: 'Write', input: { file_path: writtenCard } },
+            { type: 'tool_use', id: 'call-2', name: 'Edit', input: { file_path: failedCard } },
+          ],
+        }),
+        entry('user', '2026-01-10T00:02:00.000Z', {
+          role: 'user',
+          content: [
+            { type: 'tool_result', tool_use_id: 'call-1' },
+            { type: 'tool_result', tool_use_id: 'call-2', is_error: true },
+          ],
+        }),
+      ]),
+    );
+
+    const result = await backfillAssociations({
+      harness: 'claude',
+      sessionsRoot,
+      dataFile,
+      configFile,
+    });
+    assert.deepEqual(result, {
+      scannedSessions: 1,
+      matchedSessions: 1,
+      foundAssociations: 2,
+      addedAssociations: 2,
+      existingAssociations: 0,
+      purgedAssociations: 0,
+    });
+
+    const associations = (await readFile(dataFile, 'utf8'))
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as Association);
+    assert.deepEqual(associations[0], piAssociation, 'the Pi record survives untouched');
+    assert.deepEqual(
+      associations.slice(1).map(({ cardUuid, harness, sessionId, status, updatedAt }) => ({
+        cardUuid,
+        harness,
+        sessionId,
+        status,
+        updatedAt,
+      })),
+      [
+        {
+          cardUuid: 'card-a',
+          harness: 'claude',
+          sessionId: 'claude-session',
+          status: 'closed',
+          updatedAt: '2026-01-10T00:02:00.000Z',
+        },
+        {
+          cardUuid: 'card-b',
+          harness: 'claude',
+          sessionId: 'claude-session',
+          status: 'closed',
+          updatedAt: '2026-01-10T00:02:00.000Z',
+        },
+      ],
+      'the failed edit is not associated, and the latest entry dates the session',
+    );
+    assert.equal(associations[1]?.sessionFile, join(sessionsRoot, 'claude-session.jsonl'));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('reports no sessions when a harness has never been installed', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mdello-backfill-'));
+  try {
+    const configFile = join(root, 'companion.json');
+    await writeFile(configFile, JSON.stringify({ boards: [] }));
+
+    const result = await backfillAssociations({
+      harness: 'claude',
+      sessionsRoot: join(root, 'absent'),
+      dataFile: join(root, 'companion.jsonl'),
+      configFile,
+    });
+
+    assert.equal(result.scannedSessions, 0);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('rejects a harness it cannot scan', async () => {
+  await assert.rejects(
+    backfillAssociations({ harness: 'nope', sessionsRoot: '/nowhere' }),
+    /unknown harness: nope/,
+  );
 });
 
 test('does not scan Pi sessions older than 30 days', async () => {
@@ -199,14 +360,21 @@ test('does not scan Pi sessions older than 30 days', async () => {
     await mkdir(boardRoot);
     await writeFile(join(boardRoot, 'mdello.yml'), 'uuid: board-a\n');
     await writeCard(join(boardRoot, 'card.md'), 'card-a');
+    const configFile = join(root, 'companion.json');
+    await writeFile(
+      configFile,
+      JSON.stringify({
+        boards: [{ uuid: 'board-a', path: boardRoot, updatedAt: '2026-01-01T00:00:00.000Z' }],
+      }),
+    );
     await writeFile(sessionFile, jsonl([{ type: 'session', id: 'old-session' }]));
     await utimes(sessionFile, new Date('2026-01-01'), new Date('2026-01-01'));
 
     const result = await backfillAssociations({
+      harness: 'pi',
       sessionsRoot,
-      boardRoot,
       dataFile: join(root, 'companion.jsonl'),
-      configFile: join(root, 'companion.json'),
+      configFile,
       now: new Date('2026-02-15'),
     });
 

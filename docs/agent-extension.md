@@ -41,7 +41,7 @@ Publish status changes to every card associated with the session. Re-associating
 | Status | Pi event | Claude Code hook |
 | --- | --- | --- |
 | `idle` | `session_start`, `ui_prompt_end` when idle | `SessionStart` |
-| `running` | `agent_start`, `ui_prompt_end` when busy | `UserPromptSubmit`, `PostToolUse` |
+| `running` | `agent_start`, `ui_prompt_end` when busy | `UserPromptSubmit`, `PostToolUse` (including an answered `AskUserQuestion`) |
 | `waiting_for_input` | `ui_prompt_start` | `Notification` (`permission_prompt`, `idle_prompt`, `agent_needs_input`) |
 | `ready_for_review` | `agent_settled` | `Stop` |
 | `closed` | `session_shutdown` | `SessionEnd` |
@@ -74,7 +74,8 @@ Return `undefined` for anything not worth publishing — an unknown event, a mis
 
 ## Packaging and configuration
 
-- A client exports the harness's normal extension entry point; Pi uses a default function receiving `ExtensionAPI`. An adapter exports a `HarnessAdapter` plus whatever configuration its installer needs to write.
+- A client exports the harness's normal extension entry point; Pi uses a default function receiving `ExtensionAPI`. An adapter exports a `HarnessAdapter` plus the configuration its installer materializes — for Claude Code, the files of a hooks-only plugin.
+- Prefer a drop-in directory over editing a shared config file. An installer that owns one directory is idempotent by construction and cannot damage unrelated settings.
 - Register listeners only—do not start the companion server from the extension.
 - A client reads its endpoint from `MDELLO_COMPANION_URL`, defaulting to `http://127.0.0.1:31337`, and strips a trailing slash. An adapter's endpoint is fixed when its hooks are installed.
 - Keep companion-specific logic isolated so extension load and agent operation remain safe while companion is absent.
@@ -85,15 +86,17 @@ Return `undefined` for anything not worth publishing — an unknown event, a mis
 | Harness | Shape | Source | Installed as |
 | --- | --- | --- | --- |
 | Pi | client | [`packages/pi-extension/index.ts`](../packages/pi-extension/index.ts) | bundle symlinked into `~/.pi/agent/extensions` |
-| Claude Code | adapter | [`packages/claude-extension/index.ts`](../packages/claude-extension/index.ts) | `hooks` entries in `~/.claude/settings.json` |
+| Claude Code | adapter | [`packages/claude-extension/index.ts`](../packages/claude-extension/index.ts) | generated plugin directory at `~/.claude/skills/mdello-companion` |
 
 ### Claude Code specifics
 
-Verified against Claude Code 2.1.220. The first two points are not documented and were confirmed by inspecting the binary and by running hooks against a capture server.
+Verified against Claude Code 2.1.220. The first point is not documented and was confirmed by inspecting the binary and by running hooks against a capture server.
 
 - **`SessionStart` and `Setup` reject `http` hooks** and are skipped with only a debug log. Those two events therefore post with `curl`, at roughly 17 ms once per session; the four per-turn events use `type: "http"` and spawn nothing.
-- **`allowedHttpHookUrls` is enforced only when the key exists.** Loopback is exempt from the private-address check, so an unset allowlist permits `127.0.0.1`. The installer appends the companion URL when a user already maintains an allowlist and never creates one.
+- **The integration ships as a plugin, not as settings.** A directory under a skills directory that carries `.claude-plugin/plugin.json` loads as `<name>@skills-dir` on the next session, with no marketplace and no install record, and plugin hooks use the same schema as settings hooks. So install writes one directory and never edits the user's `settings.json`. The manifest carries `metadata.managedBy`, which uninstall requires before deleting anything.
+- **`allowedHttpHookUrls` is enforced only when the key exists.** Loopback is exempt from the private-address check, so an unset allowlist permits `127.0.0.1`. A user who maintains an allowlist must add the companion origin themselves, since the installer does not write settings.
 - **A dead companion cannot block a session.** A failed hook is reported as a non-blocking error and never reaches the session output. The exception is `SessionEnd`, which writes hook failures to stderr, so its `curl` ends in `|| true`.
+- **`enabledPlugins` wins over the manifest.** Running `claude plugin disable mdello-companion@skills-dir` records `false` in settings, and reinstalling does not override it; re-enable with `claude plugin enable`.
 - Every hook sets an explicit `timeout`, because the default for `command`, `http`, and `mcp_tool` hooks is 600 seconds.
 - The companion must answer with valid JSON or an empty body; invalid JSON raises a hook error. `/hooks/*` replies `{}` and sends no CORS headers, since it reads a caller-supplied session file and must not be reachable from a browser page.
-- Discovery reads `prompt` on `UserPromptSubmit`, `tool_input.file_path` on `PostToolUse` (matcher `Edit|MultiEdit|Write`), and the `transcript_path` JSONL on `SessionStart`.
+- Discovery reads `prompt` on `UserPromptSubmit`, `tool_input.file_path` on modifying `PostToolUse` events, and the `transcript_path` JSONL on `SessionStart`. The `PostToolUse` matcher also includes `AskUserQuestion`; that tool completes when the user submits an answer, moving the session from `waiting_for_input` to `running` without discovering another card.

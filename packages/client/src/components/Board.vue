@@ -6,7 +6,6 @@ import { markdownFile, useMarkdownImport } from '../composables/useMarkdownImpor
 import { ARCHIVE_DIR, type Card } from '../fs/board';
 import CardModal from './CardModal.vue';
 import Column from './Column.vue';
-import '../styles/archive.css';
 
 const board = useBoard();
 const drag = useDrag();
@@ -175,3 +174,5 @@ function onArchiveDragover(event: DragEvent): void {
     <CardModal v-if="openCard" :card="openCard" @close="openCard = null" />
   </div>
 </template>
+
+<style src="../styles/Board.css"></style>

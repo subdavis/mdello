@@ -1,16 +1,16 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { useBoard } from '../composables/useBoard';
-import { acknowledgeReadyForReview, useCompanion } from '../composables/useCompanion';
 import { useMarkdownImport } from '../composables/useMarkdownImport';
 import { showToast } from '../composables/useToast';
 import { formatStamp } from '../format';
 import type { CardAttachment } from '../fs/attachments';
 import type { Card } from '../fs/board';
 import { renderMarkdown } from '../markdown';
+import Agents from './Agents.vue';
+import IconGlyph from './IconGlyph.vue';
 import MarkdownEditor from './MarkdownEditor.vue';
 import Overlay from './Overlay.vue';
-import SessionStatusDetails from './SessionStatusDetails.vue';
 import TagEditor from './TagEditor.vue';
 
 const props = defineProps<{ card: Card }>();
@@ -26,8 +26,6 @@ function storedModalWidth(): number {
 }
 
 const board = useBoard();
-const associations = useCompanion(board.rootPath, props.card);
-watch(associations, (entries) => void acknowledgeReadyForReview(entries), { immediate: true });
 const markdownImport = useMarkdownImport();
 const editing = ref(false);
 const editor = ref<InstanceType<typeof MarkdownEditor> | null>(null);
@@ -234,7 +232,9 @@ function onEscape(): void {
           board.queueSave(card);
         "
       />
-      <button type="button" class="icon-button" title="Close" @click="close">×</button>
+      <button type="button" class="icon-button" title="Close" @click="close">
+        <IconGlyph name="close" aria-hidden="true" />
+      </button>
     </header>
 
     <dl class="meta">
@@ -243,16 +243,7 @@ function onEscape(): void {
           <span class="history-item">Created <span class="history-item-date">{{ formatStamp(card.created) }}</span></span>
           <span class="history-item">Modified <span class="history-item-date">{{ formatStamp(card.modified) }}</span></span>
       </dd>
-      <template v-if="associations.length">
-        <dt>Agents</dt>
-        <dd class="session-list">
-          <SessionStatusDetails
-            v-for="association in associations"
-            :key="`${association.harness}:${association.sessionId}`"
-            :association="association"
-          />
-        </dd>
-      </template>
+      <Agents :card="card" />
       <template v-if="card.references.length">
         <dt>References</dt>
         <dd>
@@ -272,19 +263,6 @@ function onEscape(): void {
           </div>
         </dd>
       </template>
-      <dt>Assignee</dt>
-      <dd>
-        <input
-          class="meta-input"
-          aria-label="Assignee"
-          placeholder="Unassigned"
-          :value="card.assignee ?? ''"
-          @input="
-            card.assignee = ($event.target as HTMLInputElement).value;
-            board.queueSave(card);
-          "
-        />
-      </dd>
       <dt>File</dt>
       <dd>
         <button type="button" class="path copyable-details" title="Click to copy path" @click="copyPath">
@@ -308,7 +286,7 @@ function onEscape(): void {
           >
             <button
               type="button"
-              class="icon-button attachment-remove"
+              class="icon-button icon-button--small attachment-remove"
               :title="`Remove ${attachment.name}`"
               aria-label="Remove attachment"
               draggable="false"
@@ -316,7 +294,7 @@ function onEscape(): void {
               @dragstart.stop.prevent
               @click.stop="removeAttachment(attachment)"
             >
-              ×
+              <IconGlyph name="close" aria-hidden="true" />
             </button>
             <button
               v-if="attachment.image"
@@ -335,7 +313,7 @@ function onEscape(): void {
               rel="noopener noreferrer"
               :title="`Open ${attachment.name}`"
             >
-              <span class="attachment-file-icon" aria-hidden="true">📎</span>
+              <IconGlyph name="paperclip" class="attachment-file-icon" aria-hidden="true" />
               <strong>{{ attachment.name }}</strong>
               <small>{{ formatSize(attachment.size) }}</small>
             </a>
@@ -391,24 +369,4 @@ function onEscape(): void {
   </Overlay>
 </template>
 
-<style scoped >
-.history-item {
-  margin-right: 0.5em;
-  padding: 0.15em 0.25em;
-  background: var(--column-bg);
-  border-color: var(--accent);
-  border-radius: var(--radius);
-  color: var(--muted);
-}
-
-.history-item-date {
-  font-weight: bold;
-  color: var(--text);
-}
-
-.session-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25em;
-}
-</style>
+<style src="../styles/CardModal.css"></style>

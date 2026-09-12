@@ -5,6 +5,7 @@ import { chipStyle, type Label, labels, PALETTE, tagStyle } from '../composables
 import { useLayer } from '../composables/useLayer';
 import { showToast } from '../composables/useToast';
 import type { Card } from '../fs/board';
+import IconGlyph from './IconGlyph.vue';
 
 interface Row {
   name: string;
@@ -112,23 +113,27 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
       {{ tag }}
     </button>
 
-    <button type="button" class="tag-add" title="Labels" @click="open = !open">+</button>
+    <button type="button" class="icon-button icon-button--small" title="Labels" @click="open = !open">
+      <IconGlyph name="plus" aria-hidden="true" />
+    </button>
 
     <div v-if="open" class="labels-pop">
       <header class="labels-head">
         <button
           v-if="editing"
           type="button"
-          class="icon-button"
+          class="icon-button icon-button--small"
           title="Back to labels"
           @click="editing = null"
         >
-          ‹
+          <IconGlyph name="back" aria-hidden="true" />
         </button>
         <strong>
           {{ editing ? (editIndex === null ? 'Create label' : 'Edit label') : 'Labels' }}
         </strong>
-        <button type="button" class="icon-button" title="Close" @click="open = false">×</button>
+        <button type="button" class="icon-button icon-button--small" title="Close" @click="open = false">
+          <IconGlyph name="close" aria-hidden="true" />
+        </button>
       </header>
 
       <template v-if="editing">
@@ -154,7 +159,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
               :title="color"
               @click="editing.color = color"
             >
-              {{ editing.color === color ? '✓' : '' }}
+              <IconGlyph v-if="editing.color === color" name="check" aria-hidden="true" />
             </button>
           </div>
         </div>
@@ -196,11 +201,11 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
             <button
               v-if="row.index !== undefined"
               type="button"
-              class="icon-button"
+              class="icon-button icon-button--small"
               title="Edit label"
               @click="edit(row.index)"
             >
-              ✎
+              <IconGlyph name="edit" aria-hidden="true" />
             </button>
           </li>
         </ul>
@@ -210,3 +215,5 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
     </div>
   </div>
 </template>
+
+<style scoped src="../styles/TagEditor.css"></style>

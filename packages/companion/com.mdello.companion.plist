@@ -5,12 +5,11 @@
   <key>Label</key>
   <string>com.mdello.companion</string>
 
+  <!-- Absolute node path, resolved at install time. launchd execs this binary directly so the
+       process macOS attributes privacy grants to is stable and visible in the plist. -->
   <key>ProgramArguments</key>
   <array>
-    <string>__MISE_BIN__</string>
-    <string>exec</string>
-    <string>--</string>
-    <string>node</string>
+    <string>__NODE_BIN__</string>
     <string>--experimental-strip-types</string>
     <string>packages/companion/src/cli.ts</string>
   </array>
@@ -24,6 +23,11 @@
     <string>__HOME__</string>
     <key>MDELLO_COMPANION_PORT</key>
     <string>31337</string>
+    <!-- launchd does not source shell rc files; without this, only /usr/bin:/bin:/usr/sbin:/sbin
+         is visible, so CLIs installed under ~/.local/bin, Homebrew, mise, etc. (e.g. herdr) can't
+         be found. Baked in at install time from the installing shell's own PATH. -->
+    <key>PATH</key>
+    <string>__PATH__</string>
   </dict>
 
   <key>RunAtLoad</key>

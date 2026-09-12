@@ -59,3 +59,5 @@ useLayer(() => emit('escape'));
     </div>
   </Teleport>
 </template>
+
+<style scoped src="../styles/Overlay.css"></style>

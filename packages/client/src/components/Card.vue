@@ -6,6 +6,7 @@ import { tagStyle } from '../composables/useLabels';
 import { useBoard } from '../composables/useBoard';
 import { formatStamp } from '../format';
 import type { Card } from '../fs/board';
+import IconGlyph from './IconGlyph.vue';
 
 const props = defineProps<{ card: Card }>();
 const emit = defineEmits<{ open: [Card] }>();
@@ -31,8 +32,9 @@ const isDragging = computed(() => drag.dragging.value?.id === props.card.id);
     @dragstart="drag.start($event, card)"
     @dragend="drag.end()"
   >
-    <span
+    <IconGlyph
       v-if="status"
+      :name="`status-${status}`"
       class="card-status-indicator"
       :class="`is-${status}`"
       role="img"
@@ -51,9 +53,7 @@ const isDragging = computed(() => drag.dragging.value?.id === props.card.id);
         :title="`${card.attachments.length} attachment${card.attachments.length === 1 ? '' : 's'}`"
         aria-label="Attachments"
       >
-        <svg class="attachment-icon" viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M11.5 4.5v7a3.5 3.5 0 0 1-7 0v-8a2.5 2.5 0 0 1 5 0V11a1.5 1.5 0 0 1-3 0V4.5" />
-        </svg>
+        <IconGlyph name="paperclip" class="attachment-icon" aria-hidden="true" />
       </span>
       <span v-if="card.references.length" class="card-refs">
         <img
@@ -65,7 +65,8 @@ const isDragging = computed(() => drag.dragging.value?.id === props.card.id);
           :title="reference.label"
         />
       </span>
-      <span v-if="card.assignee" class="assignee">{{ card.assignee }}</span>
     </footer>
   </article>
 </template>
+
+<style scoped src="../styles/Card.css"></style>

@@ -30,14 +30,10 @@ export interface Association {
 
 export type AssociationIdentity = Pick<
   Association,
-  'boardUuid' | 'cardUuid' | 'cardPath' | 'harness' | 'sessionId'
+  'cardUuid' | 'cardPath' | 'harness' | 'sessionId'
 >;
 
-/** Keys on board and card UUID when known; pre-UUID events fall back to their path. */
+/** Card UUIDs are global; pre-UUID events fall back to their path. */
 export function associationKey(association: AssociationIdentity): string {
-  const cardIdentity =
-    association.boardUuid && association.cardUuid
-      ? `${association.boardUuid}\0${association.cardUuid}`
-      : association.cardPath;
-  return `${cardIdentity}\0${association.harness}\0${association.sessionId}`;
+  return `${association.cardUuid || association.cardPath}\0${association.harness}\0${association.sessionId}`;
 }

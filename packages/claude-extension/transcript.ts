@@ -1,3 +1,4 @@
+import type { HarnessSessionScan } from '@mdello/common/harness';
 import { extractMarkdownPaths, markdownToolPath, messageText } from '@mdello/common/paths';
 
 const MODIFICATION_TOOLS = ['Edit', 'MultiEdit', 'Write'] as const;
@@ -61,6 +62,28 @@ export function transcriptPaths(entries: unknown[], cwd?: string): string[] {
   }
 
   return [...paths];
+}
+
+/**
+ * Recover one stored session. Claude Code has no session header entry: identity and activity are
+ * repeated on every entry, so take the first id seen and the latest timestamp.
+ */
+export function scanTranscript(contents: string): HarnessSessionScan {
+  const entries = parseTranscript(contents);
+  const scan: HarnessSessionScan = { cardPaths: transcriptPaths(entries) };
+
+  for (const value of entries) {
+    const entry = record(value);
+    if (!entry) continue;
+    const sessionId = entry.sessionId ?? entry.session_id;
+    if (!scan.sessionId && typeof sessionId === 'string' && sessionId) scan.sessionId = sessionId;
+    const timestamp = entry.timestamp;
+    if (typeof timestamp === 'string' && (!scan.updatedAt || timestamp > scan.updatedAt)) {
+      scan.updatedAt = timestamp;
+    }
+  }
+
+  return scan;
 }
 
 export function parseTranscript(contents: string): unknown[] {

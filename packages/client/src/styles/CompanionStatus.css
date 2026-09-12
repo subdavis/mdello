@@ -1,0 +1,57 @@
+.companion-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid #d8dae0;
+  border-radius: var(--radius);
+  background: #f1f2f4;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.companion-status:not(:disabled):hover {
+  filter: brightness(0.95);
+}
+
+.companion-status:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+
+.companion-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #7e8188;
+}
+
+.companion-status.is-connecting {
+  border-color: #f5cd47;
+  background: #fff7d6;
+  color: #7f5f01;
+}
+
+.companion-status.is-connecting .companion-status-dot {
+  background: #b38600;
+}
+
+.companion-status.is-connected {
+  border-color: #7ee2b8;
+  background: #dcfff1;
+  color: #216e4e;
+}
+
+.companion-status.is-connected .companion-status-dot {
+  background: #1f845a;
+}
+
+.companion-status.is-disconnected {
+  border-color: #f5a79e;
+  background: #ffecea;
+  color: #ae2a19;
+}
+
+.companion-status.is-disconnected .companion-status-dot {
+  background: #c9372c;
+}

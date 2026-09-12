@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useBoard } from '../composables/useBoard';
 import type { BoardRef } from '../fs/handle';
+import IconGlyph from './IconGlyph.vue';
 import Overlay from './Overlay.vue';
 
 const emit = defineEmits<{ close: [] }>();
@@ -94,7 +95,7 @@ onMounted(() => input.value?.focus());
             title="Forget this board"
             @click.stop="forget(entry.board)"
           >
-            ×
+            <IconGlyph name="close" aria-hidden="true" />
           </button>
         </template>
         <span v-else class="switcher-name">Open folder…</span>
@@ -102,3 +103,5 @@ onMounted(() => input.value?.focus());
     </ul>
   </Overlay>
 </template>
+
+<style src="../styles/BoardSwitcher.css"></style>

@@ -1,0 +1,380 @@
+.modal-drop-surface {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+}
+
+.modal-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 1;
+  width: 10px;
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.modal-resize-handle-left {
+  left: 0;
+  transform: translateX(-50%);
+}
+
+.modal-resize-handle-right {
+  right: 0;
+  transform: translateX(50%);
+}
+
+.modal-head,
+.meta,
+.modal-foot {
+  flex: none;
+}
+
+.modal-head {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.modal-title {
+  font-size: var(--font-lg);
+  font-weight: 600;
+  border-color: transparent;
+  padding: var(--space-1) var(--space-2);
+}
+
+.modal-title:is(:hover, :focus) {
+  border-color: var(--line);
+}
+
+.meta {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: calc(var(--space-1) * 1.5) var(--space-4);
+  margin: 0 0 0 var(--space-2);
+  font-size: var(--font-sm);
+  color: var(--muted);
+}
+
+.meta dt {
+  font-weight: 600;
+  font-size: var(--font-xs);
+}
+
+.meta dd {
+  margin: 0;
+}
+
+.meta-input {
+  field-sizing: content;
+  width: auto;
+  min-width: 4ch;
+  max-width: 100%;
+  margin-left: calc(-1 * var(--space-1));
+  padding: 0 var(--space-1);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: none;
+  color: inherit;
+  font: inherit;
+}
+
+.meta-input:is(:hover, :focus) {
+  border-color: var(--line);
+}
+
+.meta-input:focus {
+  outline: none;
+  background: #fff;
+}
+
+.path {
+  font-family: var(--mono);
+}
+
+.card-content {
+  flex: 1;
+  min-height: 120px;
+  overflow-y: auto;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+}
+
+.card-content:has(.body:hover, .editor-stack) {
+  border-color: var(--line);
+}
+
+.card-content .editor-stack {
+  min-height: 240px;
+  overflow: visible;
+  border: 0;
+}
+
+.body {
+  min-height: 120px;
+  padding: var(--space-2);
+  font-size: var(--font-sm);
+  line-height: 1.5;
+}
+
+.attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-2) var(--space-1);
+}
+
+.attachment {
+  position: relative;
+  display: flex;
+  width: 200px;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.attachment-remove {
+  position: absolute;
+  z-index: 1;
+  top: var(--space-1);
+  right: var(--space-1);
+}
+
+.attachment-image,
+.attachment-file {
+  width: 200px;
+  height: 132px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--column-bg);
+  overflow: hidden;
+}
+
+.attachment-image {
+  padding: 0;
+  cursor: zoom-in;
+}
+
+:is(.attachment-image, .attachment-file):hover {
+  border-color: var(--accent);
+}
+
+.attachment-image img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.attachment-file {
+  display: flex;
+  padding: var(--space-3);
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  color: inherit;
+  text-align: center;
+  text-decoration: none;
+}
+
+.attachment-file-icon {
+  width: 28px;
+  height: 28px;
+  margin-bottom: var(--space-2);
+}
+
+.attachment-file strong {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-file small {
+  color: var(--muted);
+}
+
+.attachment-caption {
+  overflow: hidden;
+  padding: 0 var(--space-1);
+  font-size: var(--font-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-dropzone {
+  display: grid;
+  min-height: 240px;
+  place-items: center;
+  border: 2px dashed var(--accent);
+  border-radius: var(--radius);
+  background: repeating-linear-gradient(
+    -45deg,
+    rgb(12 102 228 / 6%),
+    rgb(12 102 228 / 6%) 12px,
+    rgb(12 102 228 / 14%) 12px,
+    rgb(12 102 228 / 14%) 24px
+  );
+  color: var(--accent);
+  font-size: var(--font-md);
+}
+
+.image-viewer-image {
+  display: block;
+  max-width: calc(100vw - var(--space-12));
+  max-height: calc(100vh - var(--space-12));
+  object-fit: contain;
+}
+
+.modal-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.save-state {
+  color: var(--muted);
+  font-size: var(--font-xs);
+  margin-right: auto;
+}
+
+.editor-link {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--font-sm);
+  color: inherit;
+  text-decoration: none;
+}
+
+.editor-link:hover {
+  background: #f4f5f7;
+}
+
+.ref-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.ref {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  background: var(--column-bg);
+  border-radius: var(--radius);
+  padding: 0 var(--space-1) 0 0;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.ref:hover {
+  filter: brightness(0.92);
+}
+
+.history-item {
+  margin-right: var(--space-2);
+  padding: calc(var(--space-1) / 2);
+  background: var(--column-bg);
+  border-color: var(--accent);
+  border-radius: var(--radius);
+  color: var(--muted);
+}
+
+.history-item-date {
+  font-weight: bold;
+  color: var(--text);
+}
+
+.modal {
+  position: relative;
+  width: 680px;
+}
+
+.image-viewer {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.markdown > :first-child {
+  margin-top: 0;
+}
+
+.markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown h1,
+.markdown h2,
+.markdown h3 {
+  font-size: var(--font-lg);
+  margin: var(--space-2) 0 var(--space-1);
+}
+
+.markdown p,
+.markdown ul,
+.markdown ol,
+.markdown pre {
+  margin: var(--space-3) 0;
+}
+
+.markdown ul,
+.markdown ol {
+  padding-left: var(--space-5);
+}
+
+.markdown code {
+  font-family: var(--mono);
+  background: #f1f2f4;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius);
+}
+
+.markdown pre {
+  background: #f1f2f4;
+  padding: var(--space-2);
+  border-radius: var(--radius);
+  overflow-x: auto;
+}
+
+.markdown img {
+  max-width: 100%;
+  height: auto;
+}
+
+.markdown table {
+  border-collapse: collapse;
+  margin: var(--space-3) 0;
+  width: 100%;
+  display: block;
+  overflow-x: auto;
+}
+
+.markdown th,
+.markdown td {
+  border: 1px solid var(--line);
+  padding: var(--space-1) var(--space-2);
+  text-align: left;
+}
+
+.markdown th {
+  background: var(--column-bg);
+  font-weight: 600;
+}
+
+.markdown tbody tr:nth-child(even) {
+  background: #fafbfc;
+}
+
+.markdown blockquote {
+  margin: var(--space-1) 0;
+  padding-left: var(--space-2);
+  border-left: 2px solid var(--line);
+  color: var(--muted);
+}
