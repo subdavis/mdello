@@ -7,12 +7,13 @@
   display: flex;
   align-items: baseline;
   gap: var(--space-2);
+  font-size: var(--font-sm);
   cursor: grab;
 }
 
 .column-head h2 {
   margin: 0;
-  font-size: var(--font-md);
+  font-size: var(--font-sm);
   font-weight: 600;
 }
 
@@ -78,19 +79,22 @@
   min-height: 8px;
 }
 
+.add-form {
+  font-size: var(--font-sm);
+}
+
 .add-button {
   display: flex;
   align-items: center;
-  gap: var(--space-1);
+  gap: var(--space-2);
   text-align: left;
   background: transparent;
   border-color: transparent;
   color: var(--muted);
 }
 
-.add-button .icon-glyph {
-  width: 12px;
-  height: 12px;
+.add-button:hover {
+  background-color: var(--card-bg);
 }
 
 .slot {

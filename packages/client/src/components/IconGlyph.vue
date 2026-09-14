@@ -6,7 +6,7 @@ defineProps<{ name: string }>();
   <svg class="icon-glyph" viewBox="0 0 16 16" focusable="false">
     <path v-if="name === 'close'" d="M1 1l14 14M15 1 1 15" />
     <path v-else-if="name === 'plus'" d="M8 1v14M1 8h14" />
-    <path v-else-if="name === 'back'" d="M13 2 3 8l10 6" />
+    <path v-else-if="name === 'back'" d="M11.5 1 4.5 8l7 7" />
     <path v-else-if="name === 'edit'" d="m1 15 1.1-4.1L12 1l3 3-9.9 9.9L1 15Zm10-13 3 3" />
     <path v-else-if="name === 'check'" d="m1 8 5 5 9-11" />
     <path v-else-if="name === 'more'" d="M2 8v.01M8 8v.01M14 8v.01" class="icon-glyph-dots" />
