@@ -66,7 +66,7 @@ async function forget(association: Association, scope: string): Promise<void> {
         <button
           v-if="herdrEnabled && association.status !== 'closed'"
           type="button"
-          class="icon-button session-action-button session-focus-button"
+          class="icon-button icon-button--small session-action-button session-focus-button"
           :class="`is-${association.status}`"
           style="padding: 0"
           title="Focus this session's pane"
@@ -78,7 +78,7 @@ async function forget(association: Association, scope: string): Promise<void> {
           class="session-forget-dropdown"
           title="Forget this session"
           :actions="forgetActions"
-          :button-class="`session-action-button is-${association.status}`"
+          :button-class="`icon-button icon-button--small session-action-button is-${association.status}`"
           @select="forget(association, $event)"
         >
           <IconGlyph name="close" aria-hidden="true" />

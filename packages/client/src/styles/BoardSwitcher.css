@@ -2,7 +2,6 @@
   width: min(520px, 100%);
   padding: var(--space-1);
   gap: var(--space-1);
-  font-size: var(--font-sm);
 }
 
 .switcher-input {

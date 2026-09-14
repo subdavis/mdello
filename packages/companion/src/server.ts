@@ -2,8 +2,7 @@ import { createReadStream } from 'node:fs';
 import { appendFile, mkdir, open, writeFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { connect } from 'node:net';
-import { homedir } from 'node:os';
-import { dirname, resolve } from 'node:path';
+import { dirname } from 'node:path';
 import { createInterface } from 'node:readline';
 import {
   type Association,
@@ -23,6 +22,7 @@ import {
 } from './boards.ts';
 import { createDebugLogger } from './debug.ts';
 import { findAdapter, harnessFromPath, hookAssociationInputs } from './hooks.ts';
+import { companionPaths } from './xdg.ts';
 
 export type { Association, AssociationStatus };
 export { associationKey };
@@ -41,7 +41,7 @@ export interface ReconcileResult {
 
 const DEFAULT_HOST = '127.0.0.1';
 export const DEFAULT_PORT = 31337;
-export const DEFAULT_DATA_FILE = resolve(homedir(), '.mdello', 'companion.jsonl');
+export const DEFAULT_DATA_FILE = companionPaths().dataFile;
 const MAX_BODY_BYTES = 64 * 1024;
 const PROBE_TIMEOUT_MS = 250;
 const debug = createDebugLogger();

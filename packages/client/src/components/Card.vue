@@ -17,6 +17,13 @@ const associations = useCompanion(board.rootPath, props.card);
 const status = computed(() => aggregateStatus(associations.value));
 const statusLabel = computed(() => status.value?.replaceAll('_', ' '));
 const isDragging = computed(() => drag.dragging.value?.id === props.card.id);
+
+const referenceRepresentations = computed(() =>
+  Object.values(props.card.references.reduce((acc, reference) => {
+    acc[reference.kind] = reference;
+    return acc;
+  }, {} as Record<string, typeof props.card.references[0]>))
+);
 </script>
 
 <template>
@@ -55,9 +62,9 @@ const isDragging = computed(() => drag.dragging.value?.id === props.card.id);
       >
         <IconGlyph name="paperclip" class="attachment-icon" aria-hidden="true" />
       </span>
-      <span v-if="card.references.length" class="card-refs">
+      <span v-if="referenceRepresentations" class="card-refs">
         <img
-          v-for="reference in card.references"
+          v-for="reference in referenceRepresentations"
           :key="reference.url"
           class="ref-icon"
           :src="reference.icon"

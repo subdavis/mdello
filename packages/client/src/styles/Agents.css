@@ -12,15 +12,15 @@
 }
 
 .card.has-status .card-title {
-  padding-right: var(--space-4);
+  padding-right: var(--space-5);
 }
 
 .card-status-indicator {
   position: absolute;
   top: var(--space-2);
   right: var(--space-2);
-  width: calc(1rem + 4px);
-  height: calc(1rem + 4px);
+  width: var(--font-md);
+  height: var(--font-md);
 }
 
 .card-status-indicator.is-idle,

@@ -1,9 +1,9 @@
 import type { Dirent } from 'node:fs';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
 import { dirname, relative, resolve } from 'node:path';
 import { type Frontmatter, parseFile, readString } from '@mdello/common/frontmatter';
 import { load } from 'js-yaml';
+import { companionPaths } from './xdg.ts';
 
 export interface BoardRegistration {
   uuid: string;
@@ -48,7 +48,7 @@ export async function listActiveCards(board: BoardRegistration): Promise<Resolve
   return cards.filter((card): card is ResolvedCard => card !== undefined);
 }
 
-export const DEFAULT_CONFIG_FILE = resolve(homedir(), '.mdello', 'companion.json');
+export const DEFAULT_CONFIG_FILE = companionPaths().configFile;
 
 function validBoard(value: unknown): value is BoardRegistration {
   if (!value || typeof value !== 'object') return false;

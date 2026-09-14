@@ -60,7 +60,18 @@ mdello-companion help                         Print commands and configuration (
 
 `help` builds its command and environment lists from `BACKFILL_SOURCES`, `INTEGRATIONS`, and the default port and file paths, so it cannot drift from the code. An unknown command prints the same text on stderr and exits `1`.
 
-Configuration: `MDELLO_COMPANION_PORT` (default `31337`), `MDELLO_COMPANION_DATA` (default `~/.mdello/companion.jsonl`), and `MDELLO_COMPANION_CONFIG` (default `~/.mdello/companion.json`). Backfill reads `CLAUDE_SESSIONS_DIR` (default `~/.claude/projects`) and `PI_SESSIONS_DIR` (default `~/.pi/agent/sessions`). Set `DEBUG=1` for structured stderr logs.
+Configuration: `MDELLO_COMPANION_PORT` defaults to `31337`. `MDELLO_COMPANION_CONFIG` defaults
+to `${XDG_CONFIG_HOME:-~/.config}/mdello/companion.json`, while `MDELLO_COMPANION_DATA` defaults
+to `${XDG_STATE_HOME:-~/.local/state}/mdello/companion.jsonl`. Explicit `MDELLO_COMPANION_*`
+file overrides win over XDG defaults. Empty or relative XDG directory values are ignored, following
+the XDG base-directory specification. Backfill reads `CLAUDE_SESSIONS_DIR` (default
+`~/.claude/projects`) and `PI_SESSIONS_DIR` (default `~/.pi/agent/sessions`). Set `DEBUG=1` for
+structured stderr logs.
+
+The macOS installer stops the launch agent before moving legacy files from `~/.mdello`. Each file is
+moved only when its XDG destination is absent: config goes to the config directory; event history
+and stdout/stderr logs go to the state directory. It then writes the new XDG paths into the launchd
+plist, restarts the service, and removes `~/.mdello` when empty.
 
 `companion.json` holds `boards` plus user-edited settings the companion never writes itself — currently just `herdrBundleId`, the bundle id of the terminal emulator herdr runs in (e.g. `com.mitchellh.ghostty`), needed to raise the right app window without an Automation (TCC) grant a launchd agent could never obtain. Saving board registrations preserves that key rather than overwriting the file.
 

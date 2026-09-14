@@ -23,7 +23,7 @@ const sessionLabel = computed(
   >
     <IconGlyph
       :name="`status-${association.status}`"
-      class="card-status-indicator session-status-icon"
+      class="session-status-icon"
       :class="`is-${association.status}`"
       aria-hidden="true"
     />

@@ -1,6 +1,17 @@
 import { execFile } from 'node:child_process';
 import { constants } from 'node:fs';
-import { access, lstat, mkdir, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises';
+import {
+  access,
+  copyFile,
+  lstat,
+  mkdir,
+  readFile,
+  rename,
+  rm,
+  rmdir,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,6 +22,7 @@ import {
   isCompanionPlugin,
   PLUGIN_NAME,
 } from '@mdello/claude-extension';
+import { type CompanionPaths, companionPaths } from './xdg.ts';
 
 const exec = promisify(execFile);
 const SERVICE_LABEL = 'com.mdello.companion';
@@ -43,6 +55,8 @@ interface InstallOptions {
   uid?: number;
   /** Companion origin written into harness hook configuration. */
   endpoint?: string;
+  /** Environment used to resolve XDG paths. Defaults to the installing process environment. */
+  environment?: NodeJS.ProcessEnv;
   run?: (command: string, args: string[]) => Promise<CommandResult>;
 }
 
@@ -56,6 +70,7 @@ function defaults(options: InstallOptions = {}) {
     run: options.run ?? ((command: string, args: string[]) => exec(command, args)),
     nodePath: options.nodePath ?? process.execPath,
     pathEnv: options.pathEnv ?? process.env.PATH ?? '',
+    environment: options.environment ?? process.env,
   };
 }
 
@@ -65,6 +80,34 @@ async function pathKind(path: string): Promise<'missing' | 'symlink' | 'other'> 
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 'missing';
     throw error;
+  }
+}
+
+async function migrateLegacyFile(source: string, destination: string): Promise<void> {
+  try {
+    await copyFile(source, destination, constants.COPYFILE_EXCL);
+    await rm(source);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== 'ENOENT' && code !== 'EEXIST') throw error;
+  }
+}
+
+async function migrateLegacyFiles(home: string, paths: CompanionPaths): Promise<void> {
+  const legacyDirectory = join(home, '.mdello');
+  await mkdir(paths.configDirectory, { recursive: true });
+  await mkdir(paths.stateDirectory, { recursive: true });
+
+  await migrateLegacyFile(join(legacyDirectory, 'companion.json'), paths.configFile);
+  await migrateLegacyFile(join(legacyDirectory, 'companion.jsonl'), paths.dataFile);
+  await migrateLegacyFile(join(legacyDirectory, 'companion.log'), paths.stdoutLog);
+  await migrateLegacyFile(join(legacyDirectory, 'companion-error.log'), paths.stderrLog);
+
+  try {
+    await rmdir(legacyDirectory);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== 'ENOENT' && code !== 'ENOTEMPTY') throw error;
   }
 }
 
@@ -92,17 +135,17 @@ export async function installMacOS(options: InstallOptions = {}): Promise<string
   const templatePath = join(config.repoRoot, 'packages/companion/com.mdello.companion.plist');
   const destination = join(config.home, 'Library/LaunchAgents', `${SERVICE_LABEL}.plist`);
   const temporary = `${destination}.tmp-${process.pid}`;
+  const paths = companionPaths(config.environment, config.home);
   const template = await readFile(templatePath, 'utf8');
   const plist = template
     .replaceAll('__NODE_BIN__', xmlEscape(nodePath))
     .replaceAll('__MDELLO_ROOT__', xmlEscape(config.repoRoot))
     .replaceAll('__HOME__', xmlEscape(config.home))
+    .replaceAll('__XDG_CONFIG_HOME__', xmlEscape(dirname(paths.configDirectory)))
+    .replaceAll('__XDG_STATE_HOME__', xmlEscape(dirname(paths.stateDirectory)))
+    .replaceAll('__COMPANION_STDOUT__', xmlEscape(paths.stdoutLog))
+    .replaceAll('__COMPANION_STDERR__', xmlEscape(paths.stderrLog))
     .replaceAll('__PATH__', xmlEscape(config.pathEnv));
-
-  await mkdir(join(config.home, '.mdello'), { recursive: true });
-  await mkdir(dirname(destination), { recursive: true });
-  await writeFile(temporary, plist);
-  await rename(temporary, destination);
 
   const domain = `gui/${config.uid}`;
   try {
@@ -110,6 +153,11 @@ export async function installMacOS(options: InstallOptions = {}): Promise<string
   } catch {
     // Missing or unloaded services are already in the desired state.
   }
+
+  await migrateLegacyFiles(config.home, paths);
+  await mkdir(dirname(destination), { recursive: true });
+  await writeFile(temporary, plist);
+  await rename(temporary, destination);
   await config.run('launchctl', ['bootstrap', domain, destination]);
 
   return `Installed and started ${destination}`;

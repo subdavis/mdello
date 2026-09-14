@@ -11,7 +11,6 @@
   border-radius: var(--radius);
   background: var(--card-bg);
   box-shadow: 0 2px 8px rgb(9 30 66 / 25%);
-  font-size: var(--font-sm);
   overflow: hidden;
   z-index: var(--z-toast);
 }

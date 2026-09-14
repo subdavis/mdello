@@ -27,6 +27,10 @@ const template = `
 <string>__NODE_BIN__</string>
 <string>__MDELLO_ROOT__</string>
 <string>__HOME__</string>
+<string>__XDG_CONFIG_HOME__</string>
+<string>__XDG_STATE_HOME__</string>
+<string>__COMPANION_STDOUT__</string>
+<string>__COMPANION_STDERR__</string>
 <string>__PATH__</string>
 `;
 
@@ -71,6 +75,10 @@ test('macOS install updates plist and reloads launchd idempotently', async () =>
       platform: 'darwin' as const,
       uid: 42,
       pathEnv: '/opt/homebrew/bin:/usr/bin',
+      environment: {
+        XDG_CONFIG_HOME: join(root, 'xdg & config'),
+        XDG_STATE_HOME: join(root, 'xdg & state'),
+      },
       run,
     };
     await installMacOS(options);
@@ -81,6 +89,8 @@ test('macOS install updates plist and reloads launchd idempotently', async () =>
     assert.ok(plist.includes(`<string>${process.execPath}</string>`));
     assert.match(plist, /repo &amp; clone/);
     assert.match(plist, /home &amp; user/);
+    assert.match(plist, /xdg &amp; config/);
+    assert.match(plist, /xdg &amp; state/);
     assert.ok(plist.includes('<string>/opt/homebrew/bin:/usr/bin</string>'));
     assert.equal(
       calls.filter(([command, action]) => command === 'launchctl' && action === 'bootstrap').length,
@@ -90,6 +100,66 @@ test('macOS install updates plist and reloads launchd idempotently', async () =>
       calls.filter(([command, action]) => command === 'launchctl' && action === 'bootout').length,
       2,
     );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('macOS install migrates legacy files without replacing XDG files', async () => {
+  const { root, home, repoRoot } = await fixture();
+  const configRoot = join(root, 'config');
+  const stateRoot = join(root, 'state');
+  const legacy = join(home, '.mdello');
+  const configDirectory = join(configRoot, 'mdello');
+  const stateDirectory = join(stateRoot, 'mdello');
+  const calls: string[][] = [];
+
+  try {
+    await mkdir(legacy, { recursive: true });
+    await mkdir(configDirectory, { recursive: true });
+    await writeFile(join(legacy, 'companion.json'), 'legacy config');
+    await writeFile(join(legacy, 'companion.jsonl'), 'legacy data');
+    await writeFile(join(legacy, 'companion.log'), 'legacy stdout');
+    await writeFile(join(legacy, 'companion-error.log'), 'legacy stderr');
+    await writeFile(join(configDirectory, 'companion.json'), 'current config');
+
+    await installMacOS({
+      home,
+      repoRoot,
+      platform: 'darwin',
+      uid: 42,
+      environment: { XDG_CONFIG_HOME: configRoot, XDG_STATE_HOME: stateRoot },
+      run: async (command, args) => {
+        calls.push([command, ...args]);
+        if (args[0] === 'bootout') {
+          assert.equal(await readFile(join(legacy, 'companion.jsonl'), 'utf8'), 'legacy data');
+        }
+        return { stdout: '' };
+      },
+    });
+
+    assert.equal(calls[0]?.[1], 'bootout');
+    assert.equal(calls.at(-1)?.[1], 'bootstrap');
+    assert.equal(await readFile(join(configDirectory, 'companion.json'), 'utf8'), 'current config');
+    assert.equal(await readFile(join(legacy, 'companion.json'), 'utf8'), 'legacy config');
+    assert.equal(await readFile(join(stateDirectory, 'companion.jsonl'), 'utf8'), 'legacy data');
+    assert.equal(await readFile(join(stateDirectory, 'companion.log'), 'utf8'), 'legacy stdout');
+    assert.equal(
+      await readFile(join(stateDirectory, 'companion-error.log'), 'utf8'),
+      'legacy stderr',
+    );
+    await assert.rejects(lstat(join(legacy, 'companion.jsonl')));
+
+    await rm(join(legacy, 'companion.json'));
+    await installMacOS({
+      home,
+      repoRoot,
+      platform: 'darwin',
+      uid: 42,
+      environment: { XDG_CONFIG_HOME: configRoot, XDG_STATE_HOME: stateRoot },
+      run: async () => ({ stdout: '' }),
+    });
+    await assert.rejects(lstat(legacy));
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -207,20 +277,16 @@ test('Claude install writes a self-contained plugin and never touches settings',
     const { hooks } = JSON.parse(await readFile(join(directory, 'hooks/hooks.json'), 'utf8')) as {
       hooks: Record<string, { matcher?: string; hooks: { type: string; url?: string }[] }[]>;
     };
-    assert.deepEqual(Object.keys(hooks).sort(), [
-      'Notification',
-      'PostToolUse',
-      'SessionEnd',
-      'SessionStart',
-      'Stop',
-      'UserPromptSubmit',
-    ]);
+    assert.deepEqual(
+      Object.keys(hooks).sort((a, b) => a.localeCompare(b)),
+      ['Notification', 'PostToolUse', 'SessionEnd', 'SessionStart', 'Stop', 'UserPromptSubmit'],
+    );
     // Claude Code rejects http hooks on SessionStart, so only those two shell out.
     for (const event of ['UserPromptSubmit', 'PostToolUse', 'Notification', 'Stop']) {
       assert.equal(hooks[event]?.[0]?.hooks[0]?.type, 'http', `${event} must not spawn a process`);
       assert.equal(hooks[event]?.[0]?.hooks[0]?.url, `${endpoint}/hooks/claude`);
     }
-    assert.equal(hooks.PostToolUse?.[0]?.matcher, 'Edit|MultiEdit|Write');
+    assert.equal(hooks.PostToolUse?.[0]?.matcher, 'AskUserQuestion|Edit|MultiEdit|Write');
 
     assert.deepEqual(
       await readSettings(home),

@@ -110,6 +110,11 @@ without uninstalling with `claude plugin disable mdello-companion@skills-dir`. H
 written at install time from `MDELLO_COMPANION_PORT`, so rerun `install claude` after changing the
 port.
 
+Companion configuration follows XDG paths: `${XDG_CONFIG_HOME:-~/.config}/mdello/companion.json`.
+Persistent association state and launch-agent logs use `${XDG_STATE_HOME:-~/.local/state}/mdello/`.
+Installing the macOS integration stops the companion, migrates files from `~/.mdello` when the XDG
+destination is absent, updates the launch agent, and restarts it.
+
 Remove every integration, or one integration, with:
 
 ```bash
@@ -126,8 +131,9 @@ the choice is stored as `companion: true` or `companion: false` in `mdello.yml`.
 frontend connects to `http://127.0.0.1:31337` and displays each associated session in card modal
 metadata. Status follows the agent lifecycle: `idle`, `running`, `waiting_for_input`,
 `ready_for_review`, or `closed`. Opening a ready card acknowledges it back to `idle`. Set
-`MDELLO_COMPANION_PORT`, `MDELLO_COMPANION_DATA`, or `MDELLO_COMPANION_URL` for
-extension/sidecar overrides. Set `VITE_MDELLO_COMPANION_URL` when frontend endpoint differs.
+`MDELLO_COMPANION_PORT`, `MDELLO_COMPANION_DATA`, `MDELLO_COMPANION_CONFIG`, or
+`MDELLO_COMPANION_URL` for extension/sidecar overrides. Explicit companion file overrides take
+precedence over XDG defaults. Set `VITE_MDELLO_COMPANION_URL` when frontend endpoint differs.
 
 Pi and Claude Code both discover associations from absolute Markdown paths in user input and from
 successful Markdown edit or write tool calls, including relative paths resolved against the session

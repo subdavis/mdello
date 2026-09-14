@@ -23,6 +23,10 @@
     <string>__HOME__</string>
     <key>MDELLO_COMPANION_PORT</key>
     <string>31337</string>
+    <key>XDG_CONFIG_HOME</key>
+    <string>__XDG_CONFIG_HOME__</string>
+    <key>XDG_STATE_HOME</key>
+    <string>__XDG_STATE_HOME__</string>
     <!-- launchd does not source shell rc files; without this, only /usr/bin:/bin:/usr/sbin:/sbin
          is visible, so CLIs installed under ~/.local/bin, Homebrew, mise, etc. (e.g. herdr) can't
          be found. Baked in at install time from the installing shell's own PATH. -->
@@ -36,8 +40,8 @@
   <true/>
 
   <key>StandardOutPath</key>
-  <string>__HOME__/.mdello/companion.log</string>
+  <string>__COMPANION_STDOUT__</string>
   <key>StandardErrorPath</key>
-  <string>__HOME__/.mdello/companion-error.log</string>
+  <string>__COMPANION_STDERR__</string>
 </dict>
 </plist>
