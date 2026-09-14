@@ -57,6 +57,7 @@ async function forget(association: Association, scope: string): Promise<void> {
         v-for="association in associations"
         :key="`${association.harness}:${association.sessionId}`"
         class="session-row"
+        :class="`status-${association.status}`"
       >
         <SessionStatusDetails
           :association="association"

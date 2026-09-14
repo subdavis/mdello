@@ -195,7 +195,7 @@ function runColumnAction(action: string): void {
         "
       />
     </form>
-    <button v-else type="button" class="add-button" @click="startAdding">
+    <button v-else type="button" class="add-button icon-button--small" @click="startAdding">
       <IconGlyph name="plus" aria-hidden="true" />
       Add card
     </button>

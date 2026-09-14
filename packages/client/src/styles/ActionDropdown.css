@@ -20,7 +20,7 @@
 .action-dropdown-menu {
   position: absolute;
   top: 100%;
-  right: 0;
+  left: -8px;
   z-index: var(--z-popover);
   display: flex;
   min-width: 120px;
@@ -31,7 +31,6 @@
   border-radius: var(--radius);
   background: var(--card-bg);
   box-shadow: 0 4px 12px rgb(9 30 66 / 0.2);
-
 }
 
 .action-dropdown-menu button {
@@ -41,4 +40,8 @@
   background: transparent;
   text-align: left;
   white-space: nowrap;
+}
+
+.action-dropdown-menu button:hover {
+  background: var(--column-bg);
 }

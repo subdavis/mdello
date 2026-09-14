@@ -12,6 +12,10 @@
   border-color: #b3bac5;
 }
 
+.card.has-status:hover {
+  border-left-color: var(--agent-status-color);
+}
+
 .card.is-dragging {
   opacity: 0.4;
 }

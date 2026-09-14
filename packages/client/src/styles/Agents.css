@@ -11,7 +11,29 @@
   background: color-mix(in srgb, var(--card-bg) 88%, #4bce97);
 }
 
-.card.has-status .card-title {
+.status-idle,
+.status-ready_for_review {
+  --agent-status-color: #2c8c32;
+}
+
+.status-running {
+  --agent-status-color: #b38600;
+}
+
+.status-waiting_for_input {
+  --agent-status-color: var(--accent);
+}
+
+.status-closed {
+  --agent-status-color: var(--muted);
+}
+
+.card.has-status {
+  border-left-width: 3px;
+  border-left-color: var(--agent-status-color);
+}
+
+.card.has-status:not(.status-closed) .card-title {
   padding-right: var(--space-5);
 }
 
@@ -21,31 +43,15 @@
   right: var(--space-2);
   width: var(--font-md);
   height: var(--font-md);
-}
-
-.card-status-indicator.is-idle,
-.card-status-indicator.is-ready_for_review {
-  color: #1f845a;
-}
-
-.card-status-indicator.is-running {
-  color: #b38600;
+  color: var(--agent-status-color);
 }
 
 .card-status-indicator.is-running .icon-glyph-fill {
-  fill: #e2b203;
-}
-
-.card-status-indicator.is-waiting_for_input {
-  color: var(--accent);
+  fill: var(--agent-status-color);
 }
 
 .card-status-indicator.is-ready_for_review {
   stroke-width: 2.5;
-}
-
-.card-status-indicator.is-closed {
-  color: var(--muted);
 }
 
 .session-list {
@@ -64,6 +70,7 @@
 }
 
 .session-action-button {
+  color: var(--agent-status-color);
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.1s ease;
@@ -79,42 +86,14 @@
   padding: 0;
 }
 
-.session-action-button:is(.is-idle, .is-ready_for_review) {
-  color: #1f845a;
-}
-
-.session-action-button.is-running {
-  color: #b38600;
-}
-
-.session-action-button.is-waiting_for_input {
-  color: var(--accent);
-}
-
-.session-action-button.is-closed {
-  color: var(--muted);
-}
-
 .session-status-details {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
   width: fit-content;
   max-width: 100%;
-  color: var(--muted);
+  color: var(--agent-status-color);
   text-align: left;
-}
-
-.session-status-details:is(.is-idle, .is-ready_for_review) {
-  color: #1f845a;
-}
-
-.session-status-details.is-running {
-  color: #b38600;
-}
-
-.session-status-details.is-waiting_for_input {
-  color: var(--accent);
 }
 
 .session-status-icon {

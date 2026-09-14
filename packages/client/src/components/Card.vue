@@ -19,10 +19,15 @@ const statusLabel = computed(() => status.value?.replaceAll('_', ' '));
 const isDragging = computed(() => drag.dragging.value?.id === props.card.id);
 
 const referenceRepresentations = computed(() =>
-  Object.values(props.card.references.reduce((acc, reference) => {
-    acc[reference.kind] = reference;
-    return acc;
-  }, {} as Record<string, typeof props.card.references[0]>))
+  Object.values(
+    props.card.references.reduce(
+      (acc, reference) => {
+        acc[reference.kind] = reference;
+        return acc;
+      },
+      {} as Record<string, (typeof props.card.references)[0]>,
+    ),
+  ),
 );
 </script>
 
@@ -40,7 +45,7 @@ const referenceRepresentations = computed(() =>
     @dragend="drag.end()"
   >
     <IconGlyph
-      v-if="status"
+      v-if="status && status !== 'closed'"
       :name="`status-${status}`"
       class="card-status-indicator"
       :class="`is-${status}`"
