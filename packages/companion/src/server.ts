@@ -390,6 +390,26 @@ export async function expungeCardAssociations(
   return events.length - remaining.length;
 }
 
+export async function forgetSessionAssociations(
+  dataFile: string,
+  associations: Map<string, Association>,
+  harness: string,
+  sessionId: string,
+  cardUuid?: string,
+): Promise<number> {
+  const matches = (association: Association) =>
+    association.harness === harness &&
+    association.sessionId === sessionId &&
+    (!cardUuid || association.cardUuid === cardUuid);
+  const events = await loadAssociationEvents(dataFile);
+  const remaining = events.filter((association) => !matches(association));
+  for (const [key, association] of associations) {
+    if (matches(association)) associations.delete(key);
+  }
+  await saveAssociations(dataFile, remaining);
+  return events.length - remaining.length;
+}
+
 export async function reconcileAssociations(
   dataFile: string,
   associations: Map<string, Association>,
@@ -438,18 +458,34 @@ async function handleAssociationDelete(
   clients: Map<ServerResponse, string>,
 ): Promise<void> {
   const cardUuid = url.searchParams.get('cardUuid');
-  if (!cardUuid) {
-    sendJson(response, 400, { error: 'cardUuid is required' });
+  const harness = url.searchParams.get('harness');
+  const sessionId = url.searchParams.get('sessionId');
+  const hasPartialSessionSelector = Boolean(harness) !== Boolean(sessionId);
+  if (hasPartialSessionSelector || (!cardUuid && !harness)) {
+    sendJson(response, 400, { error: 'cardUuid or harness and sessionId are required' });
     return;
   }
   try {
-    const removedEvents = await expungeCardAssociations(dataFile, associations, cardUuid);
+    let removedEvents: number;
+    if (harness && sessionId) {
+      removedEvents = await forgetSessionAssociations(
+        dataFile,
+        associations,
+        harness,
+        sessionId,
+        cardUuid ?? undefined,
+      );
+    } else if (cardUuid) {
+      removedEvents = await expungeCardAssociations(dataFile, associations, cardUuid);
+    } else {
+      throw new Error('Invalid association selector');
+    }
     writeBoardSnapshots(clients, associations);
-    debug('card associations expunged', { cardUuid, removedEvents });
+    debug('associations expunged', { cardUuid, harness, sessionId, removedEvents });
     sendJson(response, 200, { removedEvents });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    debug('card association expunge failed', { cardUuid, error: message });
+    debug('association expunge failed', { cardUuid, harness, sessionId, error: message });
     sendJson(response, 500, { error: message });
   }
 }

@@ -9,11 +9,13 @@ const AGENT_LIST = JSON.stringify({
         agent: 'claude',
         agent_session: { kind: 'id', value: 'claude-session-a' },
         pane_id: 'wA:pT',
+        tab_id: 'wA:t8',
       },
       {
         agent: 'pi',
         agent_session: { kind: 'path', value: '/home/.pi/agent/sessions/pi-session-a.jsonl' },
         pane_id: 'wA:p14',
+        tab_id: 'wA:t9',
       },
     ],
   },
@@ -70,6 +72,7 @@ test('matches a claude session on sessionId and raises the configured bundle', a
   assert.deepEqual(context.calls, [
     ['herdr', ['agent', 'list']],
     ['herdr', ['agent', 'focus', 'wA:pT']],
+    ['herdr', ['tab', 'focus', 'wA:t8']],
     ['open', ['-b', 'com.mitchellh.ghostty']],
   ]);
 });
@@ -86,7 +89,10 @@ test('matches a pi session on sessionFile rather than sessionId', async () => {
     context,
   );
   assert.deepEqual(result, { ok: true });
-  assert.deepEqual(context.calls[1], ['herdr', ['agent', 'focus', 'wA:p14']]);
+  assert.deepEqual(context.calls.slice(1, 3), [
+    ['herdr', ['agent', 'focus', 'wA:p14']],
+    ['herdr', ['tab', 'focus', 'wA:t9']],
+  ]);
 });
 
 test('reports herdr_command_failed when the herdr CLI errors', async () => {

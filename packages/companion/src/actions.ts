@@ -32,6 +32,7 @@ export interface ActionContext {
 interface HerdrAgent {
   agent_session?: { value?: string };
   pane_id?: string;
+  tab_id?: string;
 }
 
 function isActionRequest(value: unknown): value is ActionRequest {
@@ -71,9 +72,10 @@ async function focus(request: ActionRequest, context: ActionContext): Promise<Ac
   const agent = agents.find((candidate) => matchesSession(candidate, request));
   if (!agent?.pane_id) return { ok: false, error: 'session_not_found' };
 
-  // `herdr agent focus` navigates within herdr; `open -b` only raises the app, so herdr must
-  // already be the frontmost window of that bundle id for the pane focus to be visible.
   await run('herdr', ['agent', 'focus', agent.pane_id]);
+  // Herdr 0.9's per-client views do not project `agent focus` navigation to attached clients.
+  // Focusing the resolved tab does, while the preceding command selects the exact split pane.
+  if (agent.tab_id) await run('herdr', ['tab', 'focus', agent.tab_id]);
   await run('open', ['-b', bundleId]);
   return { ok: true };
 }

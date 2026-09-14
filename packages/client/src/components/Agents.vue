@@ -9,20 +9,26 @@ import {
   acknowledgeReadyForReview,
   type Association,
   focusSession,
+  forgetSession,
   resumeCommand,
   useCompanion,
   useHerdrEnabled,
 } from '../composables/useCompanion';
 import { showToast } from '../composables/useToast';
 import type { Card } from '../fs/board';
-import SessionStatusDetails from './SessionStatusDetails.vue';
+import ActionDropdown from './ActionDropdown.vue';
 import IconGlyph from './IconGlyph.vue';
+import SessionStatusDetails from './SessionStatusDetails.vue';
 
 const props = defineProps<{ card: Card }>();
 
 const board = useBoard();
 const associations = useCompanion(board.rootPath, props.card);
 const herdrEnabled = useHerdrEnabled();
+const forgetActions = [
+  { label: 'This card', value: 'card' },
+  { label: 'All cards', value: 'all' },
+];
 
 watch(associations, (entries) => void acknowledgeReadyForReview(entries), { immediate: true });
 
@@ -35,6 +41,11 @@ async function copyResumeCommand(association: Association): Promise<void> {
 
 async function focus(association: Association): Promise<void> {
   showToast((await focusSession(association)) ? 'Focused session' : 'Focus failed');
+}
+
+async function forget(association: Association, scope: string): Promise<void> {
+  if (scope !== 'card' && scope !== 'all') return;
+  showToast((await forgetSession(association, scope)) ? 'Forgot session' : 'Forget failed');
 }
 </script>
 
@@ -55,7 +66,7 @@ async function focus(association: Association): Promise<void> {
         <button
           v-if="herdrEnabled && association.status !== 'closed'"
           type="button"
-          class="icon-button session-focus-button"
+          class="icon-button session-action-button session-focus-button"
           :class="`is-${association.status}`"
           style="padding: 0"
           title="Focus this session's pane"
@@ -63,6 +74,15 @@ async function focus(association: Association): Promise<void> {
         >
           <IconGlyph name="focus" aria-hidden="true" />
         </button>
+        <ActionDropdown
+          class="session-forget-dropdown"
+          title="Forget this session"
+          :actions="forgetActions"
+          :button-class="`session-action-button is-${association.status}`"
+          @select="forget(association, $event)"
+        >
+          <IconGlyph name="close" aria-hidden="true" />
+        </ActionDropdown>
       </div>
     </dd>
   </template>

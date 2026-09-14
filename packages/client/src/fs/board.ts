@@ -9,6 +9,7 @@ import {
 } from '@mdello/common/frontmatter';
 import { findReferences, type Reference } from '../references';
 import { type CardAttachment, readAttachments } from './attachments';
+import { groupColumns } from './columns';
 import { CONFIG_FILE, createBoardConfig, writeConfig } from './config';
 import { openWritable } from './writable';
 
@@ -36,6 +37,8 @@ export interface Card {
 export interface Column {
   name: string;
   cards: Card[];
+  /** Discovered from card frontmatter but absent from the board config. */
+  virtual: boolean;
 }
 
 function toCard(
@@ -81,8 +84,6 @@ export async function scanBoard(
   root: FileSystemDirectoryHandle,
   columnNames: string[],
 ): Promise<Column[]> {
-  const columns = columnNames.map((name) => ({ name, cards: [] as Card[] }));
-  const byName = new Map(columns.map((column) => [column.name, column]));
   const files: FileSystemFileHandle[] = [];
 
   for await (const entry of root.values()) {
@@ -98,7 +99,7 @@ export async function scanBoard(
     }),
   );
 
-  for (const card of cards) byName.get(card.column)?.cards.push(card);
+  const columns = groupColumns(cards, columnNames);
   for (const column of columns) sortCards(column.cards);
   return columns;
 }

@@ -60,6 +60,38 @@ export async function expungeCardAssociations(cardUuid: string): Promise<void> {
   }
 }
 
+export type ForgetSessionScope = 'card' | 'all';
+
+export async function forgetSession(
+  association: Association,
+  scope: ForgetSessionScope,
+): Promise<boolean> {
+  const query = new URLSearchParams({
+    harness: association.harness,
+    sessionId: association.sessionId,
+  });
+  if (scope === 'card') {
+    if (!association.cardUuid) return false;
+    query.set('cardUuid', association.cardUuid);
+  }
+  try {
+    const response = await fetch(`${endpoint}/associations?${query}`, { method: 'DELETE' });
+    if (!response.ok) return false;
+    for (const [key, entry] of associations) {
+      if (
+        entry.harness === association.harness &&
+        entry.sessionId === association.sessionId &&
+        (scope === 'all' || entry.cardUuid === association.cardUuid)
+      ) {
+        associations.delete(key);
+      }
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function acknowledgeReadyForReview(entries: Association[]): Promise<void> {
   await Promise.allSettled(
     entries

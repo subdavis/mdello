@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef } from 'vue';
+import { computed, nextTick, ref, useTemplateRef } from 'vue';
 import { useDrag } from '../composables/useDrag';
 import { useMarkdownImport } from '../composables/useMarkdownImport';
 import type { Card as CardType, Column } from '../fs/board';
+import ActionDropdown from './ActionDropdown.vue';
 import CardTile from './Card.vue';
 import IconGlyph from './IconGlyph.vue';
 
@@ -25,16 +26,10 @@ const draftInput = ref<HTMLInputElement | null>(null);
 const renaming = ref(false);
 const draftLabel = ref('');
 const labelInput = ref<HTMLInputElement | null>(null);
-const menuOpen = ref(false);
-const head = useTemplateRef<HTMLElement>('head');
-
-function onPointerDown(event: PointerEvent): void {
-  if (!menuOpen.value || head.value?.contains(event.target as Node)) return;
-  menuOpen.value = false;
-}
-
-onMounted(() => document.addEventListener('pointerdown', onPointerDown));
-onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown));
+const columnActions = [
+  { label: 'Rename', value: 'rename' },
+  { label: 'Archive', value: 'archive' },
+];
 
 const slot = computed(() =>
   drag.target.value?.column === props.column.name ? drag.target.value.index : null,
@@ -72,7 +67,7 @@ function onDragover(event: DragEvent): void {
 
   // A column drag reorders the board live; cards are not involved.
   const held = drag.column.value;
-  if (held) {
+  if (held !== null) {
     drag.overColumn(event);
     if (held !== props.column.name) emit('hover', held, props.index);
     return;
@@ -107,7 +102,6 @@ function submitDraft(): void {
 }
 
 async function startRenaming(): Promise<void> {
-  menuOpen.value = false;
   renaming.value = true;
   draftLabel.value = props.column.name;
   await nextTick();
@@ -123,7 +117,6 @@ function submitLabel(): void {
 }
 
 function archiveColumn(): void {
-  menuOpen.value = false;
   const count = props.column.cards.length;
   const noun = count === 1 ? 'card' : 'cards';
   const detail = count ? `Its ${count} ${noun} move to the archive.` : '';
@@ -131,6 +124,11 @@ function archiveColumn(): void {
   if (!confirm(`Archive "${props.column.name}"? ${detail}`)) return;
 
   emit('archive', props.column);
+}
+
+function runColumnAction(action: string): void {
+  if (action === 'rename') void startRenaming();
+  if (action === 'archive') archiveColumn();
 }
 </script>
 
@@ -142,7 +140,6 @@ function archiveColumn(): void {
     @dragover="onDragover"
   >
     <header
-      ref="head"
       class="column-head"
       :draggable="!renaming"
       @dragstart="drag.startColumn($event, column.name, root)"
@@ -164,19 +161,15 @@ function archiveColumn(): void {
           {{ column.name }}
         </h2>
         <span class="count">{{ column.cards.length }}</span>
-        <button
-          type="button"
-          class="kebab icon-button icon-button--small"
-          :aria-expanded="menuOpen"
+        <ActionDropdown
+          class="column-actions"
           title="Column actions"
-          @click="menuOpen = !menuOpen"
+          :actions="columnActions"
+          button-class="kebab icon-button--small"
+          @select="runColumnAction"
         >
           <IconGlyph name="more" aria-hidden="true" />
-        </button>
-        <div v-if="menuOpen" class="column-menu">
-          <button type="button" @click="startRenaming">Rename</button>
-          <button type="button" @click="archiveColumn">Archive</button>
-        </div>
+        </ActionDropdown>
       </template>
     </header>
 

@@ -446,6 +446,137 @@ test('expunges every event for a global card UUID', async () => {
   }
 });
 
+test('forgets a session from only the selected card', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mdello-server-'));
+  const dataFile = join(root, 'companion.jsonl');
+  const events = [
+    {
+      boardUuid: 'board-a',
+      cardUuid: 'card-a',
+      cardPath: '/board/card-a.md',
+      harness: 'pi',
+      sessionId: 'shared-session',
+      status: 'closed',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    },
+    {
+      boardUuid: 'board-a',
+      cardUuid: 'card-b',
+      cardPath: '/board/card-b.md',
+      harness: 'pi',
+      sessionId: 'shared-session',
+      status: 'idle',
+      updatedAt: '2026-01-02T00:00:00.000Z',
+    },
+    {
+      boardUuid: 'board-a',
+      cardUuid: 'card-a',
+      cardPath: '/board/card-a.md',
+      harness: 'claude',
+      sessionId: 'shared-session',
+      status: 'idle',
+      updatedAt: '2026-01-02T00:00:00.000Z',
+    },
+  ];
+  await writeFile(dataFile, `${events.map((event) => JSON.stringify(event)).join('\n')}\n`);
+  const companion = await createCompanionServer({
+    port: 0,
+    dataFile,
+    configFile: join(root, 'companion.json'),
+  });
+  try {
+    const query = new URLSearchParams({
+      cardUuid: 'card-a',
+      harness: 'pi',
+      sessionId: 'shared-session',
+    });
+    const response = await fetch(`${companion.url}/associations?${query}`, { method: 'DELETE' });
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { removedEvents: 1 });
+    const persisted = await loadAssociationEvents(dataFile);
+    assert.deepEqual(
+      persisted.map(({ cardUuid, harness }) => ({ cardUuid, harness })),
+      [
+        { cardUuid: 'card-b', harness: 'pi' },
+        { cardUuid: 'card-a', harness: 'claude' },
+      ],
+    );
+  } finally {
+    await companion.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('forgets a session across cards without removing the same ID from another harness', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mdello-server-'));
+  const dataFile = join(root, 'companion.jsonl');
+  const events = [
+    {
+      boardUuid: 'board-a',
+      cardUuid: 'card-a',
+      cardPath: '/board/card-a.md',
+      harness: 'pi',
+      sessionId: 'shared-session',
+      status: 'running',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    },
+    {
+      boardUuid: 'board-a',
+      cardUuid: 'card-a',
+      cardPath: '/board/card-a.md',
+      harness: 'pi',
+      sessionId: 'shared-session',
+      status: 'closed',
+      updatedAt: '2026-01-02T00:00:00.000Z',
+    },
+    {
+      boardUuid: 'board-a',
+      cardUuid: 'card-b',
+      cardPath: '/board/card-b.md',
+      harness: 'pi',
+      sessionId: 'shared-session',
+      status: 'idle',
+      updatedAt: '2026-01-03T00:00:00.000Z',
+    },
+    {
+      boardUuid: 'board-a',
+      cardUuid: 'card-a',
+      cardPath: '/board/card-a.md',
+      harness: 'claude',
+      sessionId: 'shared-session',
+      status: 'idle',
+      updatedAt: '2026-01-03T00:00:00.000Z',
+    },
+  ];
+  await writeFile(dataFile, `${events.map((event) => JSON.stringify(event)).join('\n')}\n`);
+  const companion = await createCompanionServer({
+    port: 0,
+    dataFile,
+    configFile: join(root, 'companion.json'),
+  });
+  try {
+    const query = new URLSearchParams({ harness: 'pi', sessionId: 'shared-session' });
+    const response = await fetch(`${companion.url}/associations?${query}`, { method: 'DELETE' });
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { removedEvents: 3 });
+    const persisted = await loadAssociationEvents(dataFile);
+    assert.deepEqual(
+      persisted.map(({ harness, sessionId }) => ({ harness, sessionId })),
+      [{ harness: 'claude', sessionId: 'shared-session' }],
+    );
+    const live = (await (await fetch(`${companion.url}/associations`)).json()) as typeof events;
+    assert.deepEqual(
+      live.map(({ harness, sessionId }) => ({ harness, sessionId })),
+      [{ harness: 'claude', sessionId: 'shared-session' }],
+    );
+  } finally {
+    await companion.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('purges persisted companion session data', async () => {
   const root = await mkdtemp(join(tmpdir(), 'mdello-server-'));
   try {

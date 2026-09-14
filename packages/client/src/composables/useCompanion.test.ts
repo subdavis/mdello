@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { effectScope, type Ref, ref } from 'vue';
-import { type CompanionConnectionStatus, useCompanionConnectionStatus } from './useCompanion.ts';
+import {
+  type Association,
+  type CompanionConnectionStatus,
+  forgetSession,
+  useCompanionConnectionStatus,
+} from './useCompanion.ts';
 
 class FakeEventSource {
   static instances: FakeEventSource[] = [];
@@ -30,6 +35,38 @@ class FakeEventSource {
     for (const listener of this.listeners.get(type) ?? []) listener(new Event(type));
   }
 }
+
+const association: Association = {
+  boardUuid: 'board-a',
+  cardUuid: 'card-a',
+  cardPath: '/board/card-a.md',
+  harness: 'pi',
+  sessionId: 'session with spaces',
+  status: 'idle',
+  updatedAt: '2026-01-01T00:00:00.000Z',
+};
+
+test('requests session forgetting for one card or all cards', async () => {
+  const originalFetch = globalThis.fetch;
+  const requests: Array<{ url: URL; method: string }> = [];
+  globalThis.fetch = async (input, init) => {
+    requests.push({ url: new URL(String(input)), method: init?.method ?? '' });
+    return new Response(null, { status: 200 });
+  };
+
+  try {
+    assert.equal(await forgetSession(association, 'card'), true);
+    assert.equal(await forgetSession(association, 'all'), true);
+    assert.equal(requests[0].url.pathname, '/associations');
+    assert.equal(requests[0].url.searchParams.get('harness'), 'pi');
+    assert.equal(requests[0].url.searchParams.get('sessionId'), 'session with spaces');
+    assert.equal(requests[0].url.searchParams.get('cardUuid'), 'card-a');
+    assert.equal(requests[0].method, 'DELETE');
+    assert.equal(requests[1].url.searchParams.get('cardUuid'), null);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
 
 test('reconnects continuously while enabled and stops when disposed', (context) => {
   context.mock.timers.enable({ apis: ['setTimeout'] });

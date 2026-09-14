@@ -31,44 +31,8 @@
   color: var(--muted);
 }
 
-.kebab {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+.column-actions {
   margin-left: auto;
-  border-color: transparent;
-  background: transparent;
-  color: var(--muted);
-}
-
-.kebab:hover {
-  color: inherit;
-  background: rgb(9 30 66 / 0.06);
-}
-
-.column-menu {
-  position: absolute;
-  top: 100%;
-  right: 0;
-  font-size: var(--font-sm);
-  z-index: var(--z-popover);
-  margin-top: var(--space-1);
-  min-width: 120px;
-  display: flex;
-  flex-direction: column;
-  background: var(--card-bg);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  box-shadow: 0 4px 12px rgb(9 30 66 / 0.2);
-  overflow: hidden;
-}
-
-.column-menu button {
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  text-align: left;
-  padding: var(--space-1) var(--space-2);
 }
 
 .column-body {

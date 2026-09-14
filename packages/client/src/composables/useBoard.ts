@@ -322,8 +322,21 @@ function mergeColumns(fresh: Column[]): Column[] {
     const existing = byName.get(next.name);
     if (!existing) return next;
     existing.cards = mergeCards(existing.cards, next.cards);
+    existing.virtual = next.virtual;
     return existing;
   });
+}
+
+function configuredColumnNames(): string[] {
+  return columns.value.filter((column) => !column.virtual).map((column) => column.name);
+}
+
+/** Virtual columns always lead the UI but never enter config until promoted. */
+function normalizeColumnOrder(): void {
+  columns.value = [
+    ...columns.value.filter((column) => column.virtual),
+    ...columns.value.filter((column) => !column.virtual),
+  ];
 }
 
 export async function refresh(): Promise<void> {
@@ -533,8 +546,8 @@ export function useBoard() {
         if (columns.value.some((column) => column.name === name)) {
           throw new Error(`Column "${name}" already exists`);
         }
-        columns.value = [...columns.value, { name, cards: [] }];
-        requireConfig().columns = columns.value.map((column) => column.name);
+        columns.value = [...columns.value, { name, cards: [], virtual: false }];
+        requireConfig().columns = configuredColumnNames();
         await saveConfig();
       });
     },
@@ -550,17 +563,24 @@ export function useBoard() {
 
       await flushPending();
       const previous = column.name;
+      const wasVirtual = column.virtual;
       const done = await guard(async () => {
         column.name = next;
+        column.virtual = false;
+        normalizeColumnOrder();
         for (const card of column.cards) {
           card.column = next;
           card.modified = await writeCard(requireRoot(), card);
         }
-        requireConfig().columns = columns.value.map((entry) => entry.name);
+        requireConfig().columns = configuredColumnNames();
         await saveConfig();
         return true;
       });
-      if (!done) column.name = previous;
+      if (!done) {
+        column.name = previous;
+        column.virtual = wasVirtual;
+        normalizeColumnOrder();
+      }
     },
 
     /** Live preview while a column header is dragged; config changes only on drop. */
@@ -582,7 +602,7 @@ export function useBoard() {
       const done = await guard(async () => {
         for (const card of column.cards) await archiveOne(card);
         columns.value = columns.value.filter((entry) => entry !== column);
-        requireConfig().columns = columns.value.map((entry) => entry.name);
+        requireConfig().columns = configuredColumnNames();
         await saveConfig();
         return true;
       });
@@ -590,12 +610,19 @@ export function useBoard() {
       else await refresh();
     },
 
-    async commitColumnOrder(): Promise<void> {
-      const before = columnSnapshot;
+    async commitColumnOrder(movedName: string): Promise<void> {
       columnSnapshot = null;
-      if (!before) return;
-      const names = columns.value.map((column) => column.name);
-      if (names.every((name, index) => name === before[index])) return;
+      const moved = columns.value.find((column) => column.name === movedName);
+      const promoted = moved?.virtual === true;
+      if (moved) moved.virtual = false;
+      normalizeColumnOrder();
+
+      const names = configuredColumnNames();
+      const configured = requireConfig().columns;
+      const unchanged =
+        names.length === configured.length &&
+        names.every((name, index) => name === configured[index]);
+      if (!promoted && unchanged) return;
       requireConfig().columns = names;
       await saveConfig();
     },

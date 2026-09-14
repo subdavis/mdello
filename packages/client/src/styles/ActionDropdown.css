@@ -1,0 +1,44 @@
+.action-dropdown {
+  position: relative;
+  display: inline-flex;
+}
+
+.kebab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+}
+
+.kebab:hover {
+  color: inherit;
+  background: rgb(9 30 66 / 0.06);
+}
+
+.action-dropdown-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: var(--z-popover);
+  display: flex;
+  min-width: 120px;
+  flex-direction: column;
+  margin-top: var(--space-1);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card-bg);
+  box-shadow: 0 4px 12px rgb(9 30 66 / 0.2);
+  font-size: var(--font-sm);
+}
+
+.action-dropdown-menu button {
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+  white-space: nowrap;
+}

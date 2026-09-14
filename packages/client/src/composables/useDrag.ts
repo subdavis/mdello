@@ -60,7 +60,7 @@ export function useDrag() {
 
     /** Claims the drop so the cursor stays "move"; reordering itself is a live preview. */
     overColumn(event: DragEvent): void {
-      if (!column.value) return;
+      if (column.value === null) return;
       event.preventDefault();
       if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
     },

@@ -44,6 +44,8 @@ function playArchiveWarp(
   clone.setAttribute('aria-hidden', 'true');
   clone.style.setProperty('--archive-dx', `${deltaX}px`);
   clone.style.setProperty('--archive-dy', `${deltaY}px`);
+  // Inline style beats Card.vue's scoped `.card` rule, which otherwise keeps this relative.
+  clone.style.position = 'fixed';
   clone.style.left = `${left}px`;
   clone.style.top = `${top}px`;
   clone.style.width = `${cardRect.width}px`;
@@ -102,7 +104,7 @@ async function onDrop(event: DragEvent): Promise<void> {
   markdownImport.end();
 
   if (await importMarkdown(file, target)) return;
-  if (movedColumn) return board.commitColumnOrder();
+  if (movedColumn !== null) return board.commitColumnOrder(movedColumn);
   if (!source || !target) return;
 
   const card = findCard(source.id);
