@@ -6,7 +6,7 @@ import { showToast } from '../composables/useToast';
 import { formatStamp } from '../format';
 import type { CardAttachment } from '../fs/attachments';
 import type { Card } from '../fs/board';
-import { renderMarkdown } from '../markdown';
+import { renderMarkdown, setTaskChecked } from '../markdown';
 import Agents from './Agents.vue';
 import IconGlyph from './IconGlyph.vue';
 import MarkdownEditor from './MarkdownEditor.vue';
@@ -156,9 +156,25 @@ function lineFromEvent(event: MouseEvent): number {
 }
 
 async function startEditing(event?: MouseEvent): Promise<void> {
+  if ((event?.target as HTMLElement | undefined)?.closest('.task-list-item-checkbox')) return;
+
   editing.value = true;
   await nextTick();
   await editor.value?.focus(event ? lineFromEvent(event) : 0);
+}
+
+function setTaskFromPreview(event: Event): void {
+  const checkbox = event.target;
+  if (!(checkbox instanceof HTMLInputElement) || !checkbox.matches('.task-list-item-checkbox')) {
+    return;
+  }
+
+  const line = Number(checkbox.dataset.taskLine);
+  const updated = setTaskChecked(props.card.body, line, checkbox.checked);
+  if (updated === props.card.body) return;
+
+  props.card.body = updated;
+  board.queueSave(props.card);
 }
 
 async function save(): Promise<void> {
@@ -335,6 +351,7 @@ function onEscape(): void {
           v-else
           class="body markdown"
           title="Double-click to edit"
+          @change="setTaskFromPreview"
           @dblclick="startEditing"
           v-html="rendered"
         />

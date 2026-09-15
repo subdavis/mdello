@@ -328,6 +328,24 @@
   padding-left: var(--space-5);
 }
 
+.markdown ul > .task-list-item {
+  list-style: none;
+}
+
+.markdown .task-list-item-checkbox {
+  display: inline-block;
+  width: auto;
+  margin: 0 0.5em 0 -1.4em;
+  padding: 0;
+  vertical-align: -0.1em;
+  cursor: pointer;
+}
+
+.markdown ol > .task-list-item > .task-list-item-checkbox,
+.markdown ol > .task-list-item > p > .task-list-item-checkbox {
+  margin-left: 0;
+}
+
 .markdown code {
   font-family: var(--mono);
   background: #f1f2f4;

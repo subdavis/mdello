@@ -1,4 +1,4 @@
-import { computed, markRaw, ref, shallowRef, watch } from 'vue';
+import { computed, markRaw, ref, shallowRef, toRaw, watch } from 'vue';
 import { archiveWithSessionAssociations } from '../archiveAssociations';
 import {
   ATTACHMENTS_DIR,
@@ -62,8 +62,8 @@ const loading = ref(false);
 const error = ref<string | null>(null);
 const saveState = ref<'idle' | 'dirty' | 'saving' | 'saved'>('idle');
 const pendingSaves = new Map<string, ReturnType<typeof setTimeout>>();
-/** Cards whose write is on the wire; the map entry is already gone by then. */
-const inFlightSaves = new Set<string>();
+/** Tail of each card's write chain. A card never has two writable streams open concurrently. */
+const inFlightSaves = new Map<string, Promise<void>>();
 
 const config = ref<BoardConfig | null>(null);
 /** Blob URL for `background.<ext>` in the board root, empty when the board has none. */
@@ -716,27 +716,44 @@ async function flushPending(): Promise<void> {
   }
 }
 
-async function flushCard(card: Card): Promise<void> {
+function flushCard(card: Card): Promise<void> {
   const timer = pendingSaves.get(card.id);
   if (timer !== undefined) clearTimeout(timer);
-  if (!pendingSaves.delete(card.id)) return;
+
+  const previous = inFlightSaves.get(card.id);
+  if (!pendingSaves.delete(card.id)) return previous ?? Promise.resolve();
+
+  card.references = findReferences(card.body);
+  card.data.title = card.title;
+  // An empty assignee drops the key rather than writing `assignee: ''`.
+  card.assignee = card.assignee?.trim() || undefined;
+  if (card.assignee) card.data.assignee = card.assignee;
+  else delete card.data.assignee;
+  // Avoid adding an empty `tags:` key to files that never had one.
+  if (card.tags.length || 'tags' in card.data) card.data.tags = [...card.tags];
+
+  const root = requireRoot();
+  const snapshot = {
+    column: card.column,
+    name: card.name,
+    data: structuredClone(toRaw(card.data)),
+    body: card.body,
+  };
 
   saveState.value = 'saving';
-  const flushing = card.id;
-  inFlightSaves.add(flushing);
-  card.references = findReferences(card.body);
-  const modified = await guard(async () => {
-    card.data.title = card.title;
-    // An empty assignee drops the key rather than writing `assignee: ''`.
-    card.assignee = card.assignee?.trim() || undefined;
-    if (card.assignee) card.data.assignee = card.assignee;
-    else delete card.data.assignee;
-    // Avoid adding an empty `tags:` key to files that never had one.
-    if (card.tags.length || 'tags' in card.data) card.data.tags = [...card.tags];
-    return writeCard(requireRoot(), card);
+  const operation = (previous ?? Promise.resolve()).then(async () => {
+    const modified = await guard(async () => writeCard(root, snapshot));
+    if (modified !== undefined) card.modified = modified;
   });
-  inFlightSaves.delete(flushing);
+  inFlightSaves.set(card.id, operation);
 
-  if (modified !== undefined) card.modified = modified;
-  saveState.value = error.value ? 'idle' : 'saved';
+  void operation.finally(() => {
+    if (inFlightSaves.get(card.id) !== operation) return;
+    inFlightSaves.delete(card.id);
+    if (inFlightSaves.size > 0) saveState.value = 'saving';
+    else if (pendingSaves.size > 0) saveState.value = 'dirty';
+    else saveState.value = error.value ? 'idle' : 'saved';
+  });
+
+  return operation;
 }
