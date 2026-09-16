@@ -4,30 +4,35 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import {
+  CLAUDE_HOOK_EVENTS,
+  CLAUDE_HOOK_POLICIES,
   claudeAdapter,
   claudeHookSettings,
   claudePluginFiles,
+  createClaudeAdapter,
   isCompanionPlugin,
 } from './index.ts';
 
-test('maps each lifecycle event to a companion status', async () => {
-  const events: [string, string][] = [
-    ['UserPromptSubmit', 'running'],
-    ['PostToolUse', 'running'],
-    ['Notification', 'waiting_for_input'],
-    ['Stop', 'ready_for_review'],
-    ['SessionEnd', 'closed'],
-  ];
+test('maps turn and session lifecycle events to companion statuses', async () => {
+  const adapter = createClaudeAdapter();
 
-  for (const [hook_event_name, status] of events) {
-    const payload = {
-      hook_event_name,
-      session_id: 's1',
-      tool_name: 'Write',
-      tool_input: { file_path: '/board/card.md' },
-    };
-    assert.equal((await claudeAdapter.translate(payload))?.status, status, hook_event_name);
-  }
+  assert.equal(
+    (await adapter.translate({ hook_event_name: 'UserPromptSubmit', session_id: 's1' }))?.status,
+    'running',
+  );
+  assert.equal(
+    (await adapter.translate({ hook_event_name: 'StopFailure', session_id: 's1' }))?.status,
+    'ready_for_review',
+  );
+  assert.equal(
+    (await adapter.translate({ hook_event_name: 'SessionEnd', session_id: 's1' }))?.status,
+    'closed',
+  );
+  assert.equal(
+    await adapter.translate({ hook_event_name: 'UserPromptSubmit', session_id: 's1' }),
+    undefined,
+    'closed wins until a new SessionStart',
+  );
 });
 
 test('discovers cards from a prompt and records the transcript as the session file', async () => {
@@ -58,27 +63,149 @@ test('discovers a card from a tool call, resolving against the session directory
   assert.deepEqual(event?.cardPaths, ['/workspace/cards/one.md']);
 });
 
-test('moves a session back to running when the user answers a question', async () => {
-  const event = await claudeAdapter.translate({
+test('tracks AskUserQuestion from opening through answer or auto-timeout', async () => {
+  const adapter = createClaudeAdapter();
+  await adapter.translate({ hook_event_name: 'UserPromptSubmit', session_id: 's1' });
+
+  const waiting = await adapter.translate({
+    hook_event_name: 'PreToolUse',
+    session_id: 's1',
+    tool_name: 'AskUserQuestion',
+    tool_use_id: 'question-1',
+  });
+  assert.equal(waiting?.status, 'waiting_for_input');
+
+  const answered = await adapter.translate({
     hook_event_name: 'PostToolUse',
     session_id: 's1',
     tool_name: 'AskUserQuestion',
+    tool_use_id: 'question-1',
   });
-
-  assert.equal(event?.status, 'running');
-  assert.deepEqual(event?.cardPaths, []);
+  assert.equal(answered?.status, 'running');
+  assert.deepEqual(answered?.cardPaths, []);
 });
 
-test('ignores a tool call that cannot touch a card', async () => {
-  for (const tool_input of [{ file_path: '/src/index.ts' }, { file_path: 'relative.md' }, {}]) {
-    const event = await claudeAdapter.translate({
+test('resolves a delayed anonymous permission notification from a tool result', async () => {
+  const adapter = createClaudeAdapter();
+  await adapter.translate({ hook_event_name: 'UserPromptSubmit', session_id: 's1' });
+
+  assert.equal(
+    (
+      await adapter.translate({
+        hook_event_name: 'Notification',
+        notification_type: 'permission_prompt',
+        session_id: 's1',
+      })
+    )?.status,
+    'waiting_for_input',
+  );
+  assert.equal(
+    (
+      await adapter.translate({
+        hook_event_name: 'PostToolUse',
+        session_id: 's1',
+        tool_use_id: 'tool-1',
+      })
+    )?.status,
+    'running',
+  );
+});
+
+test('tracks permission and elicitation blockers until their matching result', async () => {
+  const adapter = createClaudeAdapter();
+  await adapter.translate({ hook_event_name: 'UserPromptSubmit', session_id: 's1' });
+
+  assert.equal(
+    (
+      await adapter.translate({
+        hook_event_name: 'PermissionRequest',
+        session_id: 's1',
+        tool_use_id: 'tool-1',
+      })
+    )?.status,
+    'waiting_for_input',
+  );
+  assert.equal(
+    (
+      await adapter.translate({
+        hook_event_name: 'PostToolUse',
+        session_id: 's1',
+        tool_use_id: 'tool-1',
+      })
+    )?.status,
+    'running',
+  );
+
+  assert.equal(
+    (
+      await adapter.translate({
+        hook_event_name: 'Elicitation',
+        session_id: 's1',
+        request_id: 'request-1',
+      })
+    )?.status,
+    'waiting_for_input',
+  );
+  assert.equal(
+    (
+      await adapter.translate({
+        hook_event_name: 'ElicitationResult',
+        session_id: 's1',
+        request_id: 'request-1',
+      })
+    )?.status,
+    'running',
+  );
+});
+
+test('does not clear an unrelated blocker in a parallel tool batch', async () => {
+  const adapter = createClaudeAdapter();
+  await adapter.translate({ hook_event_name: 'UserPromptSubmit', session_id: 's1' });
+  await adapter.translate({
+    hook_event_name: 'PreToolUse',
+    session_id: 's1',
+    tool_name: 'AskUserQuestion',
+    tool_use_id: 'question-1',
+  });
+  await adapter.translate({
+    hook_event_name: 'PermissionRequest',
+    session_id: 's1',
+    tool_use_id: 'tool-2',
+  });
+
+  // Permission resolved, but question still blocks and status therefore does not need republishing.
+  assert.equal(
+    await adapter.translate({
       hook_event_name: 'PostToolUse',
       session_id: 's1',
-      tool_name: 'Edit',
-      tool_input,
-    });
-    assert.equal(event, undefined, JSON.stringify(tool_input));
-  }
+      tool_use_id: 'tool-2',
+    }),
+    undefined,
+  );
+  assert.equal(
+    (
+      await adapter.translate({
+        hook_event_name: 'PostToolUse',
+        session_id: 's1',
+        tool_name: 'AskUserQuestion',
+        tool_use_id: 'question-1',
+      })
+    )?.status,
+    'running',
+  );
+});
+
+test('ignores a non-card tool result when it causes no lifecycle change', async () => {
+  const adapter = createClaudeAdapter();
+  await adapter.translate({ hook_event_name: 'UserPromptSubmit', session_id: 's1' });
+
+  const event = await adapter.translate({
+    hook_event_name: 'PostToolUse',
+    session_id: 's1',
+    tool_name: 'Edit',
+    tool_input: { file_path: '/src/index.ts' },
+  });
+  assert.equal(event, undefined);
 });
 
 test('ignores payloads with no event, no session, or an unknown event', async () => {
@@ -135,12 +262,49 @@ test('restores cards from the transcript on session start', async () => {
 });
 
 test('treats a missing transcript as an empty session', async () => {
-  const event = await claudeAdapter.translate({
+  const event = await createClaudeAdapter().translate({
     hook_event_name: 'SessionStart',
     session_id: 's1',
     transcript_path: '/nowhere/missing.jsonl',
   });
   assert.deepEqual(event?.cardPaths, []);
+});
+
+test('preserves running state across compaction', async () => {
+  const adapter = createClaudeAdapter();
+  await adapter.translate({ hook_event_name: 'UserPromptSubmit', session_id: 's1' });
+
+  const compact = await adapter.translate({
+    hook_event_name: 'SessionStart',
+    session_id: 's1',
+    source: 'compact',
+  });
+  assert.equal(compact?.status, 'running');
+
+  assert.equal(
+    await createClaudeAdapter().translate({
+      hook_event_name: 'SessionStart',
+      session_id: 'unknown',
+      source: 'compact',
+    }),
+    undefined,
+  );
+});
+
+test('classifies every official hook and configures every lifecycle hook', () => {
+  const byName = (left: string, right: string) => left.localeCompare(right);
+  assert.deepEqual(
+    Object.keys(CLAUDE_HOOK_POLICIES).sort(byName),
+    [...CLAUDE_HOOK_EVENTS].sort(byName),
+  );
+
+  const expectedSubscriptions = CLAUDE_HOOK_EVENTS.filter(
+    (event) => CLAUDE_HOOK_POLICIES[event].kind === 'lifecycle',
+  ).sort(byName);
+  assert.deepEqual(
+    Object.keys(claudeHookSettings('http://127.0.0.1:31337')).sort(byName),
+    expectedSubscriptions,
+  );
 });
 
 test('keeps per-turn events off the process spawn path', () => {
@@ -151,9 +315,16 @@ test('keeps per-turn events off the process spawn path', () => {
 
   assert.deepEqual(types, {
     UserPromptSubmit: 'http',
+    PreToolUse: 'http',
+    PermissionRequest: 'http',
+    PermissionDenied: 'http',
     PostToolUse: 'http',
+    PostToolUseFailure: 'http',
+    Elicitation: 'http',
+    ElicitationResult: 'http',
     Notification: 'http',
     Stop: 'http',
+    StopFailure: 'http',
     SessionStart: 'command',
     SessionEnd: 'command',
   });
@@ -163,10 +334,12 @@ test('keeps per-turn events off the process spawn path', () => {
   }
 });
 
-test('subscribes to question answers', () => {
-  const matcher = claudeHookSettings('http://127.0.0.1:31337').PostToolUse?.[0]?.matcher ?? '';
+test('subscribes to question starts and all tool results', () => {
+  const settings = claudeHookSettings('http://127.0.0.1:31337');
 
-  assert.ok(matcher.split('|').includes('AskUserQuestion'));
+  assert.equal(settings.PreToolUse?.[0]?.matcher, 'AskUserQuestion');
+  assert.equal(settings.PostToolUse?.[0]?.matcher, undefined);
+  assert.equal(settings.PostToolUseFailure?.[0]?.matcher, undefined);
 });
 
 test('subscribes only to notifications that block on the human', () => {
@@ -182,7 +355,10 @@ test('subscribes only to notifications that block on the human', () => {
 
 test('emits a loadable plugin whose hooks carry the companion endpoint', () => {
   const files = claudePluginFiles('http://127.0.0.1:41337');
-  assert.deepEqual(Object.keys(files).sort(), ['.claude-plugin/plugin.json', 'hooks/hooks.json']);
+  assert.deepEqual(
+    Object.keys(files).sort((left, right) => left.localeCompare(right)),
+    ['.claude-plugin/plugin.json', 'hooks/hooks.json'],
+  );
 
   const manifest = JSON.parse(files['.claude-plugin/plugin.json'] ?? '');
   assert.equal(manifest.name, 'mdello-companion');

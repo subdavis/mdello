@@ -40,10 +40,10 @@ Publish status changes to every card associated with the session. Re-associating
 
 | Status | Pi event | Claude Code hook |
 | --- | --- | --- |
-| `idle` | `session_start`, `ui_prompt_end` when idle | `SessionStart` |
-| `running` | `agent_start`, `ui_prompt_end` when busy | `UserPromptSubmit`, `PostToolUse` (including an answered `AskUserQuestion`) |
-| `waiting_for_input` | `ui_prompt_start` | `Notification` (`permission_prompt`, `idle_prompt`, `agent_needs_input`) |
-| `ready_for_review` | `agent_settled` | `Stop` |
+| `idle` | `session_start`, `ui_prompt_end` when idle | `SessionStart` except `source: compact` |
+| `running` | `agent_start`, `ui_prompt_end` when busy | `UserPromptSubmit`; matching question, permission, or elicitation result |
+| `waiting_for_input` | `ui_prompt_start` | `PreToolUse(AskUserQuestion)`, `PermissionRequest`, `Elicitation`, blocking notifications |
+| `ready_for_review` | `agent_settled` | `Stop`, `StopFailure` |
 | `closed` | `session_shutdown` | `SessionEnd` |
 
 Claude Code has no separate "agent started" event, so `UserPromptSubmit` both discovers cards in the prompt and moves the session to `running`.
@@ -90,13 +90,18 @@ Return `undefined` for anything not worth publishing — an unknown event, a mis
 
 ### Claude Code specifics
 
-Verified against Claude Code 2.1.220. The first point is not documented and was confirmed by inspecting the binary and by running hooks against a capture server.
+Transport behavior was verified against Claude Code 2.1.220. Lifecycle mappings also cover newer documented notifications; unsupported notification matchers are inert on older releases.
 
-- **`SessionStart` and `Setup` reject `http` hooks** and are skipped with only a debug log. Those two events therefore post with `curl`, at roughly 17 ms once per session; the four per-turn events use `type: "http"` and spawn nothing.
+- **`SessionStart` and `Setup` reject `http` hooks** and are skipped with only a debug log. Session boundary events therefore post with `curl`, at roughly 17 ms once per session; turn events use `type: "http"` and spawn nothing.
 - **The integration ships as a plugin, not as settings.** A directory under a skills directory that carries `.claude-plugin/plugin.json` loads as `<name>@skills-dir` on the next session, with no marketplace and no install record, and plugin hooks use the same schema as settings hooks. So install writes one directory and never edits the user's `settings.json`. The manifest carries `metadata.managedBy`, which uninstall requires before deleting anything.
 - **`allowedHttpHookUrls` is enforced only when the key exists.** Loopback is exempt from the private-address check, so an unset allowlist permits `127.0.0.1`. A user who maintains an allowlist must add the companion origin themselves, since the installer does not write settings.
 - **A dead companion cannot block a session.** A failed hook is reported as a non-blocking error and never reaches the session output. The exception is `SessionEnd`, which writes hook failures to stderr, so its `curl` ends in `|| true`.
 - **`enabledPlugins` wins over the manifest.** Running `claude plugin disable mdello-companion@skills-dir` records `false` in settings, and reinstalling does not override it; re-enable with `claude plugin enable`.
 - Every hook sets an explicit `timeout`, because the default for `command`, `http`, and `mcp_tool` hooks is 600 seconds.
 - The companion must answer with valid JSON or an empty body; invalid JSON raises a hook error. `/hooks/*` replies `{}` and sends no CORS headers, since it reads a caller-supplied session file and must not be reachable from a browser page.
-- Discovery reads `prompt` on `UserPromptSubmit`, `tool_input.file_path` on modifying `PostToolUse` events, and the `transcript_path` JSONL on `SessionStart`. The `PostToolUse` matcher also includes `AskUserQuestion`; that tool completes when the user submits an answer, moving the session from `waiting_for_input` to `running` without discovering another card.
+- Discovery reads `prompt` on `UserPromptSubmit`, `tool_input.file_path` on modifying `PostToolUse` events, and the `transcript_path` JSONL on `SessionStart`.
+- Claude's official hook inventory is represented by the `ClaudeHookEvent` union and `CLAUDE_HOOK_POLICIES`. A `satisfies Record<ClaudeHookEvent, ClaudeHookPolicy>` check requires every event to be classified as lifecycle-relevant or metadata-only. Hook settings are generated from that policy, preventing subscriptions and translation logic from drifting apart. Upstream Claude additions still require updating the inventory from Anthropic's documentation.
+- Lifecycle state is aggregated per session. Outstanding questions, permission requests, and MCP elicitations are keyed by their event identity. A tool result clears only its matching blockers, so parallel tool completion cannot hide an unrelated wait.
+- `PreToolUse(AskUserQuestion)` starts a wait; its matching `PostToolUse` or `PostToolUseFailure` resumes work. `PermissionRequest` and `Elicitation` start equivalent blockers, resolved by matching tool results, `PermissionDenied`, or `ElicitationResult`.
+- `SessionStart(source=compact)` preserves current state. `StopFailure` settles a failed API turn as `ready_for_review` because the companion has no separate error status.
+- Claude hooks cannot reliably observe user interrupt or the exact instant every interactive permission/background prompt resolves. The next prompt, terminal event, or identifiable result reconciles state. Delayed notifications are fallbacks; `idle_prompt` is intentionally ignored.

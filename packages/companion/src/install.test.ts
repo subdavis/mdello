@@ -364,14 +364,31 @@ test('Claude install writes a self-contained plugin and never touches settings',
     };
     assert.deepEqual(
       Object.keys(hooks).sort((a, b) => a.localeCompare(b)),
-      ['Notification', 'PostToolUse', 'SessionEnd', 'SessionStart', 'Stop', 'UserPromptSubmit'],
+      [
+        'Elicitation',
+        'ElicitationResult',
+        'Notification',
+        'PermissionDenied',
+        'PermissionRequest',
+        'PostToolUse',
+        'PostToolUseFailure',
+        'PreToolUse',
+        'SessionEnd',
+        'SessionStart',
+        'Stop',
+        'StopFailure',
+        'UserPromptSubmit',
+      ],
     );
-    // Claude Code rejects http hooks on SessionStart, so only those two shell out.
-    for (const event of ['UserPromptSubmit', 'PostToolUse', 'Notification', 'Stop']) {
+    // Claude Code rejects http hooks on SessionStart, so only session boundary hooks shell out.
+    for (const event of Object.keys(hooks).filter(
+      (event) => event !== 'SessionStart' && event !== 'SessionEnd',
+    )) {
       assert.equal(hooks[event]?.[0]?.hooks[0]?.type, 'http', `${event} must not spawn a process`);
       assert.equal(hooks[event]?.[0]?.hooks[0]?.url, `${endpoint}/hooks/claude`);
     }
-    assert.equal(hooks.PostToolUse?.[0]?.matcher, 'AskUserQuestion|Edit|MultiEdit|Write');
+    assert.equal(hooks.PreToolUse?.[0]?.matcher, 'AskUserQuestion');
+    assert.equal(hooks.PostToolUse?.[0]?.matcher, undefined);
 
     assert.deepEqual(
       await readSettings(home),
