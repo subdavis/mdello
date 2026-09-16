@@ -6,6 +6,16 @@ import { markdownFile, useMarkdownImport } from '../composables/useMarkdownImpor
 import { ARCHIVE_DIR, type Card } from '../fs/board';
 import CardModal from './CardModal.vue';
 import Column from './Column.vue';
+import SearchSidebar from './SearchSidebar.vue';
+
+const props = defineProps<{
+  searchOpen: boolean;
+  searchFocusRequest: number;
+}>();
+
+const emit = defineEmits<{
+  closeSearch: [];
+}>();
 
 const board = useBoard();
 const drag = useDrag();
@@ -14,6 +24,7 @@ const openCard = ref<Card | null>(null);
 const archiveDropzone = ref<HTMLElement | null>(null);
 const archiveWarping = ref(false);
 const archiveOver = computed(() => drag.target.value?.column === ARCHIVE_DIR);
+const cards = computed(() => board.columns.value.flatMap((column) => column.cards));
 const isEmpty = computed(
   () => board.configReady.value && !board.loading.value && board.columns.value.length === 0,
 );
@@ -139,39 +150,50 @@ function onArchiveDragover(event: DragEvent): void {
     </button>
   </div>
 
-  <!-- .self: gaps and padding only. Dragovers bubbling up from a column or archive
-       have already set a target and must not be cleared here. -->
-  <div
-    v-else
-    class="board"
-    @dragover.self="drag.clearTarget()"
-    @dragleave.self="drag.clearTarget()"
-    @drop.prevent="onDrop"
-    @dragend="onDragend"
-  >
-    <Column
-      v-for="(column, index) in board.columns.value"
-      :key="column.name"
-      :column="column"
-      :index="index"
-      @open="openCard = $event"
-      @add="(target, title) => board.addCard(target, title)"
-      @rename="(target, label) => board.renameColumn(target, label)"
-      @archive="(target) => board.archiveColumn(target)"
-      @hover="(dir, index) => board.previewColumnOrder(dir, index)"
-    />
+  <div v-else class="board-shell">
+    <KeepAlive>
+      <SearchSidebar
+        v-if="props.searchOpen"
+        :cards="cards"
+        :focus-request="props.searchFocusRequest"
+        @close="emit('closeSearch')"
+        @select="openCard = $event"
+      />
+    </KeepAlive>
 
-    <section class="column archive-column">
-      <div
-        ref="archiveDropzone"
-        class="archive-dropzone"
-        :class="{ 'is-over': archiveOver, 'is-warping': archiveWarping }"
-        @dragover="onArchiveDragover"
-      >
-        <span class="archive-vortex" aria-hidden="true" />
-        <span class="archive-label">Archive</span>
-      </div>
-    </section>
+    <!-- .self: gaps and padding only. Dragovers bubbling up from a column or archive
+         have already set a target and must not be cleared here. -->
+    <div
+      class="board"
+      @dragover.self="drag.clearTarget()"
+      @dragleave.self="drag.clearTarget()"
+      @drop.prevent="onDrop"
+      @dragend="onDragend"
+    >
+      <Column
+        v-for="(column, index) in board.columns.value"
+        :key="column.name"
+        :column="column"
+        :index="index"
+        @open="openCard = $event"
+        @add="(target, title) => board.addCard(target, title)"
+        @rename="(target, label) => board.renameColumn(target, label)"
+        @archive="(target) => board.archiveColumn(target)"
+        @hover="(dir, index) => board.previewColumnOrder(dir, index)"
+      />
+
+      <section class="column archive-column">
+        <div
+          ref="archiveDropzone"
+          class="archive-dropzone"
+          :class="{ 'is-over': archiveOver, 'is-warping': archiveWarping }"
+          @dragover="onArchiveDragover"
+        >
+          <span class="archive-vortex" aria-hidden="true" />
+          <span class="archive-label">Archive</span>
+        </div>
+      </section>
+    </div>
 
     <CardModal v-if="openCard" :card="openCard" @close="openCard = null" />
   </div>

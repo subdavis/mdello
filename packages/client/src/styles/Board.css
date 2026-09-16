@@ -24,13 +24,21 @@
   font-size: var(--font-md);
 }
 
+.board-shell {
+  position: relative;
+  min-width: 0;
+  width: 100%;
+  display: flex;
+}
+
 .board {
+  min-width: 0;
+  flex: 1;
   display: flex;
   align-items: flex-start;
   gap: var(--space-2);
   padding: var(--space-2);
   overflow-x: auto;
-  width: 100%;
 }
 
 .archive-column {
