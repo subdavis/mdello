@@ -160,6 +160,88 @@ test('resolves subscribed live associations and defaults a missing harness', asy
   }
 });
 
+test('returns transient Herdr labels for a resolvable session', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mdello-server-'));
+  const boardPath = join(root, 'board');
+  const cardPath = join(boardPath, 'card.md');
+  await mkdir(boardPath);
+  await writeFile(cardPath, '---\nuuid: card-a\n---\n');
+  const sessionFile = '/home/.pi/agent/sessions/session-a.jsonl';
+  const herdrCalls: string[][] = [];
+  const companion = await createCompanionServer({
+    port: 0,
+    dataFile: join(root, 'companion.jsonl'),
+    configFile: join(root, 'companion.json'),
+    herdrPath: '/usr/local/bin/herdr',
+    herdrRun: async (_command, args) => {
+      herdrCalls.push(args);
+      if (args[0] === 'agent') {
+        return {
+          stdout: JSON.stringify({
+            result: {
+              agents: [
+                { agent_session: { value: sessionFile }, tab_id: 'w6:t1E', workspace_id: 'w6' },
+              ],
+            },
+          }),
+        };
+      }
+      if (args[0] === 'tab') {
+        return {
+          stdout: JSON.stringify({
+            result: { tabs: [{ tab_id: 'w6:t1E', label: 'Background Three' }] },
+          }),
+        };
+      }
+      return {
+        stdout: JSON.stringify({
+          result: { workspaces: [{ workspace_id: 'w6', label: 'Frontend' }] },
+        }),
+      };
+    },
+  });
+  try {
+    await registerBoard(companion.url, 'board-a', boardPath);
+    assert.equal(herdrCalls.length, 3, 'frontend connection performs one Herdr state sync');
+    await fetch(`${companion.url}/associations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        cardPath,
+        harness: 'pi',
+        sessionId: 'session-a',
+        sessionFile,
+        status: 'running',
+      }),
+    });
+
+    const [association] = (await (
+      await fetch(`${companion.url}/associations?boardUuid=board-a`)
+    ).json()) as Record<string, unknown>[];
+    assert.equal(association.herdrWorkspace, 'Frontend');
+    assert.equal(association.herdrTab, 'Background Three');
+    assert.equal(herdrCalls.length, 3, 'cached state serves known ingress and reads');
+
+    const publishMissing = (status: string) =>
+      fetch(`${companion.url}/associations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cardPath,
+          harness: 'pi',
+          sessionId: 'outside-herdr',
+          status,
+        }),
+      });
+    await publishMissing('running');
+    await publishMissing('idle');
+    assert.equal(herdrCalls.length, 6, 'unresolved ingress is synced and negatively cached once');
+  } finally {
+    await companion.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('appends nothing when a republished status only moves the timestamp', async () => {
   const root = await mkdtemp(join(tmpdir(), 'mdello-server-'));
   const boardPath = join(root, 'board');

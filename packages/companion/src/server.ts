@@ -10,7 +10,7 @@ import {
   associationKey,
   isAssociationStatus,
 } from '@mdello/common/associations';
-import { performAction } from './actions.ts';
+import { type ActionContext, performAction } from './actions.ts';
 import {
   type BoardRegistration,
   DEFAULT_CONFIG_FILE,
@@ -21,6 +21,7 @@ import {
   resolveCard,
 } from './boards.ts';
 import { createDebugLogger } from './debug.ts';
+import { HerdrSessionCache } from './herdr.ts';
 import { findAdapter, harnessFromPath, hookAssociationInputs } from './hooks.ts';
 import { companionPaths } from './xdg.ts';
 
@@ -33,6 +34,7 @@ export interface CompanionOptions {
   dataFile?: string;
   configFile?: string;
   herdrPath?: string;
+  herdrRun?: ActionContext['run'];
 }
 
 export interface ReconcileResult {
@@ -80,12 +82,32 @@ function boardAssociations(
   );
 }
 
-function writeBoardSnapshots(
+type PresentAssociations = (
+  associations: Association[],
+  ensureSessions?: boolean,
+) => Promise<Association[]>;
+
+interface AssociationContext {
+  dataFile: string;
+  associations: Map<string, Association>;
+  clients: Map<ServerResponse, string>;
+  boards: BoardRegistration[];
+  presentAssociations: PresentAssociations;
+}
+
+async function writeBoardSnapshots(
   clients: Map<ServerResponse, string>,
   associations: Map<string, Association>,
-): void {
+  presentAssociations: PresentAssociations,
+): Promise<void> {
+  if (clients.size === 0) return;
+  const presented = await presentAssociations([...associations.values()]);
   for (const [client, boardUuid] of clients) {
-    writeSse(client, 'snapshot', boardAssociations(associations, boardUuid));
+    writeSse(
+      client,
+      'snapshot',
+      presented.filter((association) => association.boardUuid === boardUuid),
+    );
   }
 }
 
@@ -125,7 +147,16 @@ function normalizeAssociation(value: unknown, legacyHarness?: string): Associati
     return undefined;
   }
 
-  return { ...candidate, harness, status } as Association;
+  return {
+    ...(candidate.boardUuid !== undefined && { boardUuid: candidate.boardUuid }),
+    ...(candidate.cardUuid !== undefined && { cardUuid: candidate.cardUuid }),
+    cardPath: candidate.cardPath,
+    harness,
+    sessionId: candidate.sessionId,
+    ...(candidate.sessionFile !== undefined && { sessionFile: candidate.sessionFile }),
+    status,
+    updatedAt: candidate.updatedAt,
+  };
 }
 
 async function readBody(request: NodeJS.ReadableStream): Promise<unknown> {
@@ -152,6 +183,7 @@ async function recordAssociation(
   associations: Map<string, Association>,
   clients: Map<ServerResponse, string>,
   boards: BoardRegistration[],
+  presentAssociations: PresentAssociations,
 ): Promise<Association | 'unknown_card' | 'invalid'> {
   const requestedPath = input.markdownPath ?? input.cardPath;
   const card =
@@ -197,8 +229,9 @@ async function recordAssociation(
     sessionId: association.sessionId,
     status: association.status,
   });
+  const [presented] = await presentAssociations([association], true);
   for (const [client, boardUuid] of clients) {
-    if (boardUuid === association.boardUuid) writeSse(client, 'association', association);
+    if (boardUuid === association.boardUuid) writeSse(client, 'association', presented);
   }
   return association;
 }
@@ -210,10 +243,18 @@ async function handleAssociationPost(
   associations: Map<string, Association>,
   clients: Map<ServerResponse, string>,
   boards: BoardRegistration[],
+  presentAssociations: PresentAssociations,
 ): Promise<void> {
   try {
     const input = (await readBody(request)) as AssociationInput;
-    const result = await recordAssociation(input, dataFile, associations, clients, boards);
+    const result = await recordAssociation(
+      input,
+      dataFile,
+      associations,
+      clients,
+      boards,
+      presentAssociations,
+    );
     if (result === 'unknown_card') {
       sendJson(response, 202, { ignored: true, reason: 'unknown_card' });
       return;
@@ -238,12 +279,11 @@ const ACTION_ERROR_STATUS: Record<string, number> = {
 async function handleActionsPost(
   request: IncomingMessage,
   response: ServerResponse,
-  herdrBundleId: string | undefined,
-  herdrPath: string | undefined,
+  actionContext: ActionContext,
 ): Promise<void> {
   try {
     const input = await readBody(request);
-    const result = await performAction(input, { herdrBundleId, herdrPath });
+    const result = await performAction(input, actionContext);
     if (result === 'invalid') {
       sendJson(response, 400, { error: 'Invalid action' });
       return;
@@ -271,11 +311,9 @@ async function handleHookPost(
   request: IncomingMessage,
   response: ServerResponse,
   harness: string,
-  dataFile: string,
-  associations: Map<string, Association>,
-  clients: Map<ServerResponse, string>,
-  boards: BoardRegistration[],
+  context: AssociationContext,
 ): Promise<void> {
+  const { dataFile, associations, clients, boards, presentAssociations } = context;
   const adapter = findAdapter(harness);
   if (!adapter) {
     response.writeHead(404, { 'Content-Type': 'application/json' });
@@ -310,7 +348,14 @@ async function handleHookPost(
 
     let recorded = 0;
     for (const input of hookAssociationInputs(event, harness, associations.values())) {
-      const result = await recordAssociation(input, dataFile, associations, clients, boards);
+      const result = await recordAssociation(
+        input,
+        dataFile,
+        associations,
+        clients,
+        boards,
+        presentAssociations,
+      );
       if (typeof result === 'object') recorded += 1;
     }
     debug('hook recorded', {
@@ -458,6 +503,7 @@ async function handleAssociationDelete(
   dataFile: string,
   associations: Map<string, Association>,
   clients: Map<ServerResponse, string>,
+  presentAssociations: PresentAssociations,
 ): Promise<void> {
   const cardUuid = url.searchParams.get('cardUuid');
   const harness = url.searchParams.get('harness');
@@ -482,7 +528,7 @@ async function handleAssociationDelete(
     } else {
       throw new Error('Invalid association selector');
     }
-    writeBoardSnapshots(clients, associations);
+    await writeBoardSnapshots(clients, associations, presentAssociations);
     debug('associations expunged', { cardUuid, harness, sessionId, removedEvents });
     sendJson(response, 200, { removedEvents });
   } catch (error) {
@@ -502,9 +548,11 @@ async function handleEventsGet(
     dataFile: string;
     boards: BoardRegistration[];
     clients: Map<ServerResponse, string>;
+    presentAssociations: PresentAssociations;
+    herdrCache: HerdrSessionCache;
   },
 ): Promise<Map<string, Association>> {
-  const { configFile, dataFile, boards, clients } = context;
+  const { configFile, dataFile, boards, clients, presentAssociations, herdrCache } = context;
   const boardUuid = url.searchParams.get('boardUuid');
   const boardPath = url.searchParams.get('boardPath');
   if (!boardUuid || !boardPath) {
@@ -519,7 +567,8 @@ async function handleEventsGet(
     });
     const reconciled = await reconcileAssociations(dataFile, associations, boards);
     associations = reconciled.associations;
-    writeBoardSnapshots(clients, associations);
+    await herdrCache.refresh([...associations.values()]);
+    await writeBoardSnapshots(clients, associations, presentAssociations);
     debug('board registered', {
       boardUuid: registration.uuid,
       path: registration.path,
@@ -539,7 +588,7 @@ async function handleEventsGet(
     'Content-Type': 'text/event-stream',
   });
   clients.set(response, boardUuid);
-  const snapshot = boardAssociations(associations, boardUuid);
+  const snapshot = await presentAssociations(boardAssociations(associations, boardUuid));
   writeSse(response, 'snapshot', snapshot);
   debug('event stream subscribed', { boardUuid, associations: snapshot.length });
   request.on('close', () => {
@@ -553,10 +602,7 @@ async function handleEarlyRequest(
   request: IncomingMessage,
   response: ServerResponse,
   url: URL,
-  dataFile: string,
-  associations: Map<string, Association>,
-  clients: Map<ServerResponse, string>,
-  boards: BoardRegistration[],
+  context: AssociationContext,
 ): Promise<boolean> {
   if (request.method === 'OPTIONS') {
     // Refuse the preflight for harness hooks so no browser origin is ever granted access.
@@ -574,7 +620,7 @@ async function handleEarlyRequest(
   if (request.method !== 'POST') return false;
   const harness = harnessFromPath(url.pathname);
   if (!harness) return false;
-  await handleHookPost(request, response, harness, dataFile, associations, clients, boards);
+  await handleHookPost(request, response, harness, context);
   return true;
 }
 
@@ -592,6 +638,12 @@ export async function createCompanionServer(options: CompanionOptions = {}): Pro
   const boards = await loadBoards(configFile);
   const herdrBundleId = await loadHerdrBundleId(configFile);
   const herdrPath = options.herdrPath ?? process.env.HERDR_PATH;
+  const actionContext: ActionContext = { herdrBundleId, herdrPath, run: options.herdrRun };
+  const herdrCache = new HerdrSessionCache(actionContext);
+  const presentAssociations: PresentAssociations = async (entries, ensureSessions = false) => {
+    if (ensureSessions) await Promise.all(entries.map((entry) => herdrCache.ensure(entry)));
+    return herdrCache.present(entries);
+  };
   const herdrEnabled = Boolean(herdrBundleId && herdrPath);
   const clients = new Map<ServerResponse, string>();
   await mkdir(dirname(dataFile), { recursive: true });
@@ -601,7 +653,15 @@ export async function createCompanionServer(options: CompanionOptions = {}): Pro
     const url = new URL(request.url ?? '/', `http://${request.headers.host ?? host}`);
     debug('request received', { method: request.method, path: `${url.pathname}${url.search}` });
 
-    if (await handleEarlyRequest(request, response, url, dataFile, associations, clients, boards)) {
+    if (
+      await handleEarlyRequest(request, response, url, {
+        dataFile,
+        associations,
+        clients,
+        boards,
+        presentAssociations,
+      })
+    ) {
       return;
     }
 
@@ -611,6 +671,8 @@ export async function createCompanionServer(options: CompanionOptions = {}): Pro
         dataFile,
         boards,
         clients,
+        presentAssociations,
+        herdrCache,
       });
       return;
     }
@@ -618,23 +680,35 @@ export async function createCompanionServer(options: CompanionOptions = {}): Pro
     if (request.method === 'GET' && url.pathname === '/associations') {
       const boardUuid = url.searchParams.get('boardUuid');
       const cardUuid = url.searchParams.get('cardUuid') ?? undefined;
-      sendJson(
-        response,
-        200,
-        boardUuid
-          ? boardAssociations(associations, boardUuid, cardUuid)
-          : [...associations.values()],
-      );
+      const selected = boardUuid
+        ? boardAssociations(associations, boardUuid, cardUuid)
+        : [...associations.values()];
+      sendJson(response, 200, await presentAssociations(selected));
       return;
     }
 
     if (request.method === 'DELETE' && url.pathname === '/associations') {
-      await handleAssociationDelete(response, url, dataFile, associations, clients);
+      await handleAssociationDelete(
+        response,
+        url,
+        dataFile,
+        associations,
+        clients,
+        presentAssociations,
+      );
       return;
     }
 
     if (request.method === 'POST' && url.pathname === '/associations') {
-      await handleAssociationPost(request, response, dataFile, associations, clients, boards);
+      await handleAssociationPost(
+        request,
+        response,
+        dataFile,
+        associations,
+        clients,
+        boards,
+        presentAssociations,
+      );
       return;
     }
 
@@ -644,7 +718,7 @@ export async function createCompanionServer(options: CompanionOptions = {}): Pro
     }
 
     if (request.method === 'POST' && url.pathname === '/actions') {
-      await handleActionsPost(request, response, herdrBundleId, herdrPath);
+      await handleActionsPost(request, response, actionContext);
       return;
     }
 

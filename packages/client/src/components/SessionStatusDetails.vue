@@ -1,15 +1,14 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import type { Association } from '../composables/useCompanion';
+import { sessionLabel } from '../sessionLabel';
 import IconGlyph from './IconGlyph.vue';
 
 const props = defineProps<{ association: Association; resumeCommand?: string }>();
 const emit = defineEmits<{ copy: [] }>();
 
 const statusLabel = computed(() => props.association.status.replaceAll('_', ' '));
-const sessionLabel = computed(
-  () => `${props.association.harness}:${props.association.sessionId.split('-').at(-1)}`,
-);
+const displayedSessionLabel = computed(() => sessionLabel(props.association));
 </script>
 
 <template>
@@ -27,7 +26,7 @@ const sessionLabel = computed(
       :class="`is-${association.status}`"
       aria-hidden="true"
     />
-    <code>{{ sessionLabel }}</code>
+    <code>{{ displayedSessionLabel }}</code>
     <strong>{{ statusLabel }}</strong>
   </button>
 </template>

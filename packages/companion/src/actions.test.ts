@@ -10,12 +10,14 @@ const AGENT_LIST = JSON.stringify({
         agent_session: { kind: 'id', value: 'claude-session-a' },
         pane_id: 'wA:pT',
         tab_id: 'wA:t8',
+        workspace_id: 'wA',
       },
       {
         agent: 'pi',
         agent_session: { kind: 'path', value: '/home/.pi/agent/sessions/pi-session-a.jsonl' },
         pane_id: 'wA:p14',
         tab_id: 'wA:t9',
+        workspace_id: 'wA',
       },
     ],
   },
@@ -29,8 +31,27 @@ function recordingContext(bundleId?: string): ActionContext & { calls: [string, 
     calls,
     run: async (command, args) => {
       calls.push([command, args]);
-      if (command === '/usr/local/bin/herdr' && args[0] === 'agent' && args[1] === 'list') {
-        return { stdout: AGENT_LIST };
+      if (command === '/usr/local/bin/herdr' && args[1] === 'list') {
+        if (args[0] === 'agent') return { stdout: AGENT_LIST };
+        if (args[0] === 'tab') {
+          return {
+            stdout: JSON.stringify({
+              result: {
+                tabs: [
+                  { tab_id: 'wA:t8', label: 'Main' },
+                  { tab_id: 'wA:t9', label: 'Background Three' },
+                ],
+              },
+            }),
+          };
+        }
+        if (args[0] === 'workspace') {
+          return {
+            stdout: JSON.stringify({
+              result: { workspaces: [{ workspace_id: 'wA', label: 'Frontend' }] },
+            }),
+          };
+        }
       }
       return { stdout: '' };
     },

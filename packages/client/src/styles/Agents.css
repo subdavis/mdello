@@ -107,6 +107,7 @@
   overflow: hidden;
   color: inherit;
   text-overflow: ellipsis;
+  margin-right: var(--space-1);
 }
 
 .session-status-details strong {

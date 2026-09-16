@@ -19,6 +19,8 @@ interface Association {
   harness: string;
   sessionId: string;
   sessionFile?: string;
+  herdrWorkspace?: string; // transient; present when current Herdr pane resolves
+  herdrTab?: string; // transient; present when current Herdr pane resolves
   status: AssociationStatus;
   updatedAt: string; // ISO-8601, assigned by companion
 }
@@ -32,13 +34,13 @@ Default origin: `http://127.0.0.1:31337`. JSON request bodies are limited to 64 
 
 | Request | Contract |
 | --- | --- |
-| `POST /associations` | Body contains `markdownPath` (or `cardPath`), `harness`, `sessionId`, optional `sessionFile`, and `status`. Resolves board/card UUIDs and returns recorded association (`202`). Unknown cards are ignored (`202`, `{ ignored: true, reason: "unknown_card" }`). |
-| `GET /associations[?boardUuid=…&cardUuid=…]` | Returns latest associations, optionally filtered by board and card. |
+| `POST /associations` | Body contains `markdownPath` (or `cardPath`), `harness`, `sessionId`, optional `sessionFile`, and `status`. Resolves board/card UUIDs and returns recorded association (`202`). New sessions resolve against cached Herdr state; an unknown session triggers one state sync and is negatively cached if still unresolved. Unknown cards are ignored (`202`, `{ ignored: true, reason: "unknown_card" }`). |
+| `GET /associations[?boardUuid=…&cardUuid=…]` | Returns latest associations, optionally filtered by board and card. When Herdr is available and a session resolves to a current pane, its association includes transient `herdrWorkspace` and `herdrTab` labels. |
 | `DELETE /associations?cardUuid=…` | Permanently removes all persisted events for that global card and broadcasts fresh snapshots. |
 | `DELETE /associations?harness=…&sessionId=…` | Forgets that harness session across every card by removing all its persisted events, then broadcasts fresh snapshots. |
 | `DELETE /associations?cardUuid=…&harness=…&sessionId=…` | Forgets that harness session from only the selected card, preserving its associations with other cards. |
-| `GET /events?boardUuid=…&boardPath=…` | Validates and registers board, reconciles stored paths/UUIDs, then opens SSE stream. Sends `snapshot` first and `association` after each update for that board. |
-| `POST /hooks/<harness>` | Body is that harness's raw lifecycle payload. A registered [harness adapter](agent-extension.md) translates it; the companion publishes to the event's cards plus every card already held for that `(harness, sessionId)`. Always answers `{}`, and sends no CORS headers because it reads a caller-supplied session file. Unknown harness returns `404`. |
+| `GET /events?boardUuid=…&boardPath=…` | Validates and registers board, reconciles stored paths/UUIDs, then opens SSE stream. One Herdr state sync runs when the frontend connects. Sends `snapshot` first and `association` after each update for that board, enriched from the companion's cached Herdr state when resolvable. |
+| `POST /hooks/<harness>` | Body is that harness's raw lifecycle payload. A registered [harness adapter](agent-extension.md) translates it; the companion publishes to the event's cards plus every card already held for that `(harness, sessionId)`. Sessions resolve against cached Herdr state; an unknown session triggers one state sync, and a still-unresolved session is negatively cached. Always answers `{}`, and sends no CORS headers because it reads a caller-supplied session file. Unknown harness returns `404`. |
 | `GET /settings` | Returns `{ herdrEnabled: boolean }`, true when `herdrBundleId` and an installed `HERDR_PATH` are configured. The client uses this to decide whether to show herdr-only controls. |
 | `POST /actions` | Body is `{ action, ... }`. Actions live in their own module ([`actions.ts`](../packages/companion/src/actions.ts)), isolated from the association/board logic above, as a small `ACTIONS` registry keyed by action name. Returns `200 { ok: true }` on success, `400` for a body that isn't a recognized action, `500` if the herdr CLI itself fails. |
 | ↳ `focus` | `{ action: "focus", harness, sessionId, sessionFile? }` — the session to focus. Joins `herdr agent list` against `sessionId` (or `sessionFile` for `harness: pi`), runs `herdr agent focus <pane_id>`, projects its `tab_id` to attached Herdr clients with `herdr tab focus <tab_id>`, then uses `open -b <herdrBundleId>` to raise the terminal. `404` if no pane matches, `409` if no `herdrBundleId` is configured. |

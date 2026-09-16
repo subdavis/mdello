@@ -24,6 +24,8 @@ export interface Association {
   harness: string;
   sessionId: string;
   sessionFile?: string;
+  herdrWorkspace?: string;
+  herdrTab?: string;
   status: AssociationStatus;
   updatedAt: string;
 }

@@ -57,10 +57,13 @@ function resolveRun(context: ActionContext): NonNullable<ActionContext['run']> {
 }
 
 /** `pi` sessions key on their transcript path; every other harness keys on the session id. */
-function matchesSession(agent: HerdrAgent, request: FocusRequest): boolean {
+function matchesSession(
+  agent: HerdrAgent,
+  session: Pick<FocusRequest, 'harness' | 'sessionId' | 'sessionFile'>,
+): boolean {
   const value = agent.agent_session?.value;
   if (!value) return false;
-  return value === (request.harness === 'pi' ? request.sessionFile : request.sessionId);
+  return value === (session.harness === 'pi' ? session.sessionFile : session.sessionId);
 }
 
 async function focus(request: ActionRequest, context: ActionContext): Promise<ActionOutcome> {
