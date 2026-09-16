@@ -1,9 +1,10 @@
 import jiraIcon from './assets/icons/atlassian-jira-icon.svg';
 import figmaIcon from './assets/icons/Figma-logo.svg';
+import googleDocsIcon from './assets/icons/Google-Docs-logo.svg';
 import gitIcon from './assets/icons/Octicons-mark-github.svg';
 import slackIcon from './assets/icons/Slack_icon_2019.svg';
 
-export type ReferenceKind = 'git' | 'jira' | 'slack' | 'figma';
+export type ReferenceKind = 'git' | 'jira' | 'slack' | 'figma' | 'google-docs';
 
 export interface Reference {
   kind: ReferenceKind;
@@ -17,10 +18,11 @@ export const REFERENCE_ICONS: Record<ReferenceKind, string> = {
   jira: jiraIcon,
   slack: slackIcon,
   figma: figmaIcon,
+  'google-docs': googleDocsIcon,
 };
 
 /** Kinds that only ever contribute a single chip, since their labels carry no detail. */
-const SINGLETONS: ReferenceKind[] = ['slack', 'figma'];
+const SINGLETONS: ReferenceKind[] = ['slack', 'figma', 'google-docs'];
 
 const URL_PATTERN = /https?:\/\/[^\s<>()[\]"'`]+/g;
 
@@ -30,6 +32,7 @@ const GITLAB =
 const JIRA = /^https?:\/\/[^/]+\.atlassian\.net\/browse\/([A-Z][A-Z0-9]*-\d+)/;
 const SLACK = /^https?:\/\/[^/]+\.slack\.com\/archives\//;
 const FIGMA = /^https?:\/\/(?:www\.)?figma\.com\//;
+const GOOGLE_DOCS = /^https?:\/\/docs\.google\.com\/document\//;
 
 type Match = Omit<Reference, 'icon'>;
 
@@ -42,6 +45,7 @@ function classify(url: string): Match | null {
 
   if (SLACK.test(url)) return { kind: 'slack', label: 'Slack', url };
   if (FIGMA.test(url)) return { kind: 'figma', label: 'Figma', url };
+  if (GOOGLE_DOCS.test(url)) return { kind: 'google-docs', label: 'Google Docs', url };
 
   return null;
 }

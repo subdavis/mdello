@@ -39,25 +39,22 @@ interface CommandResult {
   stdout: string;
 }
 
+type Prompt = (question: string) => Promise<string>;
+
 interface InstallOptions {
   home?: string;
   platform?: NodeJS.Platform;
   repoRoot?: string;
-  /** Absolute node binary embedded in the launch agent. Defaults to the installing interpreter. */
+  /** Absolute node binary offered for interactive confirmation. Defaults to this interpreter. */
   nodePath?: string;
-  /**
-   * PATH embedded in the launch agent's environment. launchd does not source shell rc files, so
-   * without this the sidecar can only see binaries under /usr/bin:/bin:/usr/sbin:/sbin — missing
-   * anything installed under ~/.local/bin, Homebrew, mise, etc. that `herdr` or other CLIs need.
-   * Defaults to the installing shell's PATH.
-   */
-  pathEnv?: string;
   uid?: number;
   /** Companion origin written into harness hook configuration. */
   endpoint?: string;
   /** Environment used to resolve XDG paths. Defaults to the installing process environment. */
   environment?: NodeJS.ProcessEnv;
   run?: (command: string, args: string[]) => Promise<CommandResult>;
+  /** Injectable interactive input for tests. */
+  prompt?: Prompt;
 }
 
 function defaults(options: InstallOptions = {}) {
@@ -69,8 +66,8 @@ function defaults(options: InstallOptions = {}) {
     uid: options.uid ?? process.getuid?.() ?? 0,
     run: options.run ?? ((command: string, args: string[]) => exec(command, args)),
     nodePath: options.nodePath ?? process.execPath,
-    pathEnv: options.pathEnv ?? process.env.PATH ?? '',
     environment: options.environment ?? process.env,
+    prompt: options.prompt,
   };
 }
 
@@ -120,32 +117,90 @@ function xmlEscape(value: string): string {
     .replaceAll("'", '&apos;');
 }
 
-export async function installMacOS(options: InstallOptions = {}): Promise<string> {
-  const config = defaults(options);
-  if (config.platform !== 'darwin') throw new Error('macOS installation requires macOS.');
-
-  const nodePath = config.nodePath.trim();
-  if (!isAbsolute(nodePath)) throw new Error(`Node path must be absolute, got ${nodePath}.`);
+async function executable(path: string): Promise<boolean> {
+  if (!isAbsolute(path)) return false;
   try {
-    await access(nodePath, constants.X_OK);
+    await access(path, constants.X_OK);
+    return true;
   } catch {
-    throw new Error(`Node binary at ${nodePath} is missing or not executable.`);
+    return false;
+  }
+}
+
+export function resolveExecutable(
+  variable: string,
+  discoveredPath: string | undefined,
+  required: true,
+  prompt: Prompt,
+): Promise<string>;
+export function resolveExecutable(
+  variable: string,
+  discoveredPath: string | undefined,
+  required: false,
+  prompt: Prompt,
+): Promise<string | undefined>;
+export async function resolveExecutable(
+  variable: string,
+  discoveredPath: string | undefined,
+  required: boolean,
+  prompt: Prompt,
+): Promise<string | undefined> {
+  let path = discoveredPath?.trim();
+  if (!path && !required) return undefined;
+
+  while (path) {
+    if (!(await executable(path))) {
+      throw new Error(`${variable} at ${path} is missing, not absolute, or not executable.`);
+    }
+    const confirmed = (await prompt(`${variable}=${path} Y/n? `)).trim().toLowerCase();
+    if (!confirmed || confirmed === 'y' || confirmed === 'yes') return path;
+    path = (await prompt(`${variable}=`)).trim();
   }
 
+  if (required) throw new Error(`${variable} is required.`);
+  return undefined;
+}
+
+async function discoverExecutable(
+  name: string,
+  run: (command: string, args: string[]) => Promise<CommandResult>,
+): Promise<string | undefined> {
+  try {
+    return (await run('which', [name])).stdout.trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function terminalPrompt(): Promise<{ prompt: Prompt; close: () => void }> {
+  const { createInterface } = await import('node:readline/promises');
+  const terminal = createInterface({ input: process.stdin, output: process.stdout });
+  return { prompt: (question) => terminal.question(question), close: () => terminal.close() };
+}
+
+interface MacOSServiceOptions extends ReturnType<typeof defaults> {
+  nodePath: string;
+  herdrPath?: string;
+}
+
+export async function installMacOSService(config: MacOSServiceOptions): Promise<string> {
   const templatePath = join(config.repoRoot, 'packages/companion/com.mdello.companion.plist');
   const destination = join(config.home, 'Library/LaunchAgents', `${SERVICE_LABEL}.plist`);
   const temporary = `${destination}.tmp-${process.pid}`;
   const paths = companionPaths(config.environment, config.home);
   const template = await readFile(templatePath, 'utf8');
+  const herdrEnvironment = config.herdrPath
+    ? `    <key>HERDR_PATH</key>\n    <string>${xmlEscape(config.herdrPath)}</string>`
+    : '';
   const plist = template
-    .replaceAll('__NODE_BIN__', xmlEscape(nodePath))
+    .replaceAll('__NODE_BIN__', xmlEscape(config.nodePath))
     .replaceAll('__MDELLO_ROOT__', xmlEscape(config.repoRoot))
     .replaceAll('__HOME__', xmlEscape(config.home))
     .replaceAll('__XDG_CONFIG_HOME__', xmlEscape(dirname(paths.configDirectory)))
     .replaceAll('__XDG_STATE_HOME__', xmlEscape(dirname(paths.stateDirectory)))
     .replaceAll('__COMPANION_STDOUT__', xmlEscape(paths.stdoutLog))
     .replaceAll('__COMPANION_STDERR__', xmlEscape(paths.stderrLog))
-    .replaceAll('__PATH__', xmlEscape(config.pathEnv));
+    .replaceAll('__HERDR_ENV__', herdrEnvironment);
 
   const domain = `gui/${config.uid}`;
   try {
@@ -161,6 +216,23 @@ export async function installMacOS(options: InstallOptions = {}): Promise<string
   await config.run('launchctl', ['bootstrap', domain, destination]);
 
   return `Installed and started ${destination}`;
+}
+
+export async function installMacOS(options: InstallOptions = {}): Promise<string> {
+  const config = defaults(options);
+  if (config.platform !== 'darwin') throw new Error('macOS installation requires macOS.');
+
+  const terminal = config.prompt ? undefined : await terminalPrompt();
+  const prompt = config.prompt ?? terminal?.prompt;
+  if (!prompt) throw new Error('Interactive prompt is unavailable.');
+  try {
+    const nodePath = await resolveExecutable('NODE_PATH', config.nodePath, true, prompt);
+    const discoveredHerdr = await discoverExecutable('herdr', config.run);
+    const herdrPath = await resolveExecutable('HERDR_PATH', discoveredHerdr, false, prompt);
+    return await installMacOSService({ ...config, nodePath, herdrPath });
+  } finally {
+    terminal?.close();
+  }
 }
 
 export async function uninstallMacOS(options: InstallOptions = {}): Promise<string> {

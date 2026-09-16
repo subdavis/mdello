@@ -12,6 +12,7 @@ import IconGlyph from './IconGlyph.vue';
 import MarkdownEditor from './MarkdownEditor.vue';
 import Overlay from './Overlay.vue';
 import TagEditor from './TagEditor.vue';
+import { useBoardExtras } from '../composables/useCardExtras.ts';
 
 const props = defineProps<{ card: Card }>();
 const emit = defineEmits<{ close: [] }>();
@@ -32,14 +33,7 @@ const editor = ref<InstanceType<typeof MarkdownEditor> | null>(null);
 const modalWidth = ref(storedModalWidth());
 const modalStyle = computed(() => ({ width: `${modalWidth.value}px` }));
 const rendered = computed(() => renderMarkdown(props.card.body || '_No description_'));
-const fullPath = computed(() => `${board.boardName.value}/${props.card.name}`);
-const clipboardPath = computed(() => {
-  const root = board.rootPath.value;
-  if (!root) return fullPath.value;
-
-  const separator = root.includes('\\') && !root.includes('/') ? '\\' : '/';
-  return [root.replace(/[\\/]+$/, ''), props.card.name].join(separator);
-});
+const { fullPath, clipboardPath } = useBoardExtras(board, props.card.name);
 /** Undefined until `path` is filled in inside the board's mdello.yml. */
 const editorLink = computed(() => board.cardUrl(props.card));
 

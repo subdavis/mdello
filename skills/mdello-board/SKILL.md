@@ -29,18 +29,17 @@ Archive is cold storage and never shown.
 
 ## Card format
 
-```markdown
+```
 ---
 uuid: 550e8400-e29b-41d4-a716-446655440000
 title: This is my ticket name
 column: Todo
 tags: [poc, mdello]
 created: '2026-08-14T14:59:43.813Z'
-assignee: yourname
 order: 3
 ---
 
-Body is markdown description.
+This is the body of the card.
 ```
 
 - `uuid`—stable identity. Generate for new cards (`uuidgen`); never change an existing value.
@@ -48,7 +47,6 @@ Body is markdown description.
 - `column`—required for display; exact configured column name.
 - `tags`—string list. Read-only in app.
 - `created`—ISO string or `YYYY-MM-DD`. Read-only in app.
-- `assignee`—string. Read-only in app.
 - `order`—app-managed card position; do not adjust unless explicitly ordering cards.
 - Modified time comes from filesystem. Never write `modified`.
 - Extra frontmatter keys survive app round-trips.
@@ -68,18 +66,6 @@ Read configured columns first, then group root card files by `column`.
 `-2`, etc. on collision. Generate a UUID and use a real current UTC timestamp. Mdello backfills
 `uuid` if an agent or human omits it, but authors should include it.
 
-```markdown
----
-uuid: 550e8400-e29b-41d4-a716-446655440000
-title: Fix flaky test
-column: Todo
-tags: []
-created: '2026-08-14T14:59:43.813Z'
----
-
-Body here.
-```
-
 **Move card between columns**—edit only its `column` frontmatter. File path stays stable.
 
 **Edit card**—keep valid YAML and first-line `---` fence. Avoid unrelated reformatting.
@@ -98,3 +84,5 @@ removing a column, update affected cards' `column` values too.
 - If board root is missing, say so and ask before creating it.
 - If asked to work on a card, set its column to the configured in-progress column and set yourself
   as assignee. At end, add a brief summary and links to Jira tickets or PRs created.
+- If you don't know the board root, tell the user and ask that they specify it in their
+  system agent prompt file such as CLAUDE.md or AGENTS.md

@@ -31,7 +31,7 @@ columns:
   - Shiny
 path: /Users/brandon.davis/github.com/mdello/demo-board
 editor: vscode://file{path}
-companion: false
+companion: true
 labels:
   - name: tech-debt
     color: '#8b5cf6'

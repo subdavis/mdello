@@ -7,6 +7,7 @@ import { useBoard } from '../composables/useBoard';
 import { formatStamp } from '../format';
 import type { Card } from '../fs/board';
 import IconGlyph from './IconGlyph.vue';
+import { useBoardExtras } from '../composables/useCardExtras.ts';
 
 const props = defineProps<{ card: Card }>();
 const emit = defineEmits<{ open: [Card] }>();
@@ -17,6 +18,7 @@ const associations = useCompanion(board.rootPath, props.card);
 const status = computed(() => aggregateStatus(associations.value));
 const statusLabel = computed(() => status.value?.replaceAll('_', ' '));
 const isDragging = computed(() => drag.dragging.value?.id === props.card.id);
+const extras = useBoardExtras(board, props.card.name);
 
 const referenceRepresentations = computed(() =>
   Object.values(
@@ -41,7 +43,7 @@ const referenceRepresentations = computed(() =>
     :data-card-id="card.id"
     draggable="true"
     @click="emit('open', card)"
-    @dragstart="drag.start($event, card)"
+    @dragstart="drag.start($event, card, extras.clipboardPath.value)"
     @dragend="drag.end()"
   >
     <IconGlyph

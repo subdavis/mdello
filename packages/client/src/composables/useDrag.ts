@@ -65,7 +65,7 @@ export function useDrag() {
       if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
     },
 
-    start(event: DragEvent, card: Card): void {
+    start(event: DragEvent, card: Card, clipboardPath: string): void {
       dragging.value = { id: card.id, column: card.column };
       const el = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
       const rect = el?.getBoundingClientRect();
@@ -77,7 +77,7 @@ export function useDrag() {
       // The payload is for external drop targets; internal drops read `dragging` instead.
       if (event.dataTransfer) {
         event.dataTransfer.effectAllowed = 'move';
-        event.dataTransfer.setData('text/plain', card.id);
+        event.dataTransfer.setData('text/plain', clipboardPath);
 
         if (el && rect) {
           const image = tiltedImage(el, rect.width, rect.height);

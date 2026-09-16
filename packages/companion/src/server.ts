@@ -32,6 +32,7 @@ export interface CompanionOptions {
   port?: number;
   dataFile?: string;
   configFile?: string;
+  herdrPath?: string;
 }
 
 export interface ReconcileResult {
@@ -238,10 +239,11 @@ async function handleActionsPost(
   request: IncomingMessage,
   response: ServerResponse,
   herdrBundleId: string | undefined,
+  herdrPath: string | undefined,
 ): Promise<void> {
   try {
     const input = await readBody(request);
-    const result = await performAction(input, { herdrBundleId });
+    const result = await performAction(input, { herdrBundleId, herdrPath });
     if (result === 'invalid') {
       sendJson(response, 400, { error: 'Invalid action' });
       return;
@@ -589,6 +591,8 @@ export async function createCompanionServer(options: CompanionOptions = {}): Pro
   let associations = await loadAssociations(dataFile);
   const boards = await loadBoards(configFile);
   const herdrBundleId = await loadHerdrBundleId(configFile);
+  const herdrPath = options.herdrPath ?? process.env.HERDR_PATH;
+  const herdrEnabled = Boolean(herdrBundleId && herdrPath);
   const clients = new Map<ServerResponse, string>();
   await mkdir(dirname(dataFile), { recursive: true });
   await open(dataFile, 'a').then((file) => file.close());
@@ -635,12 +639,12 @@ export async function createCompanionServer(options: CompanionOptions = {}): Pro
     }
 
     if (request.method === 'GET' && url.pathname === '/settings') {
-      sendJson(response, 200, { herdrEnabled: Boolean(herdrBundleId) });
+      sendJson(response, 200, { herdrEnabled });
       return;
     }
 
     if (request.method === 'POST' && url.pathname === '/actions') {
-      await handleActionsPost(request, response, herdrBundleId);
+      await handleActionsPost(request, response, herdrBundleId, herdrPath);
       return;
     }
 

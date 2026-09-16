@@ -24,11 +24,12 @@ const AGENT_LIST = JSON.stringify({
 function recordingContext(bundleId?: string): ActionContext & { calls: [string, string[]][] } {
   const calls: [string, string[]][] = [];
   return {
+    herdrPath: '/usr/local/bin/herdr',
     herdrBundleId: bundleId,
     calls,
     run: async (command, args) => {
       calls.push([command, args]);
-      if (command === 'herdr' && args[0] === 'agent' && args[1] === 'list') {
+      if (command === '/usr/local/bin/herdr' && args[0] === 'agent' && args[1] === 'list') {
         return { stdout: AGENT_LIST };
       }
       return { stdout: '' };
@@ -45,6 +46,17 @@ test('rejects a request that is not a recognized action', async () => {
 
 test('refuses to focus when no bundle id is configured', async () => {
   const context = recordingContext();
+  const result = await performAction(
+    { action: 'focus', harness: 'claude', sessionId: 'claude-session-a' },
+    context,
+  );
+  assert.deepEqual(result, { ok: false, error: 'herdr_not_configured' });
+  assert.deepEqual(context.calls, []);
+});
+
+test('refuses to focus when no herdr path is configured', async () => {
+  const context = recordingContext('com.mitchellh.ghostty');
+  context.herdrPath = undefined;
   const result = await performAction(
     { action: 'focus', harness: 'claude', sessionId: 'claude-session-a' },
     context,
@@ -70,9 +82,9 @@ test('matches a claude session on sessionId and raises the configured bundle', a
   );
   assert.deepEqual(result, { ok: true });
   assert.deepEqual(context.calls, [
-    ['herdr', ['agent', 'list']],
-    ['herdr', ['agent', 'focus', 'wA:pT']],
-    ['herdr', ['tab', 'focus', 'wA:t8']],
+    ['/usr/local/bin/herdr', ['agent', 'list']],
+    ['/usr/local/bin/herdr', ['agent', 'focus', 'wA:pT']],
+    ['/usr/local/bin/herdr', ['tab', 'focus', 'wA:t8']],
     ['open', ['-b', 'com.mitchellh.ghostty']],
   ]);
 });
@@ -90,13 +102,14 @@ test('matches a pi session on sessionFile rather than sessionId', async () => {
   );
   assert.deepEqual(result, { ok: true });
   assert.deepEqual(context.calls.slice(1, 3), [
-    ['herdr', ['agent', 'focus', 'wA:p14']],
-    ['herdr', ['tab', 'focus', 'wA:t9']],
+    ['/usr/local/bin/herdr', ['agent', 'focus', 'wA:p14']],
+    ['/usr/local/bin/herdr', ['tab', 'focus', 'wA:t9']],
   ]);
 });
 
 test('reports herdr_command_failed when the herdr CLI errors', async () => {
   const context: ActionContext = {
+    herdrPath: '/usr/local/bin/herdr',
     herdrBundleId: 'com.mitchellh.ghostty',
     run: async () => {
       throw new Error('herdr: no server running');

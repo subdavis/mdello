@@ -23,6 +23,8 @@ interface CommandResult {
 }
 
 export interface ActionContext {
+  /** Absolute herdr executable path discovered during service installation. */
+  herdrPath?: string;
   /** Bundle id of the terminal emulator herdr runs in, e.g. com.mitchellh.ghostty. */
   herdrBundleId?: string;
   /** Injectable for tests; defaults to actually spawning the process. */
@@ -63,19 +65,19 @@ function matchesSession(agent: HerdrAgent, request: FocusRequest): boolean {
 
 async function focus(request: ActionRequest, context: ActionContext): Promise<ActionOutcome> {
   if (request.action !== 'focus') return { ok: false, error: 'invalid_action' };
-  const bundleId = context.herdrBundleId;
-  if (!bundleId) return { ok: false, error: 'herdr_not_configured' };
+  const { herdrBundleId: bundleId, herdrPath } = context;
+  if (!bundleId || !herdrPath) return { ok: false, error: 'herdr_not_configured' };
 
   const run = resolveRun(context);
-  const { stdout } = await run('herdr', ['agent', 'list']);
+  const { stdout } = await run(herdrPath, ['agent', 'list']);
   const agents = (JSON.parse(stdout).result?.agents ?? []) as HerdrAgent[];
   const agent = agents.find((candidate) => matchesSession(candidate, request));
   if (!agent?.pane_id) return { ok: false, error: 'session_not_found' };
 
-  await run('herdr', ['agent', 'focus', agent.pane_id]);
+  await run(herdrPath, ['agent', 'focus', agent.pane_id]);
   // Herdr 0.9's per-client views do not project `agent focus` navigation to attached clients.
   // Focusing the resolved tab does, while the preceding command selects the exact split pane.
-  if (agent.tab_id) await run('herdr', ['tab', 'focus', agent.tab_id]);
+  if (agent.tab_id) await run(herdrPath, ['tab', 'focus', agent.tab_id]);
   await run('open', ['-b', bundleId]);
   return { ok: true };
 }

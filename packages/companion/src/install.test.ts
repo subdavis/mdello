@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {
+  chmod,
   lstat,
   mkdir,
   mkdtemp,
@@ -17,6 +18,7 @@ import {
   installIntegrations,
   installMacOS,
   installPi,
+  resolveExecutable,
   uninstallClaude,
   uninstallIntegrations,
   uninstallMacOS,
@@ -31,7 +33,7 @@ const template = `
 <string>__XDG_STATE_HOME__</string>
 <string>__COMPANION_STDOUT__</string>
 <string>__COMPANION_STDERR__</string>
-<string>__PATH__</string>
+__HERDR_ENV__
 `;
 
 async function fixture(): Promise<{ root: string; home: string; repoRoot: string }> {
@@ -62,10 +64,11 @@ async function writeSettings(home: string, settings: unknown): Promise<void> {
 test('macOS install updates plist and reloads launchd idempotently', async () => {
   const { root, home, repoRoot } = await fixture();
   const calls: string[][] = [];
+  const questions: string[] = [];
   const run = async (command: string, args: string[]) => {
     calls.push([command, ...args]);
     if (command === 'launchctl' && args[0] === 'bootout') throw new Error('not loaded');
-    return { stdout: '' };
+    return { stdout: command === 'which' && args[0] === 'herdr' ? process.execPath : '' };
   };
 
   try {
@@ -74,7 +77,10 @@ test('macOS install updates plist and reloads launchd idempotently', async () =>
       repoRoot,
       platform: 'darwin' as const,
       uid: 42,
-      pathEnv: '/opt/homebrew/bin:/usr/bin',
+      prompt: async (question: string) => {
+        questions.push(question);
+        return 'y';
+      },
       environment: {
         XDG_CONFIG_HOME: join(root, 'xdg & config'),
         XDG_STATE_HOME: join(root, 'xdg & state'),
@@ -91,7 +97,14 @@ test('macOS install updates plist and reloads launchd idempotently', async () =>
     assert.match(plist, /home &amp; user/);
     assert.match(plist, /xdg &amp; config/);
     assert.match(plist, /xdg &amp; state/);
-    assert.ok(plist.includes('<string>/opt/homebrew/bin:/usr/bin</string>'));
+    assert.match(plist, /<key>HERDR_PATH<\/key>\s*<string>.*node<\/string>/);
+    assert.doesNotMatch(plist, /<key>PATH<\/key>/);
+    assert.deepEqual(questions, [
+      `NODE_PATH=${process.execPath} Y/n? `,
+      `HERDR_PATH=${process.execPath} Y/n? `,
+      `NODE_PATH=${process.execPath} Y/n? `,
+      `HERDR_PATH=${process.execPath} Y/n? `,
+    ]);
     assert.equal(
       calls.filter(([command, action]) => command === 'launchctl' && action === 'bootstrap').length,
       2,
@@ -129,6 +142,7 @@ test('macOS install migrates legacy files without replacing XDG files', async ()
       platform: 'darwin',
       uid: 42,
       environment: { XDG_CONFIG_HOME: configRoot, XDG_STATE_HOME: stateRoot },
+      prompt: async () => 'y',
       run: async (command, args) => {
         calls.push([command, ...args]);
         if (args[0] === 'bootout') {
@@ -138,8 +152,9 @@ test('macOS install migrates legacy files without replacing XDG files', async ()
       },
     });
 
-    assert.equal(calls[0]?.[1], 'bootout');
-    assert.equal(calls.at(-1)?.[1], 'bootstrap');
+    const launchCalls = calls.filter(([command]) => command === 'launchctl');
+    assert.equal(launchCalls[0]?.[1], 'bootout');
+    assert.equal(launchCalls.at(-1)?.[1], 'bootstrap');
     assert.equal(await readFile(join(configDirectory, 'companion.json'), 'utf8'), 'current config');
     assert.equal(await readFile(join(legacy, 'companion.json'), 'utf8'), 'legacy config');
     assert.equal(await readFile(join(stateDirectory, 'companion.jsonl'), 'utf8'), 'legacy data');
@@ -157,6 +172,7 @@ test('macOS install migrates legacy files without replacing XDG files', async ()
       platform: 'darwin',
       uid: 42,
       environment: { XDG_CONFIG_HOME: configRoot, XDG_STATE_HOME: stateRoot },
+      prompt: async () => 'y',
       run: async () => ({ stdout: '' }),
     });
     await assert.rejects(lstat(legacy));
@@ -170,12 +186,81 @@ test('macOS install rejects a node path launchd could not exec', async () => {
   const run = async () => ({ stdout: '' });
 
   try {
-    const options = { home, repoRoot, platform: 'darwin' as const, uid: 42, run };
-    await assert.rejects(installMacOS({ ...options, nodePath: 'node' }), /must be absolute/);
+    const options = {
+      home,
+      repoRoot,
+      platform: 'darwin' as const,
+      uid: 42,
+      run,
+      prompt: async () => 'y',
+    };
+    await assert.rejects(installMacOS({ ...options, nodePath: 'node' }), /not absolute/);
     await assert.rejects(
       installMacOS({ ...options, nodePath: join(root, 'no-such-node') }),
-      /missing or not executable/,
+      /missing, not absolute, or not executable/,
     );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('resolveExecutable accepts a replacement path after rejecting the discovered path', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mdello-executable-'));
+  const replacement = join(root, 'herdr');
+  await writeFile(replacement, '#!/bin/sh\n');
+  await chmod(replacement, 0o755);
+  const answers = ['n', replacement, 'y'];
+
+  try {
+    assert.equal(
+      await resolveExecutable('HERDR_PATH', process.execPath, false, async () => {
+        const answer = answers.shift();
+        assert.ok(answer);
+        return answer;
+      }),
+      replacement,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('resolveExecutable accepts the discovered path by default', async () => {
+  assert.equal(
+    await resolveExecutable('NODE_PATH', process.execPath, true, async () => ''),
+    process.execPath,
+  );
+});
+
+test('resolveExecutable skips an optional executable when its replacement is blank', async () => {
+  const answers = ['n', ''];
+  assert.equal(
+    await resolveExecutable('HERDR_PATH', process.execPath, false, async () => {
+      const answer = answers.shift();
+      if (answer === undefined) throw new Error('Missing test answer.');
+      return answer;
+    }),
+    undefined,
+  );
+});
+
+test('macOS install omits herdr when it cannot be discovered', async () => {
+  const { root, home, repoRoot } = await fixture();
+  try {
+    await installMacOS({
+      home,
+      repoRoot,
+      platform: 'darwin',
+      uid: 42,
+      prompt: async () => 'y',
+      run: async () => ({ stdout: '' }),
+    });
+    const plist = await readFile(
+      join(home, 'Library/LaunchAgents/com.mdello.companion.plist'),
+      'utf8',
+    );
+    assert.doesNotMatch(plist, /HERDR_PATH/);
+    assert.doesNotMatch(plist, /<key>PATH<\/key>/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

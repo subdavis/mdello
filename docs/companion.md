@@ -39,7 +39,7 @@ Default origin: `http://127.0.0.1:31337`. JSON request bodies are limited to 64 
 | `DELETE /associations?cardUuid=…&harness=…&sessionId=…` | Forgets that harness session from only the selected card, preserving its associations with other cards. |
 | `GET /events?boardUuid=…&boardPath=…` | Validates and registers board, reconciles stored paths/UUIDs, then opens SSE stream. Sends `snapshot` first and `association` after each update for that board. |
 | `POST /hooks/<harness>` | Body is that harness's raw lifecycle payload. A registered [harness adapter](agent-extension.md) translates it; the companion publishes to the event's cards plus every card already held for that `(harness, sessionId)`. Always answers `{}`, and sends no CORS headers because it reads a caller-supplied session file. Unknown harness returns `404`. |
-| `GET /settings` | Returns `{ herdrEnabled: boolean }`, true when `herdrBundleId` is configured. The client uses this to decide whether to show herdr-only controls. |
+| `GET /settings` | Returns `{ herdrEnabled: boolean }`, true when `herdrBundleId` and an installed `HERDR_PATH` are configured. The client uses this to decide whether to show herdr-only controls. |
 | `POST /actions` | Body is `{ action, ... }`. Actions live in their own module ([`actions.ts`](../packages/companion/src/actions.ts)), isolated from the association/board logic above, as a small `ACTIONS` registry keyed by action name. Returns `200 { ok: true }` on success, `400` for a body that isn't a recognized action, `500` if the herdr CLI itself fails. |
 | ↳ `focus` | `{ action: "focus", harness, sessionId, sessionFile? }` — the session to focus. Joins `herdr agent list` against `sessionId` (or `sessionFile` for `harness: pi`), runs `herdr agent focus <pane_id>`, projects its `tab_id` to attached Herdr clients with `herdr tab focus <tab_id>`, then uses `open -b <herdrBundleId>` to raise the terminal. `404` if no pane matches, `409` if no `herdrBundleId` is configured. |
 
@@ -68,10 +68,12 @@ the XDG base-directory specification. Backfill reads `CLAUDE_SESSIONS_DIR` (defa
 `~/.claude/projects`) and `PI_SESSIONS_DIR` (default `~/.pi/agent/sessions`). Set `DEBUG=1` for
 structured stderr logs.
 
-The macOS installer stops the launch agent before moving legacy files from `~/.mdello`. Each file is
-moved only when its XDG destination is absent: config goes to the config directory; event history
-and stdout/stderr logs go to the state directory. It then writes the new XDG paths into the launchd
-plist, restarts the service, and removes `~/.mdello` when empty.
+The macOS installer interactively confirms the current Node executable and any discovered `herdr`
+executable. It stops the launch agent before moving legacy files from `~/.mdello`. Each file is moved
+only when its XDG destination is absent: config goes to the config directory; event history and
+stdout/stderr logs go to the state directory. It then writes absolute executable and XDG paths into
+the launchd plist without copying the shell `PATH`, restarts the service, and removes `~/.mdello`
+when empty. Missing `herdr` is allowed and disables herdr actions.
 
 `companion.json` holds `boards` plus user-edited settings the companion never writes itself — currently just `herdrBundleId`, the bundle id of the terminal emulator herdr runs in (e.g. `com.mitchellh.ghostty`), needed to raise the right app window without an Automation (TCC) grant a launchd agent could never obtain. Saving board registrations preserves that key rather than overwriting the file.
 

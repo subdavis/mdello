@@ -27,11 +27,7 @@
     <string>__XDG_CONFIG_HOME__</string>
     <key>XDG_STATE_HOME</key>
     <string>__XDG_STATE_HOME__</string>
-    <!-- launchd does not source shell rc files; without this, only /usr/bin:/bin:/usr/sbin:/sbin
-         is visible, so CLIs installed under ~/.local/bin, Homebrew, mise, etc. (e.g. herdr) can't
-         be found. Baked in at install time from the installing shell's own PATH. -->
-    <key>PATH</key>
-    <string>__PATH__</string>
+__HERDR_ENV__
   </dict>
 
   <key>RunAtLoad</key>
