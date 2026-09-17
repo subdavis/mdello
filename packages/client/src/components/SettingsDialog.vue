@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { useBoard } from "../composables/useBoard";
-import { CONFIG_FILE, DEFAULT_CONFIG, editorName } from "../fs/config";
+import { CONFIG_FILE, DEFAULT_CONFIG } from "../fs/config";
 import IconGlyph from "./IconGlyph.vue";
 import Overlay from "./Overlay.vue";
 
