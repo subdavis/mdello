@@ -19,12 +19,12 @@ Trello-style board that reads and writes plain markdown files on your local disk
 
 | Screenshots                                                       | Screenshots                                                        |
 | ----------------------------------------------------------------- | ------------------------------------------------------------------ |
-| ![Filesystem](./packages/client/public/screenshot-filesystem.png) | ![PWA Screenshot](./packages/client/public/screenshot-board.png)   |
-| ![PWA Card Open](./packages/client/public/screenshot-preview.png) | ![PWA Card Editor](./packages/client/public/screenshot-editor.png) |
+| ![Filesystem](./packages/client/public/screenshot-filesystem.webp) | ![PWA Screenshot](./packages/client/public/screenshot-board.webp)   |
+| ![PWA Card Open](./packages/client/public/screenshot-preview.webp) | ![PWA Card Editor](./packages/client/public/screenshot-editor.webp) |
 
 Mdello can be installed as a PWA.
 
-![Install PWA](./packages/client/public/install-pwa.png)
+![Install PWA](./packages/client/public/install-pwa.webp)
 
 Basic usage:
 
