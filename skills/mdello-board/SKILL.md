@@ -82,7 +82,7 @@ removing a column, update affected cards' `column` values too.
 - Do not touch `archive/` during routine work.
 - Do not bulk-rewrite unrelated cards; it churns mtimes.
 - If board root is missing, say so and ask before creating it.
-- If asked to work on a card, set its column to the configured in-progress column and set yourself
-  as assignee. At end, add a brief summary and links to Jira tickets or PRs created.
+- If asked to work on a card, set its column to the appropriate in-progress column and set yourself. At end, add a brief summary and links to any tickets, issues, or PRs created, or any other online artifacts
+- Don't add tags for the sake of it. Use a tag if one is truly relevant to the card.
 - If you don't know the board root, tell the user and ask that they specify it in their
   system agent prompt file such as CLAUDE.md or AGENTS.md

@@ -396,6 +396,7 @@ export function useBoard() {
     watching,
     columns,
     editorName: computed(() => editorName(config.value ?? DEFAULT_CONFIG)),
+    editorTemplate: computed(() => config.value?.editor ?? DEFAULT_CONFIG.editor),
     rootPath: computed(() => config.value?.path ?? ''),
     boardUuid: computed(() => config.value?.uuid ?? ''),
     configReady: computed(() => config.value !== null),
@@ -473,6 +474,32 @@ export function useBoard() {
       const previous = loaded.companion;
       loaded.companion = enabled;
       if (!(await saveConfig())) loaded.companion = previous;
+    },
+
+    /**
+     * The two config scalars the settings dialog owns. A blank editor means "the default",
+     * not "no editor", because an empty template would silently break every card link.
+     */
+    async saveSettings(next: { path: string; editor: string }): Promise<boolean> {
+      const loaded = config.value;
+      if (!root.value || locked.value || !loaded) return false;
+
+      const path = next.path.trim();
+      const editor = next.editor.trim() || DEFAULT_CONFIG.editor;
+      if (loaded.path === path && loaded.editor === editor) return true;
+
+      const previous = { path: loaded.path, editor: loaded.editor };
+      loaded.path = path;
+      loaded.editor = editor;
+      if (!(await saveConfig())) {
+        Object.assign(loaded, previous);
+        return false;
+      }
+
+      // The switcher lists boards by path, so the registry has to learn the new one too.
+      const id = activeId.value;
+      if (id && (await noteBoardPath(id, path))) await refreshBoards();
+      return true;
     },
 
     /** Config + cards, for the manual button and the focus fallback. */

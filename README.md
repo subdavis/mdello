@@ -142,11 +142,11 @@ yarn dev
 DEBUG=1 yarn companion
 ```
 
-## AI Use Disclosure
+## AI Use
 
-- This project was built iteratively over a month, not by an unattended agent in hours. The design and feature choices reflect my ideas and preferences, not those of an AI.
+- This project was built iteratively over a month. The design and feature choices reflect my ideas and preferences.
 - Most of the code was indeed authored by AI (GPT Sol + Pi)
-- With the exception of the CSS. I wrote about half of it by hand because I wanted it to look and feel a certain way and not like vibeslop. If you dislike the UI, it's because I personally have bad taste lol.
+- With the exception of the CSS. I wrote about half of it by hand because I wanted it to look and feel a certain way, not like vibeslop. If you dislike the UI, it's because I personally have bad taste lol.
 - More care has been taken with the frontend code because I have a strict understanding of what I want it to do. I'm realatively happy with it.
 - Less care was taken with the companion, as I intend to eventually rewrite it once I understand my feature needs more.
 

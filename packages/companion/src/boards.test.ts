@@ -3,7 +3,14 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { findBoardForPath, loadBoards, registerBoard, resolveCard } from './boards.ts';
+import {
+  DEFAULT_WEB_ORIGIN,
+  findBoardForPath,
+  loadBoards,
+  loadWebOrigin,
+  registerBoard,
+  resolveCard,
+} from './boards.ts';
 
 test('registers multiple boards and updates a moved board by uuid', async () => {
   const root = await mkdtemp(join(tmpdir(), 'mdello-boards-'));
@@ -25,6 +32,22 @@ test('registers multiple boards and updates a moved board by uuid', async () => 
       (await loadBoards(configFile)).map(({ uuid }) => uuid).sort((a, b) => a.localeCompare(b)),
       ['board-a', 'board-b'],
     );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('loads a configured web origin and safely defaults invalid values', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mdello-boards-'));
+  try {
+    const configFile = join(root, 'companion.json');
+    assert.equal(await loadWebOrigin(configFile), DEFAULT_WEB_ORIGIN);
+
+    await writeFile(configFile, JSON.stringify({ webOrigin: 'https://mdello.example/apps/board' }));
+    assert.equal(await loadWebOrigin(configFile), 'https://mdello.example');
+
+    await writeFile(configFile, JSON.stringify({ webOrigin: 'file:///tmp/mdello.html' }));
+    assert.equal(await loadWebOrigin(configFile), DEFAULT_WEB_ORIGIN);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

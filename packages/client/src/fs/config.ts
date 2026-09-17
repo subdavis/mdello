@@ -139,7 +139,7 @@ export function editorUrl(config: BoardConfig, card: { name: string }): string |
 }
 
 /** "vscode://file{path}" -> "VS Code", so the link names the app it will launch. */
-export function editorName(config: BoardConfig): string {
+export function editorName(config: Pick<BoardConfig, 'editor'>): string {
   const scheme = /^([a-z][\w+.-]*):/i.exec(config.editor)?.[1] ?? 'editor';
   if (scheme.toLowerCase() === 'vscode') return 'VS Code';
   return scheme.charAt(0).toUpperCase() + scheme.slice(1);

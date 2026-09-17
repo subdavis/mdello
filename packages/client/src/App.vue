@@ -3,6 +3,7 @@ import { nextTick, onBeforeUnmount, onMounted, ref, watchEffect } from 'vue';
 import Board from './components/Board.vue';
 import BoardSwitcher from './components/BoardSwitcher.vue';
 import CompanionStatus from './components/CompanionStatus.vue';
+import SettingsDialog from './components/SettingsDialog.vue';
 import Toast from './components/Toast.vue';
 import { useBoard } from './composables/useBoard';
 import { isMarkdownFile, useMarkdownImport } from './composables/useMarkdownImport';
@@ -15,6 +16,7 @@ const addingColumn = ref(false);
 const draftColumn = ref('');
 const columnInput = ref<HTMLInputElement | null>(null);
 const switching = ref(false);
+const settingsOpen = ref(false);
 
 async function startAddingColumn(): Promise<void> {
   addingColumn.value = true;
@@ -140,9 +142,12 @@ onBeforeUnmount(() => {
       Refresh
     </button>
     <button v-if="board.access.value.state !== 'unsupported'" type="button" @click="board.pick()">
-      Open folder…
+      Open folder
     </button>
     <CompanionStatus />
+    <button v-if="board.access.value.state === 'ready'" type="button" @click="settingsOpen = true">
+      Settings
+    </button>
   </header>
 
   <p v-if="board.error.value" class="error">{{ board.error.value }}</p>
@@ -175,6 +180,7 @@ onBeforeUnmount(() => {
 
   <BoardSwitcher v-if="switching" @close="switching = false" />
 
+  <SettingsDialog v-if="settingsOpen" @close="settingsOpen = false" />
 
   <Toast />
 </template>

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { request } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -21,6 +22,24 @@ async function registerBoard(baseUrl: string, boardUuid: string, boardPath: stri
   const response = await fetch(eventsUrl(baseUrl, boardUuid, boardPath));
   assert.equal(response.status, 200);
   await response.body?.cancel();
+}
+
+function rawGet(
+  url: string,
+  headers: Record<string, string>,
+): Promise<{ status: number; body: string }> {
+  return new Promise((resolveRequest, rejectRequest) => {
+    const outgoing = request(url, { headers }, (response) => {
+      let body = '';
+      response.setEncoding('utf8');
+      response.on('data', (chunk) => {
+        body += chunk;
+      });
+      response.on('end', () => resolveRequest({ status: response.statusCode ?? 0, body }));
+    });
+    outgoing.once('error', rejectRequest);
+    outgoing.end();
+  });
 }
 
 test('keys associations by global card UUID before mutable board and path', () => {
@@ -340,7 +359,7 @@ test('publishes a harness hook payload to the whole session', async () => {
     assert.equal(associations[0]?.harness, 'claude');
     assert.equal(associations[0]?.sessionFile, join(root, 'session.jsonl'));
 
-    // An unknown harness, a non-JSON post, and a browser preflight all get nothing.
+    // An unknown harness, a non-JSON post, and a non-browser preflight all get nothing.
     assert.equal((await hook({}, {})).status, 202);
     assert.equal(
       (
@@ -361,8 +380,95 @@ test('publishes a harness hook payload to the whole session', async () => {
     const preflight = await fetch(`${companion.url}/hooks/claude`, { method: 'OPTIONS' });
     assert.equal(preflight.status, 404);
     assert.equal(preflight.headers.get('access-control-allow-origin'), null);
-    const allowed = await fetch(`${companion.url}/associations`, { method: 'OPTIONS' });
-    assert.equal(allowed.headers.get('access-control-allow-origin'), '*');
+    const allowed = await fetch(`${companion.url}/associations`, {
+      method: 'OPTIONS',
+      headers: { Origin: 'https://subdavis.github.io' },
+    });
+    assert.equal(allowed.status, 204);
+    assert.equal(allowed.headers.get('access-control-allow-origin'), 'https://subdavis.github.io');
+    assert.equal(allowed.headers.get('vary'), 'Origin');
+  } finally {
+    await companion.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('restricts browser requests to configured and loopback origins', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mdello-server-'));
+  const configFile = join(root, 'companion.json');
+  await writeFile(configFile, JSON.stringify({ webOrigin: 'https://mdello.example' }));
+  const companion = await createCompanionServer({
+    port: 0,
+    dataFile: join(root, 'companion.jsonl'),
+    configFile,
+  });
+
+  try {
+    const configured = await fetch(`${companion.url}/settings`, {
+      headers: { Origin: 'https://mdello.example' },
+    });
+    assert.equal(configured.status, 200);
+    assert.equal(configured.headers.get('access-control-allow-origin'), 'https://mdello.example');
+    assert.equal(configured.headers.get('vary'), 'Origin');
+
+    const loopback = await fetch(`${companion.url}/settings`, {
+      headers: { Origin: 'http://localhost:5173' },
+    });
+    assert.equal(loopback.status, 200);
+    assert.equal(loopback.headers.get('access-control-allow-origin'), 'http://localhost:5173');
+
+    const denied = await fetch(`${companion.url}/settings`, {
+      headers: { Origin: 'https://unexpected.example' },
+    });
+    assert.equal(denied.status, 403);
+    const deniedBody = (await denied.json()) as { error: string };
+    assert.match(deniedBody.error, /Origin "https:\/\/unexpected\.example" is not allowed/);
+    assert.match(deniedBody.error, /Set "webOrigin"/);
+    assert.match(deniedBody.error, new RegExp(configFile.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    assert.match(deniedBody.error, /restart mdello-companion/);
+
+    const deniedReferer = await fetch(`${companion.url}/settings`, {
+      headers: { Referer: 'https://unexpected.example/page' },
+    });
+    assert.equal(deniedReferer.status, 403);
+    assert.match(((await deniedReferer.json()) as { error: string }).error, /Referer/);
+  } finally {
+    await companion.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('rejects browser headers and non-loopback hosts on local hook routes', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mdello-server-'));
+  const companion = await createCompanionServer({
+    port: 0,
+    dataFile: join(root, 'companion.jsonl'),
+    configFile: join(root, 'companion.json'),
+  });
+
+  try {
+    for (const headers of [
+      { Origin: 'https://subdavis.github.io' },
+      { Referer: 'https://subdavis.github.io/mdello/' },
+      { 'Sec-Fetch-Site': 'cross-site' },
+    ]) {
+      const response = await fetch(`${companion.url}/hooks/claude`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...headers },
+        body: '{}',
+      });
+      assert.equal(response.status, 403);
+      assert.match(
+        ((await response.json()) as { error: string }).error,
+        /local agent hook clients/,
+      );
+    }
+
+    const rebound = await rawGet(`${companion.url}/settings`, { Host: 'attacker.example' });
+    assert.equal(rebound.status, 403);
+    const reboundBody = JSON.parse(rebound.body) as { error: string };
+    assert.match(reboundBody.error, /Host "attacker\.example"/);
+    assert.match(reboundBody.error, /127\.0\.0\.1/);
   } finally {
     await companion.close();
     await rm(root, { recursive: true, force: true });

@@ -1,0 +1,107 @@
+.settings {
+  width: min(620px, 100%);
+}
+
+.settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-3);
+}
+
+.settings-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.settings-head h2 {
+  flex: 1;
+  margin: 0;
+  font-size: var(--font-lg);
+  font-weight: 600;
+}
+
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.settings-label {
+  font-size: var(--font-sm);
+  font-weight: 600;
+}
+
+.settings-field input {
+  font-family: var(--mono);
+  font-size: var(--font-xs);
+}
+
+.settings-hint,
+.settings-note p {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+
+.settings-note h3 {
+  margin: 0 0 var(--space-1);
+  font-size: var(--font-sm);
+  font-weight: 600;
+}
+
+.settings-hint code,
+.settings-note code {
+  background: var(--column-bg);
+  border-radius: var(--radius);
+  padding: 0 var(--space-1);
+  font-family: var(--mono);
+  font-size: var(--font-2xs);
+}
+
+.settings-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: var(--space-2) 0;
+  font-size: var(--font-xs);
+}
+
+.settings-table th,
+.settings-table td {
+  padding: calc(var(--space-1) / 2) 0;
+  text-align: left;
+  font-weight: normal;
+  vertical-align: baseline;
+}
+
+.settings-table th {
+  width: 10rem;
+  color: var(--muted);
+}
+
+.settings-preset {
+  font-family: var(--mono);
+  font-size: var(--font-2xs);
+}
+
+.settings-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border-top: 1px solid var(--line);
+  padding-top: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.settings-state {
+  margin-right: auto;
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+
+.settings-state.is-error {
+  color: #ae2e24;
+}

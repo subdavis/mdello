@@ -14,7 +14,10 @@ export interface BoardRegistration {
 interface CompanionConfig {
   boards: BoardRegistration[];
   herdrBundleId?: string;
+  webOrigin?: string;
 }
+
+export const DEFAULT_WEB_ORIGIN = 'https://subdavis.github.io';
 
 export interface ResolvedCard {
   boardUuid: string;
@@ -88,6 +91,17 @@ export async function loadHerdrBundleId(
   return typeof herdrBundleId === 'string' && herdrBundleId.trim()
     ? herdrBundleId.trim()
     : undefined;
+}
+
+export async function loadWebOrigin(configFile = DEFAULT_CONFIG_FILE): Promise<string> {
+  const { webOrigin } = await loadConfig(configFile);
+  if (typeof webOrigin !== 'string' || !webOrigin.trim()) return DEFAULT_WEB_ORIGIN;
+  try {
+    const url = new URL(webOrigin.trim());
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.origin : DEFAULT_WEB_ORIGIN;
+  } catch {
+    return DEFAULT_WEB_ORIGIN;
+  }
 }
 
 /** Preserves every other top-level key (e.g. herdrBundleId) instead of overwriting the file. */

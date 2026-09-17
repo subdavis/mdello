@@ -17,6 +17,7 @@ import {
   listActiveCards,
   loadBoards,
   loadHerdrBundleId,
+  loadWebOrigin,
   registerBoard,
   resolveCard,
 } from './boards.ts';
@@ -111,16 +112,61 @@ async function writeBoardSnapshots(
   }
 }
 
-function setCors(response: ServerResponse): void {
-  response.setHeader('Access-Control-Allow-Origin', '*');
+function firstHeader(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function isLoopbackHostname(hostname: string): boolean {
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]';
+}
+
+function parseOrigin(value: string): string | undefined {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.origin : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function isAllowedBrowserOrigin(origin: string, webOrigin: string): boolean {
+  if (origin === webOrigin) return true;
+  try {
+    return isLoopbackHostname(new URL(origin).hostname);
+  } catch {
+    return false;
+  }
+}
+
+function browserSource(
+  request: IncomingMessage,
+): { header: 'Origin' | 'Referer'; value: string } | undefined {
+  const origin = firstHeader(request.headers.origin);
+  if (origin) return { header: 'Origin', value: origin };
+  const referer = firstHeader(request.headers.referer);
+  return referer ? { header: 'Referer', value: referer } : undefined;
+}
+
+function hasBrowserHeaders(request: IncomingMessage): boolean {
+  return Boolean(
+    request.headers.origin || request.headers.referer || request.headers['sec-fetch-site'],
+  );
+}
+
+function setCors(response: ServerResponse, origin: string): void {
+  response.setHeader('Access-Control-Allow-Origin', origin);
   response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   response.setHeader('Access-Control-Allow-Methods', 'DELETE, GET, POST, OPTIONS');
+  response.setHeader('Vary', 'Origin');
 }
 
 function sendJson(response: ServerResponse, status: number, body: unknown): void {
-  setCors(response);
   response.writeHead(status, { 'Content-Type': 'application/json' });
   response.end(JSON.stringify(body));
+}
+
+function rejectRequest(response: ServerResponse, error: string): void {
+  sendJson(response, 403, { error });
 }
 
 function normalizeAssociation(value: unknown, legacyHarness?: string): Association | undefined {
@@ -581,7 +627,6 @@ async function handleEventsGet(
     return associations;
   }
 
-  setCors(response);
   response.writeHead(200, {
     'Cache-Control': 'no-cache',
     Connection: 'keep-alive',
@@ -611,7 +656,6 @@ async function handleEarlyRequest(
       response.end();
       return true;
     }
-    setCors(response);
     response.writeHead(204);
     response.end();
     return true;
@@ -637,6 +681,7 @@ export async function createCompanionServer(options: CompanionOptions = {}): Pro
   let associations = await loadAssociations(dataFile);
   const boards = await loadBoards(configFile);
   const herdrBundleId = await loadHerdrBundleId(configFile);
+  const webOrigin = await loadWebOrigin(configFile);
   const herdrPath = options.herdrPath ?? process.env.HERDR_PATH;
   const actionContext: ActionContext = { herdrBundleId, herdrPath, run: options.herdrRun };
   const herdrCache = new HerdrSessionCache(actionContext);
@@ -650,8 +695,47 @@ export async function createCompanionServer(options: CompanionOptions = {}): Pro
   await open(dataFile, 'a').then((file) => file.close());
 
   const server = createServer(async (request, response) => {
-    const url = new URL(request.url ?? '/', `http://${request.headers.host ?? host}`);
+    const requestHost = firstHeader(request.headers.host);
+    let requestHostname: string | undefined;
+    try {
+      requestHostname = requestHost ? new URL(`http://${requestHost}`).hostname : undefined;
+    } catch {
+      requestHostname = undefined;
+    }
+    if (!requestHostname || !isLoopbackHostname(requestHostname)) {
+      rejectRequest(
+        response,
+        `Host ${JSON.stringify(requestHost ?? '')} is not allowed. Connect to the companion through 127.0.0.1 or localhost.`,
+      );
+      return;
+    }
+
+    const url = new URL(request.url ?? '/', `http://${requestHost}`);
     debug('request received', { method: request.method, path: `${url.pathname}${url.search}` });
+
+    const harness = harnessFromPath(url.pathname);
+    if (harness && hasBrowserHeaders(request)) {
+      rejectRequest(
+        response,
+        'Browser requests are not allowed for /hooks/*. These endpoints only accept local agent hook clients without Origin, Referer, or Sec-Fetch-Site headers.',
+      );
+      return;
+    }
+
+    if (!harness) {
+      const source = browserSource(request);
+      if (source) {
+        const origin = parseOrigin(source.value);
+        if (!origin || !isAllowedBrowserOrigin(origin, webOrigin)) {
+          rejectRequest(
+            response,
+            `${source.header} ${JSON.stringify(source.value)} is not allowed. Set "webOrigin" in ${configFile} to this site's origin (for example, {"webOrigin":"https://example.com"}), then restart mdello-companion. Loopback origins are always allowed; current configured origin is ${JSON.stringify(webOrigin)}.`,
+          );
+          return;
+        }
+        if (request.headers.origin) setCors(response, origin);
+      }
+    }
 
     if (
       await handleEarlyRequest(request, response, url, {
