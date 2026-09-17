@@ -9,7 +9,7 @@
 }
 
 .card:hover {
-  border-color: #b3bac5;
+  border-color: var(--line-strong);
 }
 
 .card.has-status:hover {

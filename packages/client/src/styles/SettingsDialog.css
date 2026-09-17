@@ -30,6 +30,30 @@
   gap: var(--space-1);
 }
 
+.settings-theme {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.settings-theme > span {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.settings-theme select {
+  width: 8rem;
+  flex: none;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  padding: var(--space-1) var(--space-2);
+}
+
 .settings-label {
   font-size: var(--font-sm);
   font-weight: 600;
@@ -103,5 +127,5 @@
 }
 
 .settings-state.is-error {
-  color: #ae2e24;
+  color: var(--settings-error);
 }

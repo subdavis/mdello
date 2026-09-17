@@ -45,7 +45,7 @@
   display: grid;
   place-items: center;
   overflow: hidden;
-  border: 1px dashed #8c8f95;
+  border: 1px dashed var(--archive-line);
   border-radius: var(--radius);
   color: var(--muted);
   background: var(--column-bg);
@@ -64,7 +64,11 @@
   z-index: -1;
   width: 220%;
   aspect-ratio: 1;
-  background: repeating-linear-gradient(135deg, var(--column-bg) 0 10px, #e3e4e8 10px 20px);
+  background: repeating-linear-gradient(
+    135deg,
+    var(--column-bg) 0 10px,
+    var(--archive-stripe) 10px 20px
+  );
   transform: translate(-50%, -50%);
   transition: filter 120ms ease;
 }
@@ -74,16 +78,16 @@
   opacity: 0;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.65' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='.95'/%3E%3C/svg%3E");
   background-size: 180px 180px;
-  mix-blend-mode: multiply;
+  mix-blend-mode: var(--archive-noise-blend);
   transition: opacity 80ms linear;
 }
 
 .archive-label {
   z-index: 1;
   padding: var(--space-2) var(--space-3);
-  border: 1px solid rgb(0 0 0 / 0.24);
+  border: 1px solid var(--archive-border);
   border-radius: var(--radius);
-  background: rgb(244 244 244 / 0.86);
+  background: var(--archive-label-bg);
   box-shadow: 0 2px 2px rgb(9 30 66 / 25%);
   font-weight: 650;
 }
@@ -91,7 +95,7 @@
 .archive-dropzone.is-over,
 .archive-dropzone.is-warping {
   border-style: solid;
-  border-color: #111;
+  border-color: var(--archive-active);
 }
 
 .archive-vortex {
@@ -104,9 +108,10 @@
   pointer-events: none;
   opacity: 0;
   background:
-    #ededee
+    var(--archive-vortex-bg)
     url("data:image/svg+xml,%3Csvg viewBox='0 0 600 600' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath id='arm' d='M300 300C365 300 485 325 610 410L725 505 725 630C560 460 425 350 300 300Z' fill='%23d6d7d9'/%3E%3Cuse href='%23arm' transform='rotate(30 300 300)'/%3E%3Cuse href='%23arm' transform='rotate(60 300 300)'/%3E%3Cuse href='%23arm' transform='rotate(90 300 300)'/%3E%3Cuse href='%23arm' transform='rotate(120 300 300)'/%3E%3Cuse href='%23arm' transform='rotate(150 300 300)'/%3E%3Cuse href='%23arm' transform='rotate(180 300 300)'/%3E%3Cuse href='%23arm' transform='rotate(210 300 300)'/%3E%3Cuse href='%23arm' transform='rotate(240 300 300)'/%3E%3Cuse href='%23arm' transform='rotate(270 300 300)'/%3E%3Cuse href='%23arm' transform='rotate(300 300 300)'/%3E%3Cuse href='%23arm' transform='rotate(330 300 300)'/%3E%3C/svg%3E")
     center / cover no-repeat;
+  filter: var(--archive-vortex-filter);
   transform: translate(-50%, -50%);
   transition: opacity 80ms linear;
   animation: archive-vortex 18s linear infinite;

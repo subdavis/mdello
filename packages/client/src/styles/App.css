@@ -3,7 +3,7 @@
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-1) var(--space-2);
-  background: #fff;
+  background: var(--surface);
   border-bottom: 1px solid var(--line);
   flex: none;
 }
@@ -27,7 +27,7 @@
 }
 
 .board-switch:hover {
-  background: rgb(9 30 66 / 0.06);
+  background: var(--interactive-subtle);
 }
 
 .add-column-form {
@@ -44,9 +44,9 @@
 .error {
   margin: 0;
   padding: var(--space-1) var(--space-2);
-  background: #ffecea;
-  border-bottom: 1px solid #f3b8b0;
-  color: #ae2a19;
+  background: var(--danger-bg);
+  border-bottom: 1px solid var(--danger-line);
+  color: var(--danger-text);
   flex: none;
 }
 

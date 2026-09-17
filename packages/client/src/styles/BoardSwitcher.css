@@ -28,7 +28,7 @@
 
 .switcher-row.selected {
   background: var(--accent);
-  color: #fff;
+  color: white;
 }
 
 .switcher-name,
@@ -74,7 +74,7 @@
 }
 
 .switcher-forget:hover {
-  background: rgb(9 30 66 / 0.15);
+  background: var(--interactive-strong);
 }
 
 .switcher-row.selected :is(.switcher-path, .switcher-tag) {

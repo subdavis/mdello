@@ -1,23 +1,23 @@
 /* Agent status presentation shared by card tiles and card session details. */
 .card.status-running {
-  background: color-mix(in srgb, var(--card-bg) 88%, #e2b203);
+  background: color-mix(in srgb, var(--card-bg) 88%, var(--agent-running-highlight));
 }
 
 .card.status-waiting_for_input {
-  background: color-mix(in srgb, var(--card-bg) 88%, #579dff);
+  background: color-mix(in srgb, var(--card-bg) 88%, var(--agent-waiting-highlight));
 }
 
 .card.status-ready_for_review {
-  background: color-mix(in srgb, var(--card-bg) 88%, #4bce97);
+  background: color-mix(in srgb, var(--card-bg) 88%, var(--agent-review-highlight));
 }
 
 .status-idle,
 .status-ready_for_review {
-  --agent-status-color: #2c8c32;
+  --agent-status-color: var(--agent-ready);
 }
 
 .status-running {
-  --agent-status-color: #b38600;
+  --agent-status-color: var(--agent-running);
 }
 
 .status-waiting_for_input {

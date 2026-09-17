@@ -1,8 +1,10 @@
 import { createApp } from 'vue';
 import App from './App.vue';
+import { initializeTheme } from './composables/useTheme';
 import './styles/style.css';
 import './styles/Agents.css';
 
+initializeTheme();
 createApp(App).mount('#app');
 
 // Dev is left alone so HMR is never served from cache; install from `yarn preview` or a deploy.

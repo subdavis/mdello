@@ -89,7 +89,7 @@
 
 .meta-input:focus {
   outline: none;
-  background: #fff;
+  background: var(--surface);
 }
 
 .path {
@@ -214,10 +214,10 @@
   border-radius: var(--radius);
   background: repeating-linear-gradient(
     -45deg,
-    rgb(12 102 228 / 6%),
-    rgb(12 102 228 / 6%) 12px,
-    rgb(12 102 228 / 14%) 12px,
-    rgb(12 102 228 / 14%) 24px
+    color-mix(in srgb, var(--accent) 6%, transparent),
+    color-mix(in srgb, var(--accent) 6%, transparent) 12px,
+    color-mix(in srgb, var(--accent) 14%, transparent) 12px,
+    color-mix(in srgb, var(--accent) 14%, transparent) 24px
   );
   color: var(--accent);
   font-size: var(--font-md);
@@ -243,7 +243,7 @@
 }
 
 .editor-link {
-  background: #fff;
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: var(--space-1) var(--space-2);
@@ -252,7 +252,7 @@
 }
 
 .editor-link:hover {
-  background: #f4f5f7;
+  background: var(--surface-hover);
 }
 
 .ref-row {
@@ -349,13 +349,13 @@
 
 .markdown code {
   font-family: var(--mono);
-  background: #f1f2f4;
+  background: var(--code-bg);
   padding: 0 var(--space-1);
   border-radius: var(--radius);
 }
 
 .markdown pre {
-  background: #f1f2f4;
+  background: var(--code-bg);
   padding: var(--space-2);
   border-radius: var(--radius);
   overflow-x: auto;
@@ -387,7 +387,7 @@
 }
 
 .markdown tbody tr:nth-child(even) {
-  background: #fafbfc;
+  background: var(--surface-subtle);
 }
 
 .markdown blockquote {

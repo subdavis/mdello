@@ -39,10 +39,57 @@
   --bg: #f1f2f4;
   --column-bg: #ebecf0;
   --card-bg: #fff;
+  --surface: #fff;
+  --surface-hover: #f4f5f7;
+  --surface-subtle: #fafbfc;
   --line: #d8dae0;
+  --line-strong: #b3bac5;
   --text: #172b4d;
   --muted: #3a3a3a;
   --accent: #0c66e4;
+  --interactive-subtle: rgb(9 30 66 / 0.06);
+  --interactive-strong: rgb(9 30 66 / 0.15);
+  --slot-bg: rgb(9 30 66 / 0.08);
+  --code-bg: #f1f2f4;
+  --danger-bg: #ffecea;
+  --danger-line: #f3b8b0;
+  --danger-text: #ae2a19;
+  --danger-status-line: #f5a79e;
+  --danger-dot: #c9372c;
+  --settings-error: #ae2e24;
+  --warning-bg: #fff7d6;
+  --warning-line: #f5cd47;
+  --warning-text: #7f5f01;
+  --warning-dot: #b38600;
+  --success-bg: #dcfff1;
+  --success-line: #7ee2b8;
+  --success-text: #216e4e;
+  --success-dot: #1f845a;
+  --neutral-dot: #7e8188;
+  --agent-running-highlight: #e2b203;
+  --agent-waiting-highlight: #579dff;
+  --agent-review-highlight: #4bce97;
+  --agent-ready: #2c8c32;
+  --agent-running: #b38600;
+  --archive-line: #8c8f95;
+  --archive-stripe: #e3e4e8;
+  --archive-vortex-bg: #ededee;
+  --archive-label-bg: rgb(244 244 244 / 0.86);
+  --archive-border: rgb(0 0 0 / 0.24);
+  --archive-active: #111;
+  --archive-vortex-filter: none;
+  --archive-noise-blend: multiply;
+  --editor-heading: #225c9f;
+  --editor-strong: #005cc5;
+  --editor-code: #193d4d;
+  --editor-code-bg: #ecedf1;
+  --editor-bullet: #735c0f;
+  --editor-quote: #22863a;
+  --editor-symbol: #6f42c1;
+  --editor-string: #02731b;
+  --editor-literal: #d73a49;
+  --editor-selection: #024ba433;
+  --label-swatch-text: rgb(23 43 77 / 0.7);
   --radius: 3px;
   --scrim: rgb(9 30 66 / 0.35);
   --panel-shadow: 0 8px 24px rgb(9 30 66 / 0.3);
@@ -51,8 +98,68 @@
   --z-toast: 100;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   font-size: 16px;
-  /* line-height: 18px; */
   color: var(--text);
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --bg: #161a1d;
+  --column-bg: #22272b;
+  --card-bg: #2c333a;
+  --surface: #1d2125;
+  --surface-hover: #333c43;
+  --surface-subtle: #242b31;
+  --line: #45515b;
+  --line-strong: #738496;
+  --text: #f1f2f4;
+  --muted: #b6c2cf;
+  --accent: #579dff;
+  --interactive-subtle: rgb(182 194 207 / 0.12);
+  --interactive-strong: rgb(182 194 207 / 0.22);
+  --slot-bg: rgb(182 194 207 / 0.14);
+  --code-bg: #161a1d;
+  --danger-bg: #42221f;
+  --danger-line: #ae2a19;
+  --danger-text: #ff9c8f;
+  --danger-status-line: #ae2a19;
+  --danger-dot: #ff5630;
+  --settings-error: #ff9c8f;
+  --warning-bg: #3f3102;
+  --warning-line: #946f00;
+  --warning-text: #f8e6a0;
+  --warning-dot: #f5cd47;
+  --success-bg: #143d2c;
+  --success-line: #216e4e;
+  --success-text: #baf3db;
+  --success-dot: #4bce97;
+  --neutral-dot: #9fadbc;
+  --agent-running-highlight: #e2b203;
+  --agent-waiting-highlight: #579dff;
+  --agent-review-highlight: #4bce97;
+  --agent-ready: #4bce97;
+  --agent-running: #f5cd47;
+  --archive-line: #738496;
+  --archive-stripe: #2c333a;
+  --archive-vortex-bg: #22272b;
+  --archive-label-bg: rgb(44 51 58 / 0.9);
+  --archive-border: rgb(182 194 207 / 0.35);
+  --archive-active: #f1f2f4;
+  --archive-vortex-filter: invert(0.82) brightness(0.55);
+  --archive-noise-blend: screen;
+  --editor-heading: #85b8ff;
+  --editor-strong: #579dff;
+  --editor-code: #c7d1db;
+  --editor-code-bg: #161a1d;
+  --editor-bullet: #f5cd47;
+  --editor-quote: #4bce97;
+  --editor-symbol: #b8acf6;
+  --editor-string: #7ee2b8;
+  --editor-literal: #ff9c8f;
+  --editor-selection: rgb(87 157 255 / 0.28);
+  --label-swatch-text: rgb(23 43 77 / 0.85);
+  --scrim: rgb(0 0 0 / 0.62);
+  --panel-shadow: 0 8px 28px rgb(0 0 0 / 0.55);
+  color-scheme: dark;
 }
 
 * {
@@ -76,7 +183,7 @@ body {
 button {
   font: inherit;
   color: inherit;
-  background: #fff;
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: var(--space-1) var(--space-2);
@@ -84,7 +191,7 @@ button {
 }
 
 button:hover {
-  background: #f4f5f7;
+  background: var(--surface-hover);
 }
 
 button.primary {
@@ -97,6 +204,7 @@ input,
 textarea {
   font: inherit;
   color: inherit;
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: var(--space-1) var(--space-2);
@@ -139,7 +247,7 @@ textarea {
 }
 
 .icon-glyph-contrast {
-  stroke: #fff;
+  stroke: white;
 }
 
 .icon-glyph-dots {

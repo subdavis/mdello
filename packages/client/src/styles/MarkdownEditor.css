@@ -33,53 +33,53 @@
 .editor-layer.hljs {
   min-height: 100%;
   background: none;
-  color: #24292e;
+  color: var(--text);
 }
 
 .editor-layer .hljs-section {
-  color: #225c9f;
+  color: var(--editor-heading);
   font-weight: 900;
 }
 
 .editor-layer .hljs-strong {
-  color: #005cc5;
+  color: var(--editor-strong);
   font-weight: 900;
 }
 
 .editor-layer .hljs-emphasis {
-  color: #24292e;
+  color: var(--text);
   font-style: italic;
 }
 
 .editor-layer .hljs-code {
-  color: #193d4d;
-  background: #ecedf1;
+  color: var(--editor-code);
+  background: var(--editor-code-bg);
 }
 
 .editor-layer .hljs-bullet {
-  color: #735c0f;
+  color: var(--editor-bullet);
   font-weight: 900;
 }
 
 .editor-layer .hljs-quote {
-  color: #22863a;
+  color: var(--editor-quote);
 }
 
 .editor-layer .hljs-link {
-  color: #225c9f;
+  color: var(--editor-heading);
   text-decoration: underline;
 }
 
 .editor-layer .hljs-symbol {
-  color: #6f42c1;
+  color: var(--editor-symbol);
 }
 
 .editor-layer .hljs-string {
-  color: #02731b;
+  color: var(--editor-string);
 }
 
 .editor-layer .hljs-literal {
-  color: #d73a49;
+  color: var(--editor-literal);
 }
 
 .editor-input {
@@ -98,5 +98,5 @@
 }
 
 .editor-input::selection {
-  background: #024ba433;
+  background: var(--editor-selection);
 }

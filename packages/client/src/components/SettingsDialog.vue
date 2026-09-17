@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
-import { useBoard } from "../composables/useBoard";
-import { CONFIG_FILE, DEFAULT_CONFIG } from "../fs/config";
-import IconGlyph from "./IconGlyph.vue";
-import Overlay from "./Overlay.vue";
+import { computed, onMounted, ref } from 'vue';
+import { useBoard } from '../composables/useBoard';
+import { useTheme } from '../composables/useTheme';
+import { CONFIG_FILE, DEFAULT_CONFIG } from '../fs/config';
+import IconGlyph from './IconGlyph.vue';
+import Overlay from './Overlay.vue';
 
 const emit = defineEmits<{ close: [] }>();
 
@@ -13,13 +14,14 @@ const emit = defineEmits<{ close: [] }>();
  * project name plus a project-relative path, so neither can be expressed as a template.
  */
 const PRESETS = [
-  { name: "VS Code", template: "vscode://file{path}" },
-  { name: "Cursor", template: "cursor://file{path}" },
-  { name: "TextMate, BBEdit", template: "txmt://open?url=file://{path}" },
-  { name: "Obsidian", template: "obsidian://open?path={path}" },
+  { name: 'VS Code', template: 'vscode://file{path}' },
+  { name: 'Cursor', template: 'cursor://file{path}' },
+  { name: 'TextMate, BBEdit', template: 'txmt://open?url=file://{path}' },
+  { name: 'Obsidian', template: 'obsidian://open?path={path}' },
 ];
 
 const board = useBoard();
+const { themePreference } = useTheme();
 const path = ref(board.rootPath.value);
 const editor = ref(board.editorTemplate.value);
 const saving = ref(false);
@@ -27,10 +29,7 @@ const failed = ref(false);
 const pathInput = ref<HTMLInputElement | null>(null);
 
 const editable = computed(
-  () =>
-    board.access.value.state === "ready" &&
-    board.configReady.value &&
-    !board.locked.value,
+  () => board.access.value.state === 'ready' && board.configReady.value && !board.locked.value,
 );
 
 const dirty = computed(
@@ -39,12 +38,11 @@ const dirty = computed(
     editor.value.trim() !== board.editorTemplate.value,
 );
 
-
 const status = computed(() => {
-  if (!editable.value) return "This board is read-only right now";
-  if (saving.value) return "Saving…";
+  if (!editable.value) return 'This board is read-only right now';
+  if (saving.value) return 'Saving…';
   if (failed.value) return `Could not write ${CONFIG_FILE}`;
-  return dirty.value ? "Unsaved changes" : "Saved";
+  return dirty.value ? 'Unsaved changes' : 'Saved';
 });
 
 async function save(): Promise<boolean> {
@@ -71,7 +69,7 @@ async function save(): Promise<boolean> {
  * Nothing here is worth losing to a reflexive Escape, and the footer says so.
  */
 async function done(): Promise<void> {
-  if (await save()) emit("close");
+  if (await save()) emit('close');
 }
 
 onMounted(() => pathInput.value?.focus());
@@ -88,8 +86,22 @@ onMounted(() => pathInput.value?.focus());
       </header>
 
       <section class="settings-note">
-      <label class="settings-field">
-        <span class="settings-label">Board folder</span>
+        <label class="settings-theme">
+          <span>
+            <span class="settings-label">Theme</span>
+            <small class="settings-hint">System follows this device's appearance.</small>
+          </span>
+          <select v-model="themePreference">
+            <option value="system">System</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </label>
+      </section>
+
+      <section class="settings-note">
+        <label class="settings-field">
+          <span class="settings-label">Board folder</span>
         <input
           ref="pathInput"
           v-model="path"
@@ -100,17 +112,17 @@ onMounted(() => pathInput.value?.focus());
           type="text"
           placeholder="/Users/you/Documents/mdello"
         />
-        <small class="settings-hint">
-          Absolute path of this folder. The browser never reveals real paths, so
-          mdello cannot fill it in. Setting it turns on the "open in editor"
-          link and is required for the companion to function properly.
-        </small>
-      </label>
+          <small class="settings-hint">
+            Absolute path of this folder. The browser never reveals real paths, so
+            mdello cannot fill it in. Setting it turns on the "open in editor"
+            link and is required for the companion to function properly.
+          </small>
+        </label>
       </section>
 
       <section class="settings-note">
-      <label class="settings-field">
-        <span class="settings-label">Editor URL</span>
+        <label class="settings-field">
+          <span class="settings-label">Editor URL</span>
         <input
           v-model="editor"
           :disabled="!editable"
@@ -120,11 +132,11 @@ onMounted(() => pathInput.value?.focus());
           type="text"
           :placeholder="DEFAULT_CONFIG.editor"
         />
-        <small class="settings-hint">
-          Editors that support custom schemes are the only way a web page can hand a file to a native app.
-        </small>
-      </label>
-      <table class="settings-table">
+          <small class="settings-hint">
+            Editors that support custom schemes are the only way a web page can hand a file to a native app.
+          </small>
+        </label>
+        <table class="settings-table">
         <tbody>
           <tr v-for="preset in PRESETS" :key="preset.template">
             <th scope="row">{{ preset.name }}</th>
@@ -141,7 +153,7 @@ onMounted(() => pathInput.value?.focus());
             </td>
           </tr>
         </tbody>
-      </table>
+        </table>
       </section>
 
       <section class="settings-note">
