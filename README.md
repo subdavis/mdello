@@ -7,10 +7,10 @@
 
 Trello-style board that reads and writes plain markdown files on your local disk.
 
-- **100% local**. No install. Runs in the browser.
+- **100% local**. PWA runs in the browser.
 - `.md` files are cards, metadata lives in Frontmatter.
-- **Uses the Filesystem API** and therefore requires a [Chromium-based browser](https://caniuse.com/filesystem)
-- Designed to share your tasks with AI agents via the filesystem. - No MCP, tools or auth needed.
+- **Uses the Filesystem API** and therefore requires [Chromium](https://caniuse.com/filesystem)
+- Designed to share your tasks with AI agents via the filesystem without MCP, tools, or auth needed.
 - 🍻 Pronounced like the beer
 
 **Try it out at https://subdavis.github.io/mdello/**
@@ -141,20 +141,3 @@ yarn dev
 # Run the companion in debug mode
 DEBUG=1 yarn companion
 ```
-
-## AI Use
-
-- This project was built iteratively over a month. The design and feature choices reflect my ideas and preferences.
-- Most of the code was indeed authored by AI (GPT Sol + Pi)
-- With the exception of the CSS. I wrote about half of it by hand because I wanted it to look and feel a certain way, not like vibeslop. If you dislike the UI, it's because I personally have bad taste lol.
-- More care has been taken with the frontend code because I have a strict understanding of what I want it to do. I'm realatively happy with it.
-- Less care was taken with the companion, as I intend to eventually rewrite it once I understand my feature needs more.
-
-## Design discussion and philosophy
-
-So like, why is this even a good idea?
-
-1. The filesystem is simply the best abstraction for working with agents. MCP requires special tools and setup, it is the worst. A command line tool is better. Files beat everything. Obsidian proved that Markdown+Frontmatter makes a formidable knowledge management system. I borrowed its ideas to make a dead simple kanban board.
-1. Buidling "integrations" with mdello is trivial because mdello is not really software, it's just a set of conventions for files.
-1. Electron/Tauri is needlessly heavy for this purpose. Chromium has everything this application needs. You don't have to worry about what files and processes a PWA is screwing around with without telling you. (Yes, I know the companion somewhat complicates this.)
-1. Why is everyone trying to build all these single-pane-of-glass omni-agent apps anyway? I don't need my kanban tool to also be a code review tool or an agent multiplexer. It will be mediocre at all 3. Unix says you should do one thing well.

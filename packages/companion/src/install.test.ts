@@ -347,7 +347,7 @@ test('Pi install and uninstall preserve non-symlink paths', async () => {
 test('Claude install writes a self-contained plugin and never touches settings', async () => {
   const { root, home, repoRoot } = await fixture();
   const directory = join(home, '.claude/skills/mdello-companion');
-  const endpoint = 'http://127.0.0.1:31337';
+  const endpoint = 'http://127.0.0.1:51618';
 
   try {
     await writeSettings(home, { theme: 'dark', hooks: { Stop: [{ hooks: ['keep me'] }] } });

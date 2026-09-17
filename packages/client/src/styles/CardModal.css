@@ -53,6 +53,7 @@
 .meta {
   display: grid;
   grid-template-columns: max-content 1fr;
+  align-items: center;
   gap: calc(var(--space-1) * 1.5) var(--space-4);
   margin: 0 0 0 var(--space-2);
   font-size: var(--font-2sm);

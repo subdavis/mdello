@@ -302,13 +302,13 @@ test('classifies every official hook and configures every lifecycle hook', () =>
     (event) => CLAUDE_HOOK_POLICIES[event].kind === 'lifecycle',
   ).sort(byName);
   assert.deepEqual(
-    Object.keys(claudeHookSettings('http://127.0.0.1:31337')).sort(byName),
+    Object.keys(claudeHookSettings('http://127.0.0.1:51618')).sort(byName),
     expectedSubscriptions,
   );
 });
 
 test('keeps per-turn events off the process spawn path', () => {
-  const settings = claudeHookSettings('http://127.0.0.1:31337/');
+  const settings = claudeHookSettings('http://127.0.0.1:51618/');
   const types = Object.fromEntries(
     Object.entries(settings).map(([event, entries]) => [event, entries[0]?.hooks[0]?.type]),
   );
@@ -328,14 +328,14 @@ test('keeps per-turn events off the process spawn path', () => {
     SessionStart: 'command',
     SessionEnd: 'command',
   });
-  assert.equal(settings.Stop?.[0]?.hooks[0]?.url, 'http://127.0.0.1:31337/hooks/claude');
+  assert.equal(settings.Stop?.[0]?.hooks[0]?.url, 'http://127.0.0.1:51618/hooks/claude');
   for (const entries of Object.values(settings)) {
     assert.ok((entries[0]?.hooks[0]?.timeout ?? 0) > 0, 'every hook needs an explicit timeout');
   }
 });
 
 test('subscribes to question starts and all tool results', () => {
-  const settings = claudeHookSettings('http://127.0.0.1:31337');
+  const settings = claudeHookSettings('http://127.0.0.1:51618');
 
   assert.equal(settings.PreToolUse?.[0]?.matcher, 'AskUserQuestion');
   assert.equal(settings.PostToolUse?.[0]?.matcher, undefined);
@@ -343,7 +343,7 @@ test('subscribes to question starts and all tool results', () => {
 });
 
 test('subscribes only to notifications that block on the human', () => {
-  const matcher = claudeHookSettings('http://127.0.0.1:31337').Notification?.[0]?.matcher ?? '';
+  const matcher = claudeHookSettings('http://127.0.0.1:51618').Notification?.[0]?.matcher ?? '';
   const types = matcher.split('|');
 
   assert.ok(types.includes('permission_prompt'), 'a permission prompt blocks on the human');
@@ -371,7 +371,7 @@ test('emits a loadable plugin whose hooks carry the companion endpoint', () => {
 
 test('marks its own plugin directory so uninstall spares everyone else', () => {
   const manifest = JSON.parse(
-    claudePluginFiles('http://127.0.0.1:31337')['.claude-plugin/plugin.json'] ?? '',
+    claudePluginFiles('http://127.0.0.1:51618')['.claude-plugin/plugin.json'] ?? '',
   );
   assert.equal(isCompanionPlugin(manifest), true);
   assert.equal(isCompanionPlugin({ name: 'mdello-companion' }), false);

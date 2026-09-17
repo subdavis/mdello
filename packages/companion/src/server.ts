@@ -44,7 +44,7 @@ export interface ReconcileResult {
 }
 
 const DEFAULT_HOST = '127.0.0.1';
-export const DEFAULT_PORT = 31337;
+export const DEFAULT_PORT = 51618;
 export const DEFAULT_DATA_FILE = companionPaths().dataFile;
 const MAX_BODY_BYTES = 64 * 1024;
 const PROBE_TIMEOUT_MS = 250;

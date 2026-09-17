@@ -12,7 +12,7 @@ import {
   successfulModificationPaths,
 } from '@mdello/common/paths';
 
-const DEFAULT_URL = 'http://127.0.0.1:31337';
+const DEFAULT_URL = 'http://127.0.0.1:51618';
 
 type UserEntry = SessionMessageEntry & {
   message: Extract<SessionMessageEntry['message'], { role: 'user' }>;

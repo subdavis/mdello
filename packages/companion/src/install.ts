@@ -294,7 +294,7 @@ export async function uninstallPi(options: InstallOptions = {}): Promise<string>
 
 function companionEndpoint(options: InstallOptions): string {
   if (options.endpoint) return options.endpoint;
-  const port = process.env.MDELLO_COMPANION_PORT ?? '31337';
+  const port = process.env.MDELLO_COMPANION_PORT ?? '51618';
   return `http://127.0.0.1:${port}`;
 }
 

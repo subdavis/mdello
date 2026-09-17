@@ -30,7 +30,7 @@ Identity is `(cardUuid, harness, sessionId)`. Card UUIDs are global, so associat
 
 ## HTTP API
 
-Default endpoint: `http://127.0.0.1:31337`. JSON request bodies are limited to 64 KiB. The server accepts only loopback `Host` values. Browser-facing routes allow loopback origins plus the configured `webOrigin`, return matching CORS headers, and reject other `Origin` or `Referer` values with `403`. Requests without browser source headers remain available to local clients.
+Default endpoint: `http://127.0.0.1:51618`. JSON request bodies are limited to 64 KiB. The server accepts only loopback `Host` values. Browser-facing routes allow loopback origins plus the configured `webOrigin`, return matching CORS headers, and reject other `Origin` or `Referer` values with `403`. Requests without browser source headers remain available to local clients.
 
 | Request | Contract |
 | --- | --- |
@@ -62,7 +62,7 @@ mdello-companion help                         Print commands and configuration (
 
 `help` builds its command and environment lists from `BACKFILL_SOURCES`, `INTEGRATIONS`, and the default port and file paths, so it cannot drift from the code. An unknown command prints the same text on stderr and exits `1`.
 
-Configuration: `MDELLO_COMPANION_PORT` defaults to `31337`. `MDELLO_COMPANION_CONFIG` defaults
+Configuration: `MDELLO_COMPANION_PORT` defaults to `51618`. `MDELLO_COMPANION_CONFIG` defaults
 to `${XDG_CONFIG_HOME:-~/.config}/mdello/companion.json`, while `MDELLO_COMPANION_DATA` defaults
 to `${XDG_STATE_HOME:-~/.local/state}/mdello/companion.jsonl`. Explicit `MDELLO_COMPANION_*`
 file overrides win over XDG defaults. Empty or relative XDG directory values are ignored, following

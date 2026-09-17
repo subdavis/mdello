@@ -183,7 +183,7 @@ test('help lists every command and configuration variable', async () => {
     assert.match(stdout, /^ {2}serve {2,}Start the sidecar/m);
     assert.match(stdout, /^ {2}backfill \[claude\|pi\] {2,}Rebuild associations/m);
     assert.match(stdout, /^ {2}uninstall \[macos\|pi\|claude\] {2,}Remove/m);
-    assert.match(stdout, /^ {2}MDELLO_COMPANION_PORT {2,}Listen port \(31337\)$/m);
+    assert.match(stdout, /^ {2}MDELLO_COMPANION_PORT {2,}Listen port \(51618\)$/m);
     assert.match(stdout, /^ {2}PI_SESSIONS_DIR {2,}pi sessions read by backfill/m);
   }
 });

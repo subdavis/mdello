@@ -77,7 +77,7 @@ Return `undefined` for anything not worth publishing — an unknown event, a mis
 - A client exports the harness's normal extension entry point; Pi uses a default function receiving `ExtensionAPI`. An adapter exports a `HarnessAdapter` plus the configuration its installer materializes — for Claude Code, the files of a hooks-only plugin.
 - Prefer a drop-in directory over editing a shared config file. An installer that owns one directory is idempotent by construction and cannot damage unrelated settings.
 - Register listeners only—do not start the companion server from the extension.
-- A client reads its endpoint from `MDELLO_COMPANION_URL`, defaulting to `http://127.0.0.1:31337`, and strips a trailing slash. An adapter's endpoint is fixed when its hooks are installed.
+- A client reads its endpoint from `MDELLO_COMPANION_URL`, defaulting to `http://127.0.0.1:51618`, and strips a trailing slash. An adapter's endpoint is fixed when its hooks are installed.
 - Keep companion-specific logic isolated so extension load and agent operation remain safe while companion is absent.
 - A client must ship a self-contained bundle: Pi resolves bare imports from the installed extension path rather than the symlink target, so workspace dependencies such as `@mdello/common` must be inlined at build time. An adapter needs no bundle, because the companion imports it directly.
 

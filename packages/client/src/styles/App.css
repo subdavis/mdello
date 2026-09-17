@@ -9,7 +9,7 @@
 }
 
 .brand {
-  letter-spacing: 0.02em;
+  font-size: calc(var(--font-lg));
 }
 
 .spacer {

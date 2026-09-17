@@ -23,7 +23,7 @@ export function aggregateStatus(entries: Association[]): AssociationStatus | und
   }, undefined);
 }
 
-const endpoint = (import.meta.env?.VITE_MDELLO_COMPANION_URL ?? 'http://127.0.0.1:31337').replace(
+const endpoint = (import.meta.env?.VITE_MDELLO_COMPANION_URL ?? 'http://127.0.0.1:51618').replace(
   /\/$/,
   '',
 );

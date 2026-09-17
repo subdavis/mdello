@@ -107,7 +107,7 @@ onBeforeUnmount(() => {
 
 <template>
   <header class="topbar">
-    <strong class="brand">🍺 mdello</strong>
+    <strong class="brand">🍺</strong>
     <button
       v-if="board.boardName.value"
       type="button"
