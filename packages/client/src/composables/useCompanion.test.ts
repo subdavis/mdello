@@ -5,6 +5,7 @@ import {
   type Association,
   type CompanionConnectionStatus,
   forgetSession,
+  resumeCommand,
   useCompanionConnectionStatus,
 } from './useCompanion.ts';
 
@@ -45,6 +46,13 @@ const association: Association = {
   status: 'idle',
   updatedAt: '2026-01-01T00:00:00.000Z',
 };
+
+test('builds an OpenCode resume command', () => {
+  assert.equal(
+    resumeCommand({ ...association, harness: 'opencode', sessionId: 'ses_123' }),
+    'opencode --session ses_123',
+  );
+});
 
 test('requests session forgetting for one card or all cards', async () => {
   const originalFetch = globalThis.fetch;

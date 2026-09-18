@@ -793,6 +793,50 @@ test('creates missing parent directory when purging companion session data', asy
   }
 });
 
+test('stops scheduled extensions when the companion closes', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mdello-server-'));
+  try {
+    const boardPath = join(root, 'board');
+    const configFile = join(root, 'companion.json');
+    await mkdir(boardPath);
+    await writeFile(join(boardPath, 'mdello.yml'), 'uuid: board-a\ncolumns: [Triage]\n');
+    await writeFile(
+      configFile,
+      JSON.stringify({
+        boards: [
+          {
+            uuid: 'board-a',
+            path: boardPath,
+            updatedAt: '2026-09-18T12:00:00Z',
+          },
+        ],
+        extensions: {
+          'github-assignment': {
+            schedule: '0 * * * *',
+            organizations: [],
+            boardUuid: 'board-a',
+          },
+        },
+      }),
+    );
+    let stopped = false;
+    const companion = await createCompanionServer({
+      port: 0,
+      dataFile: join(root, 'companion.jsonl'),
+      configFile,
+      extensionDependencies: {
+        schedule: () => ({ stop: () => (stopped = true) }),
+      },
+    });
+
+    assert.equal(stopped, false);
+    await companion.close();
+    assert.equal(stopped, true);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('treats persisted associations without a harness as unknown associations', async () => {
   const root = await mkdtemp(join(tmpdir(), 'mdello-server-'));
   try {

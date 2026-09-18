@@ -17,11 +17,13 @@ import {
   installClaude,
   installIntegrations,
   installMacOS,
+  installOpencode,
   installPi,
   resolveExecutable,
   uninstallClaude,
   uninstallIntegrations,
   uninstallMacOS,
+  uninstallOpencode,
   uninstallPi,
 } from './install.ts';
 
@@ -34,6 +36,7 @@ const template = `
 <string>__COMPANION_STDOUT__</string>
 <string>__COMPANION_STDERR__</string>
 __HERDR_ENV__
+__GH_ENV__
 `;
 
 async function fixture(): Promise<{ root: string; home: string; repoRoot: string }> {
@@ -42,11 +45,16 @@ async function fixture(): Promise<{ root: string; home: string; repoRoot: string
   const repoRoot = join(root, 'repo & clone');
   await mkdir(join(repoRoot, 'packages/companion'), { recursive: true });
   await mkdir(join(repoRoot, 'packages/pi-extension/dist'), { recursive: true });
+  await mkdir(join(repoRoot, 'packages/opencode-extension/dist'), { recursive: true });
   await mkdir(join(repoRoot, 'packages/claude-extension'), { recursive: true });
   await writeFile(join(repoRoot, 'packages/companion/com.mdello.companion.plist'), template);
   await writeFile(
     join(repoRoot, 'packages/pi-extension/dist/index.js'),
     'export default () => {};',
+  );
+  await writeFile(
+    join(repoRoot, 'packages/opencode-extension/dist/index.js'),
+    'export default async () => ({});',
   );
   await writeFile(join(repoRoot, 'packages/claude-extension/index.ts'), 'export default 0;');
   return { root, home, repoRoot };
@@ -68,7 +76,10 @@ test('macOS install updates plist and reloads launchd idempotently', async () =>
   const run = async (command: string, args: string[]) => {
     calls.push([command, ...args]);
     if (command === 'launchctl' && args[0] === 'bootout') throw new Error('not loaded');
-    return { stdout: command === 'which' && args[0] === 'herdr' ? process.execPath : '' };
+    return {
+      stdout:
+        command === 'which' && (args[0] === 'herdr' || args[0] === 'gh') ? process.execPath : '',
+    };
   };
 
   try {
@@ -98,12 +109,15 @@ test('macOS install updates plist and reloads launchd idempotently', async () =>
     assert.match(plist, /xdg &amp; config/);
     assert.match(plist, /xdg &amp; state/);
     assert.match(plist, /<key>HERDR_PATH<\/key>\s*<string>.*node<\/string>/);
+    assert.match(plist, /<key>GH_PATH<\/key>\s*<string>.*node<\/string>/);
     assert.doesNotMatch(plist, /<key>PATH<\/key>/);
     assert.deepEqual(questions, [
       `NODE_PATH=${process.execPath} Y/n? `,
       `HERDR_PATH=${process.execPath} Y/n? `,
+      `GH_PATH=${process.execPath} Y/n? `,
       `NODE_PATH=${process.execPath} Y/n? `,
       `HERDR_PATH=${process.execPath} Y/n? `,
+      `GH_PATH=${process.execPath} Y/n? `,
     ]);
     assert.equal(
       calls.filter(([command, action]) => command === 'launchctl' && action === 'bootstrap').length,
@@ -344,6 +358,48 @@ test('Pi install and uninstall preserve non-symlink paths', async () => {
   }
 });
 
+test('OpenCode install links the bundle in the XDG plugin directory', async () => {
+  const { root, home, repoRoot } = await fixture();
+  const configHome = join(root, 'config');
+  const destination = join(configHome, 'opencode/plugins/mdello-companion.js');
+  const source = join(repoRoot, 'packages/opencode-extension/dist/index.js');
+
+  try {
+    const options = { home, repoRoot, environment: { XDG_CONFIG_HOME: configHome } };
+    await installOpencode(options);
+    await installOpencode(options);
+    assert.equal(await readlink(destination), source);
+
+    await uninstallOpencode(options);
+    await uninstallOpencode(options);
+    await assert.rejects(lstat(destination));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('OpenCode install requires a built bundle and preserves unmanaged paths', async () => {
+  const { root, home, repoRoot } = await fixture();
+  const destination = join(home, '.config/opencode/plugins/mdello-companion.js');
+
+  try {
+    await rm(join(repoRoot, 'packages/opencode-extension/dist'), { recursive: true, force: true });
+    await assert.rejects(installOpencode({ home, repoRoot }), /build:opencode-extension/);
+
+    await mkdir(dirname(destination), { recursive: true });
+    await writeFile(destination, 'unmanaged');
+    await mkdir(join(repoRoot, 'packages/opencode-extension/dist'), { recursive: true });
+    await writeFile(
+      join(repoRoot, 'packages/opencode-extension/dist/index.js'),
+      'export default 0',
+    );
+    await assert.rejects(installOpencode({ home, repoRoot }), /Cannot replace non-symlink/);
+    await assert.rejects(uninstallOpencode({ home, repoRoot }), /Refusing to remove non-symlink/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('Claude install writes a self-contained plugin and never touches settings', async () => {
   const { root, home, repoRoot } = await fixture();
   const directory = join(home, '.claude/skills/mdello-companion');
@@ -446,18 +502,20 @@ test('aggregate install and uninstall skip macOS integration on other platforms'
 
   try {
     const installed = await installIntegrations(undefined, { home, repoRoot, platform: 'linux' });
-    assert.equal(installed.length, 2);
+    assert.equal(installed.length, 3);
     assert.match(installed[0] ?? '', /Installed Pi extension/);
-    assert.match(installed[1] ?? '', /Installed Claude plugin/);
+    assert.match(installed[1] ?? '', /Installed OpenCode extension/);
+    assert.match(installed[2] ?? '', /Installed Claude plugin/);
 
     const uninstalled = await uninstallIntegrations(undefined, {
       home,
       repoRoot,
       platform: 'linux',
     });
-    assert.equal(uninstalled.length, 2);
+    assert.equal(uninstalled.length, 3);
     assert.match(uninstalled[0] ?? '', /Removed Pi extension/);
-    assert.match(uninstalled[1] ?? '', /Removed Claude plugin/);
+    assert.match(uninstalled[1] ?? '', /Removed OpenCode extension/);
+    assert.match(uninstalled[2] ?? '', /Removed Claude plugin/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

@@ -38,19 +38,19 @@ Publish status changes to every card associated with the session. Re-associating
 
 ### Per-harness events
 
-| Status | Pi event | Claude Code hook |
-| --- | --- | --- |
-| `idle` | `session_start`, `ui_prompt_end` when idle | `SessionStart` except `source: compact` |
-| `running` | `agent_start`, `ui_prompt_end` when busy | `UserPromptSubmit`; matching question, permission, or elicitation result |
-| `waiting_for_input` | `ui_prompt_start` | `PreToolUse(AskUserQuestion)`, `PermissionRequest`, `Elicitation`, blocking notifications |
-| `ready_for_review` | `agent_settled` | `Stop`, `StopFailure` |
-| `closed` | `session_shutdown` | `SessionEnd` |
+| Status | Pi event | OpenCode event/hook | Claude Code hook |
+| --- | --- | --- | --- |
+| `idle` | `session_start`, `ui_prompt_end` when idle | `session.created` | `SessionStart` except `source: compact` |
+| `running` | `agent_start`, `ui_prompt_end` when busy | `chat.message`, busy/retry `session.status`, prompt/permission result | `UserPromptSubmit`; matching question, permission, or elicitation result |
+| `waiting_for_input` | `ui_prompt_start` | `permission.updated`, `question.asked`, or before `question` tool | `PreToolUse(AskUserQuestion)`, `PermissionRequest`, `Elicitation`, blocking notifications |
+| `ready_for_review` | `agent_settled` | `session.idle`, `session.error` | `Stop`, `StopFailure` |
+| `closed` | `session_shutdown` | `session.deleted`, plugin disposal | `SessionEnd` |
 
 Claude Code has no separate "agent started" event, so `UserPromptSubmit` both discovers cards in the prompt and moves the session to `running`.
 
 ## Two integration shapes
 
-A harness that loads code into its own process is a **client**: it discovers cards, tracks its session, and posts to `/associations` itself. Pi works this way.
+A harness that loads code into its own process is a **client**: it discovers cards, tracks its session, and posts to `/associations` itself. Pi and OpenCode work this way.
 
 A harness that only offers per-event callbacks is an **adapter**: it posts the raw event payload to `/hooks/<harness>` and the companion does the rest. Claude Code works this way, because spawning a process per lifecycle event costs far more than the work itself — a measured 77 ms for a Node script versus roughly zero for a webhook.
 
@@ -74,19 +74,28 @@ Return `undefined` for anything not worth publishing — an unknown event, a mis
 
 ## Packaging and configuration
 
-- A client exports the harness's normal extension entry point; Pi uses a default function receiving `ExtensionAPI`. An adapter exports a `HarnessAdapter` plus the configuration its installer materializes — for Claude Code, the files of a hooks-only plugin.
+- A client exports the harness's normal extension entry point; Pi uses a default function receiving `ExtensionAPI`, while OpenCode exports a `Plugin` function returning hooks. An adapter exports a `HarnessAdapter` plus the configuration its installer materializes — for Claude Code, the files of a hooks-only plugin.
 - Prefer a drop-in directory over editing a shared config file. An installer that owns one directory is idempotent by construction and cannot damage unrelated settings.
 - Register listeners only—do not start the companion server from the extension.
 - A client reads its endpoint from `MDELLO_COMPANION_URL`, defaulting to `http://127.0.0.1:51618`, and strips a trailing slash. An adapter's endpoint is fixed when its hooks are installed.
 - Keep companion-specific logic isolated so extension load and agent operation remain safe while companion is absent.
-- A client must ship a self-contained bundle: Pi resolves bare imports from the installed extension path rather than the symlink target, so workspace dependencies such as `@mdello/common` must be inlined at build time. An adapter needs no bundle, because the companion imports it directly.
+- A client must ship a self-contained bundle: Pi resolves bare imports from the installed extension path rather than the symlink target, and a local OpenCode plugin otherwise needs dependencies installed in its config directory. Workspace dependencies such as `@mdello/common` are therefore inlined at build time. An adapter needs no bundle, because the companion imports it directly.
 
 ## Reference implementations
 
 | Harness | Shape | Source | Installed as |
 | --- | --- | --- | --- |
 | Pi | client | [`packages/pi-extension/index.ts`](../packages/pi-extension/index.ts) | bundle symlinked into `~/.pi/agent/extensions` |
+| OpenCode | client | [`packages/opencode-extension/index.ts`](../packages/opencode-extension/index.ts) | bundle symlinked into `${XDG_CONFIG_HOME:-~/.config}/opencode/plugins` |
 | Claude Code | adapter | [`packages/claude-extension/index.ts`](../packages/claude-extension/index.ts) | generated plugin directory at `~/.claude/skills/mdello-companion` |
+
+### OpenCode specifics
+
+- The plugin uses `chat.message` for user paths and successful `tool.execute.after` hooks for `edit` and `write`. It never associates reads or failed tools.
+- OpenCode exposes stable session IDs but no session file path, so association payloads omit `sessionFile`.
+- History is restored lazily on the first event for each session with `client.session.messages()`. Non-synthetic user text and completed edit/write tool parts are republished.
+- Question tool and permission events map interactive waits. Session idle/error maps completion, while deletion or plugin disposal closes tracked sessions.
+- Installation uses OpenCode's auto-loaded global plugin directory and never edits `opencode.json`. OpenCode loads plugins only at startup, so restart it after install or uninstall.
 
 ### Claude Code specifics
 

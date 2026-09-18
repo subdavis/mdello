@@ -55,8 +55,8 @@ mdello-companion backfill [claude|pi]         Rebuild one harness from its sessi
 mdello-companion status                       List tracked boards and event counts
 mdello-companion purge                        Clear association history
 mdello-companion reset                        Alias for purge
-mdello-companion install [macos|pi|claude]    Install integrations, or one of them
-mdello-companion uninstall [macos|pi|claude]  Remove integrations, or one of them
+mdello-companion install [macos|pi|opencode|claude]    Install integrations, or one of them
+mdello-companion uninstall [macos|pi|opencode|claude]  Remove integrations, or one of them
 mdello-companion help                         Print commands and configuration (aliases -h, --help)
 ```
 
@@ -71,7 +71,8 @@ the XDG base-directory specification. Backfill reads `CLAUDE_SESSIONS_DIR` (defa
 structured stderr logs.
 
 The macOS installer interactively confirms the current Node executable and any discovered `herdr`
-executable. It stops the launch agent before moving legacy files from `~/.mdello`. Each file is moved
+or `gh` executable. Their absolute paths are stored as `HERDR_PATH` and `GH_PATH` in the launchd
+service because launchd does not inherit the shell `PATH`. It stops the launch agent before moving legacy files from `~/.mdello`. Each file is moved
 only when its XDG destination is absent: config goes to the config directory; event history and
 stdout/stderr logs go to the state directory. It then writes absolute executable and XDG paths into
 the launchd plist without copying the shell `PATH`, restarts the service, and removes `~/.mdello`
@@ -87,6 +88,38 @@ when empty. Missing `herdr` is allowed and disables herdr actions.
 ```
 
 Restart the companion after changing these settings.
+
+### GitHub assignment automation
+
+The optional `extensions.github-assignment` job uses the authenticated `gh` CLI to create `Triage`
+cards for open issues and pull requests assigned to the current user, plus pull requests matched by
+GitHub's `user-review-requested:@me` qualifier. This qualifier includes only direct requests and
+excludes requests made through one of the user's teams. The target board must already
+be registered with the companion and define a column named exactly `Triage`.
+
+```json
+{
+  "extensions": {
+    "github-assignment": {
+      "schedule": "0 * * * *",
+      "organizations": ["SonarSource"],
+      "boardUuid": "your-board-uuid"
+    }
+  }
+}
+```
+
+`organizations` accepts any number of GitHub organization or owner names. An empty array omits the
+owner filter and searches every repository visible to the authenticated user. Each search requests up
+to GitHub Search's 1,000-result limit. Run `gh auth status` as the same user that installs the macOS
+service before enabling the extension. Re-run `mdello-companion install macos` if `gh` was installed
+or moved after service installation, then restart the companion after config changes.
+
+Each scheduled run completes all three GitHub searches before writing files, merges duplicate URLs,
+and prefers `Review Requested` when a pull request is also assigned. Existing active cards containing
+the URL are left unchanged; archived cards are ignored. Runs do not overlap. Configuration and `gh`
+errors disable or fail only this automation; set `DEBUG=1` to include details in the companion error
+log.
 
 ## Behavior
 

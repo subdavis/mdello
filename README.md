@@ -87,6 +87,7 @@ npx mdello-companion install
 # Install specific integrations
 npx mdello-companion install macos
 npx mdello-companion install pi # Then run `/reload`
+npx mdello-companion install opencode # Then restart OpenCode
 npx mdello-companion install claude # then run run `/reload-plugins`
 
 # Learn more about the companion
@@ -97,6 +98,7 @@ npx mdello-companion help
 | ----------- | ---------------------------------------------------------------------------------- |
 | `macos`     | `~/Library/LaunchAgents/com.mdello.companion.plist`, started with `launchctl`      |
 | `pi`        | `packages/pi-extension/dist/index.js` symlinked into `~/.pi/agent/extensions`      |
+| `opencode`  | `packages/opencode-extension/dist/index.js` symlinked into OpenCode's plugin dir.  |
 | `claude`    | a plugin at `~/.claude/skills/mdello-companion` whose hooks post to the companion. |
 
 - Every install command is safe to rerun and updates its existing installation.
@@ -126,6 +128,7 @@ This repository is a Yarn workspace monorepo:
 - `packages/client` — Vue PWA deployed to GitHub Pages
 - `packages/companion` — local sidecar and CLI; private until ready for npm
 - `packages/pi-extension` — Pi lifecycle integration, loaded in-process by Pi
+- `packages/opencode-extension` — OpenCode lifecycle integration, loaded as a global plugin
 - `packages/claude-extension` — Claude Code hook adapter, imported by the companion
 - `packages/common` — shared association, harness, frontmatter, and path helpers
 

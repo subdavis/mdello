@@ -11,8 +11,9 @@ export interface BoardRegistration {
   updatedAt: string;
 }
 
-interface CompanionConfig {
+export interface CompanionConfig {
   boards: BoardRegistration[];
+  extensions?: Record<string, unknown>;
   herdrBundleId?: string;
   webOrigin?: string;
 }
@@ -25,13 +26,25 @@ export interface ResolvedCard {
   cardPath: string;
 }
 
-export async function readBoardUuid(boardPath: string): Promise<string> {
+async function readBoardConfig(boardPath: string): Promise<Frontmatter> {
   const configPath = resolve(boardPath, 'mdello.yml');
   const data = load(await readFile(configPath, 'utf8'));
-  const uuid =
-    data && typeof data === 'object' ? readString(data as Frontmatter, 'uuid')?.trim() : undefined;
+  if (!data || typeof data !== 'object') throw new Error(`Invalid board config: ${configPath}`);
+  return data as Frontmatter;
+}
+
+export async function readBoardUuid(boardPath: string): Promise<string> {
+  const configPath = resolve(boardPath, 'mdello.yml');
+  const uuid = readString(await readBoardConfig(boardPath), 'uuid')?.trim();
   if (!uuid) throw new Error(`Board config has no uuid: ${configPath}`);
   return uuid;
+}
+
+export async function readBoardColumns(boardPath: string): Promise<string[]> {
+  const columns = (await readBoardConfig(boardPath)).columns;
+  return Array.isArray(columns)
+    ? columns.filter((column): column is string => typeof column === 'string')
+    : [];
 }
 
 export async function listActiveCards(board: BoardRegistration): Promise<ResolvedCard[]> {
@@ -66,7 +79,7 @@ function validBoard(value: unknown): value is BoardRegistration {
 }
 
 /** The whole config file, so callers reading one key never clobber another on save. */
-async function loadConfig(configFile: string): Promise<Partial<CompanionConfig>> {
+export async function loadConfig(configFile: string): Promise<Partial<CompanionConfig>> {
   try {
     const parsed = JSON.parse(await readFile(configFile, 'utf8'));
     return parsed && typeof parsed === 'object' ? (parsed as Partial<CompanionConfig>) : {};

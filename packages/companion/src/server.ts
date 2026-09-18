@@ -16,12 +16,14 @@ import {
   DEFAULT_CONFIG_FILE,
   listActiveCards,
   loadBoards,
+  loadConfig,
   loadHerdrBundleId,
   loadWebOrigin,
   registerBoard,
   resolveCard,
 } from './boards.ts';
 import { createDebugLogger } from './debug.ts';
+import { type ExtensionDependencies, startCompanionExtensions } from './extensions.ts';
 import { HerdrSessionCache } from './herdr.ts';
 import { findAdapter, harnessFromPath, hookAssociationInputs } from './hooks.ts';
 import { companionPaths } from './xdg.ts';
@@ -36,6 +38,7 @@ export interface CompanionOptions {
   configFile?: string;
   herdrPath?: string;
   herdrRun?: ActionContext['run'];
+  extensionDependencies?: Omit<ExtensionDependencies, 'debug'>;
 }
 
 export interface ReconcileResult {
@@ -679,7 +682,7 @@ export async function createCompanionServer(options: CompanionOptions = {}): Pro
   const configFile =
     options.configFile ?? process.env.MDELLO_COMPANION_CONFIG ?? DEFAULT_CONFIG_FILE;
   let associations = await loadAssociations(dataFile);
-  const boards = await loadBoards(configFile);
+  const [config, boards] = await Promise.all([loadConfig(configFile), loadBoards(configFile)]);
   const herdrBundleId = await loadHerdrBundleId(configFile);
   const webOrigin = await loadWebOrigin(configFile);
   const herdrPath = options.herdrPath ?? process.env.HERDR_PATH;
@@ -817,16 +820,22 @@ export async function createCompanionServer(options: CompanionOptions = {}): Pro
     });
   });
 
+  const extensionJobs = await startCompanionExtensions(config, boards, {
+    debug,
+    ...options.extensionDependencies,
+  });
   const address = server.address();
   const actualPort = typeof address === 'object' && address ? address.port : port;
   debug('server listening', { host, port: actualPort, boards: boards.length });
   return {
     server,
     url: `http://${host}:${actualPort}`,
-    close: () =>
-      new Promise<void>((resolveClose, reject) => {
+    close: () => {
+      extensionJobs.stop();
+      return new Promise<void>((resolveClose, reject) => {
         for (const client of clients.keys()) client.end();
         server.close((error) => (error ? reject(error) : resolveClose()));
-      }),
+      });
+    },
   };
 }

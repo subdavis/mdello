@@ -111,6 +111,10 @@ export default function mdelloCompanion(pi: ExtensionAPI): void {
   pi.on('ui_prompt_end', async (_event, ctx) =>
     updateStatus(ctx.isIdle() ? 'idle' : 'running', ctx),
   );
-  pi.on('agent_settled', async (_event, ctx) => updateStatus('ready_for_review', ctx));
+  pi.on('agent_settled', async (_event, ctx) => {
+    if (!ctx.isIdle()) return;
+    await updateStatus('ready_for_review', ctx);
+    if (!ctx.isIdle()) await updateStatus('running', ctx);
+  });
   pi.on('session_shutdown', async (_event, ctx) => updateStatus('closed', ctx));
 }

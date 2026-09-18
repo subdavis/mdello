@@ -27,7 +27,7 @@ import { type CompanionPaths, companionPaths } from './xdg.ts';
 const exec = promisify(execFile);
 const SERVICE_LABEL = 'com.mdello.companion';
 
-export const INTEGRATIONS = ['macos', 'pi', 'claude'] as const;
+export const INTEGRATIONS = ['macos', 'pi', 'opencode', 'claude'] as const;
 
 export type Integration = (typeof INTEGRATIONS)[number];
 
@@ -181,6 +181,7 @@ async function terminalPrompt(): Promise<{ prompt: Prompt; close: () => void }> 
 interface MacOSServiceOptions extends ReturnType<typeof defaults> {
   nodePath: string;
   herdrPath?: string;
+  ghPath?: string;
 }
 
 export async function installMacOSService(config: MacOSServiceOptions): Promise<string> {
@@ -192,6 +193,9 @@ export async function installMacOSService(config: MacOSServiceOptions): Promise<
   const herdrEnvironment = config.herdrPath
     ? `    <key>HERDR_PATH</key>\n    <string>${xmlEscape(config.herdrPath)}</string>`
     : '';
+  const ghEnvironment = config.ghPath
+    ? `    <key>GH_PATH</key>\n    <string>${xmlEscape(config.ghPath)}</string>`
+    : '';
   const plist = template
     .replaceAll('__NODE_BIN__', xmlEscape(config.nodePath))
     .replaceAll('__MDELLO_ROOT__', xmlEscape(config.repoRoot))
@@ -200,7 +204,8 @@ export async function installMacOSService(config: MacOSServiceOptions): Promise<
     .replaceAll('__XDG_STATE_HOME__', xmlEscape(dirname(paths.stateDirectory)))
     .replaceAll('__COMPANION_STDOUT__', xmlEscape(paths.stdoutLog))
     .replaceAll('__COMPANION_STDERR__', xmlEscape(paths.stderrLog))
-    .replaceAll('__HERDR_ENV__', herdrEnvironment);
+    .replaceAll('__HERDR_ENV__', herdrEnvironment)
+    .replaceAll('__GH_ENV__', ghEnvironment);
 
   const domain = `gui/${config.uid}`;
   try {
@@ -229,7 +234,9 @@ export async function installMacOS(options: InstallOptions = {}): Promise<string
     const nodePath = await resolveExecutable('NODE_PATH', config.nodePath, true, prompt);
     const discoveredHerdr = await discoverExecutable('herdr', config.run);
     const herdrPath = await resolveExecutable('HERDR_PATH', discoveredHerdr, false, prompt);
-    return await installMacOSService({ ...config, nodePath, herdrPath });
+    const discoveredGh = await discoverExecutable('gh', config.run);
+    const ghPath = await resolveExecutable('GH_PATH', discoveredGh, false, prompt);
+    return await installMacOSService({ ...config, nodePath, herdrPath, ghPath });
   } finally {
     terminal?.close();
   }
@@ -292,6 +299,44 @@ export async function uninstallPi(options: InstallOptions = {}): Promise<string>
   return `Removed Pi extension ${destination}`;
 }
 
+function opencodePaths(
+  home: string,
+  repoRoot: string,
+  environment: NodeJS.ProcessEnv,
+): { source: string; destination: string } {
+  const configuredHome = environment.XDG_CONFIG_HOME;
+  const configHome =
+    configuredHome && isAbsolute(configuredHome) ? configuredHome : join(home, '.config');
+  return {
+    source: join(repoRoot, 'packages/opencode-extension/dist/index.js'),
+    destination: join(configHome, 'opencode/plugins/mdello-companion.js'),
+  };
+}
+
+export async function installOpencode(options: InstallOptions = {}): Promise<string> {
+  const config = defaults(options);
+  const { source, destination } = opencodePaths(config.home, config.repoRoot, config.environment);
+
+  if ((await pathKind(source)) === 'missing') {
+    throw new Error(
+      `Missing OpenCode extension bundle at ${source}. Run \`yarn build:opencode-extension\`.`,
+    );
+  }
+
+  await removeManagedSymlink(destination, 'Cannot replace', 'OpenCode extension');
+  await mkdir(dirname(destination), { recursive: true });
+  await symlink(source, destination, 'file');
+  return `Installed OpenCode extension ${destination} -> ${source}`;
+}
+
+export async function uninstallOpencode(options: InstallOptions = {}): Promise<string> {
+  const config = defaults(options);
+  const { destination } = opencodePaths(config.home, config.repoRoot, config.environment);
+
+  await removeManagedSymlink(destination, 'Refusing to remove', 'OpenCode extension');
+  return `Removed OpenCode extension ${destination}`;
+}
+
 function companionEndpoint(options: InstallOptions): string {
   if (options.endpoint) return options.endpoint;
   const port = process.env.MDELLO_COMPANION_PORT ?? '51618';
@@ -352,12 +397,14 @@ export async function installIntegrations(
 ): Promise<string[]> {
   if (integration === 'macos') return [await installMacOS(options)];
   if (integration === 'pi') return [await installPi(options)];
+  if (integration === 'opencode') return [await installOpencode(options)];
   if (integration === 'claude') return [await installClaude(options)];
 
   const messages: string[] = [];
   if ((options.platform ?? process.platform) === 'darwin')
     messages.push(await installMacOS(options));
   messages.push(await installPi(options));
+  messages.push(await installOpencode(options));
   messages.push(await installClaude(options));
   return messages;
 }
@@ -368,6 +415,7 @@ export async function uninstallIntegrations(
 ): Promise<string[]> {
   if (integration === 'macos') return [await uninstallMacOS(options)];
   if (integration === 'pi') return [await uninstallPi(options)];
+  if (integration === 'opencode') return [await uninstallOpencode(options)];
   if (integration === 'claude') return [await uninstallClaude(options)];
 
   const messages: string[] = [];
@@ -375,6 +423,7 @@ export async function uninstallIntegrations(
     messages.push(await uninstallMacOS(options));
   }
   messages.push(await uninstallPi(options));
+  messages.push(await uninstallOpencode(options));
   messages.push(await uninstallClaude(options));
   return messages;
 }

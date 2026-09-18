@@ -28,6 +28,7 @@
     <key>XDG_STATE_HOME</key>
     <string>__XDG_STATE_HOME__</string>
 __HERDR_ENV__
+__GH_ENV__
   </dict>
 
   <key>RunAtLoad</key>

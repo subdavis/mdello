@@ -9,13 +9,14 @@
     "dev": "yarn workspace @mdello/client dev",
     "build:client": "yarn workspace @mdello/client build",
     "build:pi-extension": "yarn workspace @mdello/pi-extension build",
-    "build": "yarn build:client && yarn build:pi-extension",
+    "build:opencode-extension": "yarn workspace @mdello/opencode-extension build",
+    "build": "yarn build:client && yarn build:pi-extension && yarn build:opencode-extension",
     "companion": "yarn workspace mdello-companion start",
     "format": "biome check --write .",
     "lint": "biome check .",
     "preview": "yarn workspace @mdello/client preview",
-    "test": "yarn workspace @mdello/client test && yarn workspace mdello-companion test && yarn workspace @mdello/claude-extension test",
-    "typecheck": "yarn workspace @mdello/common typecheck && yarn workspace mdello-companion typecheck && yarn workspace @mdello/pi-extension typecheck && yarn workspace @mdello/claude-extension typecheck && yarn workspace @mdello/client typecheck"
+    "test": "yarn workspace @mdello/client test && yarn workspace mdello-companion test && yarn workspace @mdello/opencode-extension test && yarn workspace @mdello/claude-extension test",
+    "typecheck": "yarn workspace @mdello/common typecheck && yarn workspace mdello-companion typecheck && yarn workspace @mdello/pi-extension typecheck && yarn workspace @mdello/opencode-extension typecheck && yarn workspace @mdello/claude-extension typecheck && yarn workspace @mdello/client typecheck"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.9"
