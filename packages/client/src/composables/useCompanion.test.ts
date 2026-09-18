@@ -8,8 +8,11 @@ import {
   forgetSession,
   resumeCommand,
   setAutofocus,
+  setGitHubLinkEnrichment,
+  subscribeUrlEnrichments,
   useAutofocus,
   useCompanionConnectionStatus,
+  useGitHubLinkEnrichment,
 } from './useCompanion.ts';
 
 class FakeEventSource {
@@ -35,8 +38,9 @@ class FakeEventSource {
     this.closed = true;
   }
 
-  emit(type: string): void {
-    for (const listener of this.listeners.get(type) ?? []) listener(new Event(type));
+  emit(type: string, data?: string): void {
+    const event = data === undefined ? new Event(type) : new MessageEvent(type, { data });
+    for (const listener of this.listeners.get(type) ?? []) listener(event);
   }
 }
 
@@ -93,6 +97,54 @@ test('persists autofocus through companion settings', async () => {
     assert.equal(useAutofocus().value, true);
   } finally {
     globalThis.fetch = originalFetch;
+  }
+});
+
+test('persists GitHub enrichment and subscribes through the generic URL API', async () => {
+  const originalFetch = globalThis.fetch;
+  const OriginalEventSource = globalThis.EventSource;
+  let body = '';
+  globalThis.fetch = async (_input, init) => {
+    body = String(init?.body);
+    return new Response('{}', { status: 200 });
+  };
+  FakeEventSource.instances = [];
+  globalThis.EventSource = FakeEventSource as unknown as typeof EventSource;
+
+  try {
+    assert.equal(await setGitHubLinkEnrichment(true), true);
+    assert.equal(useGitHubLinkEnrichment().value, true);
+    assert.deepEqual(JSON.parse(body), { githubLinkEnrichment: true });
+
+    const first = 'https://github.com/owner/repo/issues/12';
+    const second = 'https://github.com/owner/repo/pull/13';
+    const received: string[][] = [];
+    const close = subscribeUrlEnrichments([first, second], (items) =>
+      received.push(items.map((item) => item.url)),
+    );
+    const source = FakeEventSource.instances[0];
+    assert.match(source.url, /\/enrichments\?/);
+    assert.equal(new URL(source.url).searchParams.getAll('url').length, 2);
+    source.emit(
+      'enrichments',
+      JSON.stringify({
+        items: [{ provider: 'github', url: first, number: 12, title: 'Fix bug', status: 'open' }],
+      }),
+    );
+    source.emit(
+      'enrichments',
+      JSON.stringify({
+        items: [
+          { provider: 'github', url: second, number: 13, title: 'Add feature', status: 'open' },
+        ],
+      }),
+    );
+    assert.deepEqual(received, [[first], [first, second]]);
+    close();
+    assert.equal(source.closed, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+    globalThis.EventSource = OriginalEventSource;
   }
 });
 

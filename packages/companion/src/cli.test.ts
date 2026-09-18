@@ -149,7 +149,7 @@ test('backfill rejects an unknown harness', async () => {
       environment(join(root, 'companion.jsonl'), join(root, 'companion.json')),
     );
     assert.equal(failure.code, 1);
-    assert.match(failure.stderr, /Usage: mdello-companion backfill \[claude\|pi\]/);
+    assert.match(failure.stderr, /Usage: mdello-companion backfill \[claude\|opencode\|pi\]/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -181,10 +181,11 @@ test('help lists every command and configuration variable', async () => {
       env: process.env,
     });
     assert.match(stdout, /^ {2}serve {2,}Start the sidecar/m);
-    assert.match(stdout, /^ {2}backfill \[claude\|pi\] {2,}Rebuild associations/m);
+    assert.match(stdout, /^ {2}backfill \[claude\|opencode\|pi\] {2,}Rebuild associations/m);
     assert.match(stdout, /^ {2}uninstall \[macos\|pi\|opencode\|claude\] {2,}Remove/m);
     assert.match(stdout, /^ {2}MDELLO_COMPANION_PORT {2,}Listen port \(51618\)$/m);
     assert.match(stdout, /^ {2}PI_SESSIONS_DIR {2,}pi sessions read by backfill/m);
+    assert.match(stdout, /^ {2}OPENCODE_SESSIONS_DB {2,}opencode sessions read by backfill/m);
   }
 });
 

@@ -21,9 +21,12 @@ import {
   registerBoard,
   resolveCard,
   saveAutofocus,
+  saveGitHubLinkEnrichment,
 } from './boards.ts';
 import { createDebugLogger } from './debug.ts';
-import { type ExtensionDependencies, startCompanionExtensions } from './extensions.ts';
+import { enrichmentUrls, handleEnrichmentStream, type UrlEnrichment } from './enrichment-stream.ts';
+import { discoverExecutable } from './executables.ts';
+import { createGitHubEnrichmentProvider, type GitHubCommandRunner } from './github-links.ts';
 import { HerdrSessionCache } from './herdr.ts';
 import { findAdapter, harnessFromPath, hookAssociationInputs } from './hooks.ts';
 import { companionPaths } from './xdg.ts';
@@ -38,7 +41,10 @@ export interface CompanionOptions {
   configFile?: string;
   herdrPath?: string;
   herdrRun?: ActionContext['run'];
-  extensionDependencies?: Omit<ExtensionDependencies, 'debug'>;
+  githubPath?: string;
+  githubRun?: GitHubCommandRunner;
+  enrichmentPollIntervalMs?: number;
+  environment?: NodeJS.ProcessEnv;
 }
 
 export interface ReconcileResult {
@@ -676,15 +682,19 @@ export async function createCompanionServer(options: CompanionOptions = {}): Pro
   url: string;
   close: () => Promise<void>;
 }> {
+  const environment = options.environment ?? process.env;
   const host = options.host ?? DEFAULT_HOST;
   const port = options.port ?? DEFAULT_PORT;
-  const dataFile = options.dataFile ?? process.env.MDELLO_COMPANION_DATA ?? DEFAULT_DATA_FILE;
+  const dataFile = options.dataFile ?? environment.MDELLO_COMPANION_DATA ?? DEFAULT_DATA_FILE;
   const configFile =
-    options.configFile ?? process.env.MDELLO_COMPANION_CONFIG ?? DEFAULT_CONFIG_FILE;
+    options.configFile ?? environment.MDELLO_COMPANION_CONFIG ?? DEFAULT_CONFIG_FILE;
   let associations = await loadAssociations(dataFile);
   const [config, boards] = await Promise.all([loadConfig(configFile), loadBoards(configFile)]);
   const webOrigin = await loadWebOrigin(configFile);
-  const herdrPath = options.herdrPath ?? process.env.HERDR_PATH;
+  const [herdrPath, githubPath] = await Promise.all([
+    options.herdrPath || environment.HERDR_PATH || discoverExecutable('herdr', environment),
+    options.githubPath || environment.GH_PATH || discoverExecutable('gh', environment),
+  ]);
   const actionContext: ActionContext = { herdrPath, run: options.herdrRun };
   const herdrCache = new HerdrSessionCache(actionContext);
   const presentAssociations: PresentAssociations = async (entries, ensureSessions = false) => {
@@ -692,8 +702,15 @@ export async function createCompanionServer(options: CompanionOptions = {}): Pro
     return herdrCache.present(entries);
   };
   const herdrEnabled = Boolean(herdrPath);
+  const githubEnabled = Boolean(githubPath);
   let autofocus = config.autofocus === true;
+  let githubLinkEnrichment = config.githubLinkEnrichment === true;
   const clients = new Map<ServerResponse, string>();
+  const enrichmentClients = new Set<ServerResponse>();
+  const enrichmentCache = new Map<string, UrlEnrichment>();
+  const enrichmentProviders = githubPath
+    ? [createGitHubEnrichmentProvider(githubPath, options.githubRun)]
+    : [];
   await mkdir(dirname(dataFile), { recursive: true });
   await open(dataFile, 'a').then((file) => file.close());
 
@@ -800,24 +817,60 @@ export async function createCompanionServer(options: CompanionOptions = {}): Pro
     }
 
     if (request.method === 'GET' && url.pathname === '/settings') {
-      sendJson(response, 200, { autofocus, herdrEnabled });
+      sendJson(response, 200, {
+        autofocus,
+        githubEnabled,
+        githubLinkEnrichment,
+        herdrEnabled,
+      });
       return;
     }
 
     if (request.method === 'POST' && url.pathname === '/settings') {
       try {
-        const input = (await readBody(request)) as { autofocus?: unknown };
-        if (typeof input.autofocus !== 'boolean') {
+        const input = (await readBody(request)) as {
+          autofocus?: unknown;
+          githubLinkEnrichment?: unknown;
+        };
+        if (typeof input.autofocus === 'boolean') {
+          await saveAutofocus(configFile, input.autofocus);
+          autofocus = input.autofocus;
+        } else if (typeof input.githubLinkEnrichment === 'boolean') {
+          await saveGitHubLinkEnrichment(configFile, input.githubLinkEnrichment);
+          githubLinkEnrichment = input.githubLinkEnrichment;
+        } else {
           sendJson(response, 400, { error: 'Invalid settings' });
           return;
         }
-        await saveAutofocus(configFile, input.autofocus);
-        autofocus = input.autofocus;
-        sendJson(response, 200, { autofocus, herdrEnabled });
+        sendJson(response, 200, {
+          autofocus,
+          githubEnabled,
+          githubLinkEnrichment,
+          herdrEnabled,
+        });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         sendJson(response, 400, { error: message });
       }
+      return;
+    }
+
+    if (request.method === 'GET' && url.pathname === '/enrichments') {
+      if (enrichmentProviders.length === 0) {
+        sendJson(response, 409, { error: 'no_enrichment_providers' });
+        return;
+      }
+      const urls = enrichmentUrls(url, enrichmentProviders);
+      if (!urls) {
+        sendJson(response, 400, { error: 'Invalid or unsupported enrichment URLs' });
+        return;
+      }
+      handleEnrichmentStream(request, response, urls, {
+        cache: enrichmentCache,
+        clients: enrichmentClients,
+        pollIntervalMs: options.enrichmentPollIntervalMs,
+        providers: enrichmentProviders,
+      });
       return;
     }
 
@@ -837,10 +890,6 @@ export async function createCompanionServer(options: CompanionOptions = {}): Pro
     });
   });
 
-  const extensionJobs = await startCompanionExtensions(config, boards, {
-    debug,
-    ...options.extensionDependencies,
-  });
   const address = server.address();
   const actualPort = typeof address === 'object' && address ? address.port : port;
   debug('server listening', { host, port: actualPort, boards: boards.length });
@@ -848,9 +897,9 @@ export async function createCompanionServer(options: CompanionOptions = {}): Pro
     server,
     url: `http://${host}:${actualPort}`,
     close: () => {
-      extensionJobs.stop();
       return new Promise<void>((resolveClose, reject) => {
         for (const client of clients.keys()) client.end();
+        for (const client of enrichmentClients) client.end();
         server.close((error) => (error ? reject(error) : resolveClose()));
       });
     },

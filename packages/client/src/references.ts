@@ -13,6 +13,17 @@ export interface Reference {
   icon: string;
 }
 
+export type GitHubLinkStatus = 'open' | 'closed' | 'merged' | 'draft';
+export type GitHubCiStatus = 'passing' | 'failing' | 'pending' | 'none';
+
+export interface GitHubLinkDetails {
+  url: string;
+  number: number;
+  title: string;
+  status: GitHubLinkStatus;
+  ciStatus?: GitHubCiStatus;
+}
+
 export const REFERENCE_ICONS: Record<ReferenceKind, string> = {
   git: gitIcon,
   jira: jiraIcon,

@@ -18,10 +18,7 @@ test('registers multiple boards and updates a moved board by uuid', async () => 
   try {
     const configFile = join(root, 'state', 'companion.json');
     await mkdir(join(root, 'state'));
-    await writeFile(
-      configFile,
-      JSON.stringify({ extensions: { 'github-assignment': { organizations: [] } } }),
-    );
+    await writeFile(configFile, JSON.stringify({ customSetting: { enabled: true } }));
     const boards = await loadBoards(configFile);
     await registerBoard(configFile, boards, { uuid: 'board-a', path: join(root, 'first') });
     await registerBoard(configFile, boards, { uuid: 'board-b', path: join(root, 'second') });
@@ -38,8 +35,8 @@ test('registers multiple boards and updates a moved board by uuid', async () => 
       (await loadBoards(configFile)).map(({ uuid }) => uuid).sort((a, b) => a.localeCompare(b)),
       ['board-a', 'board-b'],
     );
-    assert.deepEqual((await loadConfig(configFile)).extensions, {
-      'github-assignment': { organizations: [] },
+    assert.deepEqual(((await loadConfig(configFile)) as Record<string, unknown>).customSetting, {
+      enabled: true,
     });
   } finally {
     await rm(root, { recursive: true, force: true });

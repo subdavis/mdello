@@ -13,8 +13,8 @@ export interface BoardRegistration {
 
 export interface CompanionConfig {
   autofocus?: boolean;
+  githubLinkEnrichment?: boolean;
   boards: BoardRegistration[];
-  extensions?: Record<string, unknown>;
   webOrigin?: string;
 }
 
@@ -38,13 +38,6 @@ export async function readBoardUuid(boardPath: string): Promise<string> {
   const uuid = readString(await readBoardConfig(boardPath), 'uuid')?.trim();
   if (!uuid) throw new Error(`Board config has no uuid: ${configPath}`);
   return uuid;
-}
-
-export async function readBoardColumns(boardPath: string): Promise<string[]> {
-  const columns = (await readBoardConfig(boardPath)).columns;
-  return Array.isArray(columns)
-    ? columns.filter((column): column is string => typeof column === 'string')
-    : [];
 }
 
 export async function listActiveCards(board: BoardRegistration): Promise<ResolvedCard[]> {
@@ -107,10 +100,21 @@ export async function loadWebOrigin(configFile = DEFAULT_CONFIG_FILE): Promise<s
   }
 }
 
-export async function saveAutofocus(configFile: string, autofocus: boolean): Promise<void> {
+async function saveSetting(configFile: string, setting: object): Promise<void> {
   const config = await loadConfig(configFile);
   await mkdir(dirname(configFile), { recursive: true });
-  await writeFile(configFile, `${JSON.stringify({ ...config, autofocus }, null, 2)}\n`);
+  await writeFile(configFile, `${JSON.stringify({ ...config, ...setting }, null, 2)}\n`);
+}
+
+export async function saveAutofocus(configFile: string, autofocus: boolean): Promise<void> {
+  await saveSetting(configFile, { autofocus });
+}
+
+export async function saveGitHubLinkEnrichment(
+  configFile: string,
+  githubLinkEnrichment: boolean,
+): Promise<void> {
+  await saveSetting(configFile, { githubLinkEnrichment });
 }
 
 /** Preserves every other top-level setting instead of overwriting the file. */

@@ -41,10 +41,11 @@ Default endpoint: `http://127.0.0.1:51618`. JSON request bodies are limited to 6
 | `DELETE /associations?cardUuid=…&harness=…&sessionId=…` | Forgets that harness session from only the selected card, preserving its associations with other cards. |
 | `GET /events?boardUuid=…&boardPath=…` | Validates and registers board, reconciles stored paths/UUIDs, then opens SSE stream. One Herdr state sync runs when the frontend connects. Sends `snapshot` first and `association` after each update for that board, enriched from the companion's cached Herdr state when resolvable. |
 | `POST /hooks/<harness>` | Body is that harness's raw lifecycle payload. A registered [harness adapter](agent-extension.md) translates it; the companion publishes to the event's cards plus every card already held for that `(harness, sessionId)`. Sessions resolve against cached Herdr state; an unknown session triggers one state sync, and a still-unresolved session is negatively cached. Always answers `{}`. Browser requests carrying `Origin`, `Referer`, or `Sec-Fetch-Site` are rejected with `403`; hooks are for local agent clients only. Unknown harness returns `404`. |
-| `GET /settings` | Returns `{ autofocus: boolean, herdrEnabled: boolean }`; Herdr controls are enabled when `HERDR_PATH` is installed. |
-| `POST /settings` | Persists `{ autofocus: boolean }` in the companion config. |
+| `GET /settings` | Returns `{ autofocus, githubEnabled, githubLinkEnrichment, herdrEnabled }`; CLI controls are enabled when their executable is configured through `GH_PATH`/`HERDR_PATH` or discovered on the companion's active `PATH`. |
+| `POST /settings` | Persists either `{ autofocus: boolean }` or `{ githubLinkEnrichment: boolean }` in the companion config. |
+| `GET /enrichments?url=…` | Opens the provider-neutral SSE subscription for up to 50 repeated `url` parameters. Emits cached `{ items, errors }` first, immediately refreshes URLs through their registered providers, streams results as each lookup settles, and polls every 30 seconds until the client disconnects. Every item includes a `provider` discriminator. GitHub is currently the only provider: active PRs include `ciStatus` as `passing`, `failing`, `pending`, or `none`; closed and merged PRs omit it. Successful results are cached in companion memory. Returns `409` when no enrichment providers are available and `400` for unsupported URLs. |
 | `POST /actions` | Body is `{ action, ... }`. Actions live in their own module ([`actions.ts`](../packages/companion/src/actions.ts)), isolated from the association/board logic above, as a small `ACTIONS` registry keyed by action name. Returns `200 { ok: true }` on success, `400` for a body that isn't a recognized action, `500` if the herdr CLI itself fails. |
-| ↳ `focus` | `{ action: "focus", harness, sessionId, sessionFile? }` — the session to focus. Joins `herdr agent list` against `sessionId` (or `sessionFile` for `harness: pi`), runs `herdr agent focus <pane_id>`, then projects its `tab_id` to attached Herdr clients with `herdr tab focus <tab_id>`. `404` if no pane matches, `409` if `HERDR_PATH` is unavailable. |
+| ↳ `focus` | `{ action: "focus", harness, sessionId, sessionFile? }` — the session to focus. Joins `herdr agent list` against `sessionId` (or `sessionFile` for `harness: pi`), runs `herdr agent focus <pane_id>`, then projects its `tab_id` to attached Herdr clients with `herdr tab focus <tab_id>`. `404` if no pane matches, `409` if `herdr` is unavailable through both `HERDR_PATH` and `PATH`. |
 
 Errors use `{ error: string }`. Invalid requests return `400`, internal delete failures `500`, and unknown routes `404`. Backfill is deliberately absent: it rewrites the whole log, so it is a CLI command only.
 
@@ -52,7 +53,7 @@ Errors use `{ error: string }`. Invalid requests return `400`, internal delete f
 
 ```text
 mdello-companion serve                        Start sidecar (default command)
-mdello-companion backfill [claude|pi]         Rebuild one harness from its sessions, or both, then exit
+mdello-companion backfill [claude|opencode|pi] Rebuild one harness from its sessions, or all, then exit
 mdello-companion status                       List tracked boards and event counts
 mdello-companion purge                        Clear association history
 mdello-companion reset                        Alias for purge
@@ -68,8 +69,12 @@ to `${XDG_CONFIG_HOME:-~/.config}/mdello/companion.json`, while `MDELLO_COMPANIO
 to `${XDG_STATE_HOME:-~/.local/state}/mdello/companion.jsonl`. Explicit `MDELLO_COMPANION_*`
 file overrides win over XDG defaults. Empty or relative XDG directory values are ignored, following
 the XDG base-directory specification. Backfill reads `CLAUDE_SESSIONS_DIR` (default
-`~/.claude/projects`) and `PI_SESSIONS_DIR` (default `~/.pi/agent/sessions`). Set `DEBUG=1` for
-structured stderr logs.
+`~/.claude/projects`), `OPENCODE_SESSIONS_DB` (default
+`${XDG_DATA_HOME:-~/.local/share}/opencode/opencode.db`), and `PI_SESSIONS_DIR` (default
+`~/.pi/agent/sessions`). Set `DEBUG=1` for
+structured stderr logs. When `HERDR_PATH` is unset, an interactively started companion discovers
+`herdr` from its active `PATH`. GitHub link enrichment similarly runs `gh` from active `PATH` when
+`GH_PATH` is unset.
 
 The macOS installer interactively confirms the current Node executable and any discovered `herdr`
 or `gh` executable. Their absolute paths are stored as `HERDR_PATH` and `GH_PATH` in the launchd
@@ -79,53 +84,22 @@ stdout/stderr logs go to the state directory. It then writes absolute executable
 the launchd plist without copying the shell `PATH`, restarts the service, and removes `~/.mdello`
 when empty. Missing `herdr` is allowed and disables herdr actions.
 
-`companion.json` holds `boards`, `autofocus`, and user-edited settings. `webOrigin` is the HTTP(S) origin allowed to call browser-facing routes and defaults to `https://subdavis.github.io`; configure an origin only, without an application path. Loopback browser origins remain allowed for local development. Saving board registrations or autofocus preserves every other setting.
+`companion.json` holds `boards`, `autofocus`, `githubLinkEnrichment`, and user-edited settings. `webOrigin` is the HTTP(S) origin allowed to call browser-facing routes and defaults to `https://subdavis.github.io`; configure an origin only, without an application path. Loopback browser origins remain allowed for local development. Saving board registrations or autofocus preserves every other setting.
 
 ```json
 {
   "autofocus": true,
+  "githubLinkEnrichment": true,
   "webOrigin": "https://example.com"
 }
 ```
 
 Restart the companion after changing these settings.
 
-### GitHub assignment automation
-
-The optional `extensions.github-assignment` job uses the authenticated `gh` CLI to create `Triage`
-cards for open issues and pull requests assigned to the current user, plus pull requests matched by
-GitHub's `user-review-requested:@me` qualifier. This qualifier includes only direct requests and
-excludes requests made through one of the user's teams. The target board must already
-be registered with the companion and define a column named exactly `Triage`.
-
-```json
-{
-  "extensions": {
-    "github-assignment": {
-      "schedule": "0 * * * *",
-      "organizations": ["SonarSource"],
-      "boardUuid": "your-board-uuid"
-    }
-  }
-}
-```
-
-`organizations` accepts any number of GitHub organization or owner names. An empty array omits the
-owner filter and searches every repository visible to the authenticated user. Each search requests up
-to GitHub Search's 1,000-result limit. Run `gh auth status` as the same user that installs the macOS
-service before enabling the extension. Re-run `mdello-companion install macos` if `gh` was installed
-or moved after service installation, then restart the companion after config changes.
-
-Each scheduled run completes all three GitHub searches before writing files, merges duplicate URLs,
-and prefers `Review Requested` when a pull request is also assigned. Existing active cards containing
-the URL are left unchanged; archived cards are ignored. Runs do not overlap. Configuration and `gh`
-errors disable or fail only this automation; set `DEBUG=1` to include details in the companion error
-log.
-
 ## Behavior
 
 - **Persistence:** updates append to JSONL; loading folds events by association identity. Card deletion and session forgetting expunge history instead of appending a tombstone.
 - **Board registration:** subscribing records a stable board UUID + current absolute path.
 - **Reconciliation:** subscription locates global card UUIDs across every registered board, refreshes board/path metadata after moves, and removes associations for cards no longer active.
-- **Backfill:** an explicit maintenance command, never triggered by the web app. It scans one named harness's JSONL sessions modified within 30 days against every registered board, reading Pi sessions and Claude Code transcripts through that harness's own scanner. It associates absolute card paths found in user messages plus Markdown files a *successful* tool call modified. It replaces that harness's associations globally, passes every other harness's through untouched, retains a matching live non-`closed` status, marks recovered sessions `closed`, and removes stale matches. It refuses to run while a companion holds the port, because the server keeps associations in memory and would overwrite the result.
+- **Backfill:** an explicit maintenance command, never triggered by the web app. It scans one named harness's sessions updated within 30 days against every registered board, reading Pi and Claude Code JSONL transcripts or OpenCode's SQLite database through that harness's own scanner. It associates absolute card paths found in user messages plus Markdown files a *successful* tool call modified. It replaces that harness's associations globally, passes every other harness's through untouched, retains a matching live non-`closed` status, marks recovered sessions `closed`, and removes stale matches. It refuses to run while a companion holds the port, because the server keeps associations in memory and would overwrite the result.
 - **Subscription:** each client receives only its board. Initial/reconciliation/delete state uses `snapshot`; live updates use `association`. Browser reconnects after one second and replaces local state on snapshots.

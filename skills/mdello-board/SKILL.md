@@ -67,6 +67,7 @@ Read configured columns first, then group root card files by `column`.
 `uuid` if an agent or human omits it, but authors should include it.
 
 **Move card between columns**—edit only its `column` frontmatter. File path stays stable.
+Don't move cards unless you're asked to.
 
 **Edit card**—keep valid YAML and first-line `---` fence. Avoid unrelated reformatting.
 

@@ -1,13 +1,20 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { useBoard } from '../composables/useBoard';
+import {
+  subscribeUrlEnrichments,
+  type UrlEnrichment,
+  useGitHubLinkEnrichment,
+} from '../composables/useCompanion';
 import { useMarkdownImport } from '../composables/useMarkdownImport';
 import { showToast } from '../composables/useToast';
 import { formatStamp } from '../format';
 import type { CardAttachment } from '../fs/attachments';
 import type { Card } from '../fs/board';
 import { renderMarkdown, setTaskChecked } from '../markdown';
+import type { GitHubLinkDetails } from '../references';
 import Agents from './Agents.vue';
+import GitHubReferenceBadge from './GitHubReferenceBadge.vue';
 import IconGlyph from './IconGlyph.vue';
 import MarkdownEditor from './MarkdownEditor.vue';
 import Overlay from './Overlay.vue';
@@ -32,7 +39,16 @@ const editing = ref(false);
 const editor = ref<InstanceType<typeof MarkdownEditor> | null>(null);
 const modalWidth = ref(storedModalWidth());
 const modalStyle = computed(() => ({ width: `${modalWidth.value}px` }));
+const githubLinkEnrichment = useGitHubLinkEnrichment();
+const githubLinks = ref<GitHubLinkDetails[]>([]);
+const githubLinksByUrl = computed(() => new Map(githubLinks.value.map((link) => [link.url, link])));
 const rendered = computed(() => renderMarkdown(props.card.body || '_No description_'));
+const enrichedReferences = computed(() =>
+  props.card.references.map((reference) => ({
+    ...reference,
+    github: githubLinksByUrl.value.get(reference.url),
+  })),
+);
 const { fullPath, clipboardPath } = useBoardExtras(board, props.card.name);
 /** Undefined until `path` is filled in inside the board's mdello.yml. */
 const editorLink = computed(() => board.cardUrl(props.card));
@@ -47,6 +63,32 @@ const loadedAttachments = ref<LoadedAttachment[]>([]);
 const openImage = ref<LoadedAttachment | null>(null);
 const draggingFiles = ref(false);
 let attachmentLoad = 0;
+let closeGitHubLinkStream: () => void = () => undefined;
+
+function isGitHubEnrichment(
+  enrichment: UrlEnrichment,
+): enrichment is UrlEnrichment & GitHubLinkDetails {
+  return enrichment.provider === 'github';
+}
+
+watch(
+  [githubLinkEnrichment, () => props.card.references.map((reference) => reference.url).join('\n')],
+  ([enabled]) => {
+    closeGitHubLinkStream();
+    githubLinks.value = [];
+    if (!enabled) return;
+    const urls = props.card.references
+      .filter(
+        (reference) =>
+          reference.kind === 'git' && /^https:\/\/(?:www\.)?github\.com\//.test(reference.url),
+      )
+      .map((reference) => reference.url);
+    closeGitHubLinkStream = subscribeUrlEnrichments(urls, (enrichments) => {
+      githubLinks.value = enrichments.filter(isGitHubEnrichment);
+    });
+  },
+  { immediate: true },
+);
 
 function revokeAttachments(): void {
   for (const attachment of loadedAttachments.value) URL.revokeObjectURL(attachment.url);
@@ -135,6 +177,7 @@ watch(
 
 onBeforeUnmount(() => {
   attachmentLoad += 1;
+  closeGitHubLinkStream();
   revokeAttachments();
 });
 
@@ -258,18 +301,20 @@ function onEscape(): void {
         <dt>References</dt>
         <dd>
           <div class="ref-row">
-            <a
-              v-for="reference in card.references"
-              :key="reference.url"
-              class="ref"
-              :href="reference.url"
-              target="_blank"
-              rel="noreferrer"
-              :title="reference.url"
-            >
-              <img class="ref-icon" :src="reference.icon" alt="" />
-              {{ reference.label }}
-            </a>
+            <template v-for="reference in enrichedReferences" :key="reference.url">
+              <GitHubReferenceBadge v-if="reference.github" :details="reference.github" />
+              <a
+                v-else
+                class="ref"
+                :href="reference.url"
+                target="_blank"
+                rel="noreferrer"
+                :title="reference.url"
+              >
+                <img class="ref-icon" :src="reference.icon" alt="" />
+                {{ reference.label }}
+              </a>
+            </template>
           </div>
         </dd>
       </template>

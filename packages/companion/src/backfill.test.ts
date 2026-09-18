@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 import { backfillAssociations } from './backfill.ts';
 import type { Association } from './server.ts';
@@ -324,6 +325,121 @@ test('recovers Claude Code transcripts and leaves another harness alone', async 
   }
 });
 
+test('recovers OpenCode prompts and completed Markdown modifications from SQLite', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mdello-backfill-'));
+  try {
+    const boardRoot = join(root, 'board');
+    const databasePath = join(root, 'opencode.db');
+    const dataFile = join(root, 'companion.jsonl');
+    const configFile = join(root, 'companion.json');
+    const promptedCard = join(boardRoot, 'prompted.md');
+    const writtenCard = join(boardRoot, 'written.md');
+    await mkdir(boardRoot);
+    await Promise.all([
+      writeCard(promptedCard, 'card-a'),
+      writeCard(writtenCard, 'card-b'),
+      writeFile(
+        configFile,
+        JSON.stringify({
+          boards: [{ uuid: 'board-a', path: boardRoot, updatedAt: '2026-01-01T00:00:00.000Z' }],
+        }),
+      ),
+    ]);
+
+    const database = new DatabaseSync(databasePath);
+    database.exec(`
+      CREATE TABLE session (id TEXT PRIMARY KEY, directory TEXT, time_updated INTEGER);
+      CREATE TABLE message (id TEXT PRIMARY KEY, session_id TEXT, time_created INTEGER, data TEXT);
+      CREATE TABLE part (id TEXT PRIMARY KEY, message_id TEXT, time_created INTEGER, data TEXT);
+    `);
+    database
+      .prepare('INSERT INTO session VALUES (?, ?, ?)')
+      .run('ses_123', boardRoot, Date.parse('2026-01-10T00:03:00.000Z'));
+    database
+      .prepare('INSERT INTO message VALUES (?, ?, ?, ?)')
+      .run('msg-user', 'ses_123', 1, JSON.stringify({ role: 'user' }));
+    database
+      .prepare('INSERT INTO message VALUES (?, ?, ?, ?)')
+      .run('msg-agent', 'ses_123', 2, JSON.stringify({ role: 'assistant' }));
+    const insertPart = database.prepare('INSERT INTO part VALUES (?, ?, ?, ?)');
+    insertPart.run(
+      'part-prompt',
+      'msg-user',
+      1,
+      JSON.stringify({ type: 'text', text: `Work on ${promptedCard}` }),
+    );
+    insertPart.run(
+      'part-write',
+      'msg-agent',
+      2,
+      JSON.stringify({
+        type: 'tool',
+        tool: 'write',
+        state: { status: 'completed', input: { filePath: 'written.md' } },
+      }),
+    );
+    insertPart.run(
+      'part-failed',
+      'msg-agent',
+      3,
+      JSON.stringify({
+        type: 'tool',
+        tool: 'edit',
+        state: { status: 'error', input: { filePath: 'failed.md' } },
+      }),
+    );
+    database.close();
+
+    const result = await backfillAssociations({
+      harness: 'opencode',
+      sessionsRoot: databasePath,
+      dataFile,
+      configFile,
+      now: new Date('2026-01-15'),
+    });
+    assert.deepEqual(result, {
+      scannedSessions: 1,
+      matchedSessions: 1,
+      foundAssociations: 2,
+      addedAssociations: 2,
+      existingAssociations: 0,
+      purgedAssociations: 0,
+    });
+
+    const associations = (await readFile(dataFile, 'utf8'))
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as Association);
+    assert.deepEqual(
+      associations.map(({ cardUuid, harness, sessionId, sessionFile, updatedAt }) => ({
+        cardUuid,
+        harness,
+        sessionId,
+        sessionFile,
+        updatedAt,
+      })),
+      [
+        {
+          cardUuid: 'card-a',
+          harness: 'opencode',
+          sessionId: 'ses_123',
+          sessionFile: databasePath,
+          updatedAt: '2026-01-10T00:03:00.000Z',
+        },
+        {
+          cardUuid: 'card-b',
+          harness: 'opencode',
+          sessionId: 'ses_123',
+          sessionFile: databasePath,
+          updatedAt: '2026-01-10T00:03:00.000Z',
+        },
+      ],
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('reports no sessions when a harness has never been installed', async () => {
   const root = await mkdtemp(join(tmpdir(), 'mdello-backfill-'));
   try {
@@ -338,6 +454,13 @@ test('reports no sessions when a harness has never been installed', async () => 
     });
 
     assert.equal(result.scannedSessions, 0);
+    const opencodeResult = await backfillAssociations({
+      harness: 'opencode',
+      sessionsRoot: join(root, 'absent.db'),
+      dataFile: join(root, 'companion.jsonl'),
+      configFile,
+    });
+    assert.equal(opencodeResult.scannedSessions, 0);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

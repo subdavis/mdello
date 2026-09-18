@@ -1,11 +1,13 @@
 import type { Dirent } from 'node:fs';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { resolve } from 'node:path';
+import { isAbsolute, resolve } from 'node:path';
 import { scanTranscript } from '@mdello/claude-extension/transcript';
 import type { HarnessSessionScan } from '@mdello/common/harness';
 import {
   extractMarkdownPaths,
+  isModificationToolName,
+  markdownToolPath,
   messageText,
   successfulModificationPaths,
 } from '@mdello/common/paths';
@@ -40,7 +42,12 @@ interface SessionScanner {
   sessionsRoot: string;
   /** Override for the root, so a test or an unusual install need not move its sessions. */
   envVar: string;
-  scan(contents: string): HarnessSessionScan;
+  scan?: (contents: string) => HarnessSessionScan;
+  scanDatabase?: (path: string, cutoff: number) => Promise<StoredSessionScan[]>;
+}
+
+interface StoredSessionScan extends HarnessSessionScan {
+  sessionFile: string;
 }
 
 const MAX_LOOKBACK_MS = 30 * 24 * 60 * 60 * 1000;
@@ -84,11 +91,108 @@ function scanPiSession(contents: string): HarnessSessionScan {
   return { ...scan, cardPaths: [...cardPaths] };
 }
 
+function record(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : undefined;
+}
+
+function parseJson(value: unknown): Record<string, unknown> | undefined {
+  if (typeof value !== 'string') return undefined;
+  try {
+    return record(JSON.parse(value));
+  } catch {
+    return undefined;
+  }
+}
+
+interface OpenCodeRow {
+  sessionId: string;
+  directory: string;
+  updatedAt: number;
+  message: string | null;
+  part: string | null;
+}
+
+async function scanOpenCodeDatabase(path: string, cutoff: number): Promise<StoredSessionScan[]> {
+  try {
+    await stat(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw error;
+  }
+  const { DatabaseSync } = await import('node:sqlite');
+  let database: InstanceType<typeof DatabaseSync>;
+  try {
+    database = new DatabaseSync(path, { readOnly: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw error;
+  }
+
+  try {
+    const rows = database
+      .prepare(
+        `SELECT s.id AS sessionId, s.directory, s.time_updated AS updatedAt,
+                m.data AS message, p.data AS part
+           FROM session s
+           LEFT JOIN message m ON m.session_id = s.id
+           LEFT JOIN part p ON p.message_id = m.id
+          WHERE s.time_updated >= ?
+          ORDER BY s.time_updated, m.time_created, p.time_created`,
+      )
+      .all(cutoff) as unknown as OpenCodeRow[];
+    const sessions = new Map<string, StoredSessionScan>();
+
+    for (const row of rows) {
+      let scan = sessions.get(row.sessionId);
+      if (!scan) {
+        scan = {
+          sessionId: row.sessionId,
+          sessionFile: path,
+          updatedAt: new Date(row.updatedAt).toISOString(),
+          cardPaths: [],
+        };
+        sessions.set(row.sessionId, scan);
+      }
+
+      const message = parseJson(row.message);
+      const part = parseJson(row.part);
+      if (!part) continue;
+      if (message?.role === 'user' && part.type === 'text' && part.synthetic !== true) {
+        for (const cardPath of extractMarkdownPaths(String(part.text ?? ''))) {
+          if (!scan.cardPaths.includes(cardPath)) scan.cardPaths.push(cardPath);
+        }
+      }
+      const state = record(part.state);
+      if (
+        part.type === 'tool' &&
+        isModificationToolName(part.tool) &&
+        state?.status === 'completed'
+      ) {
+        const cardPath = markdownToolPath(record(state.input)?.filePath, row.directory);
+        if (cardPath && !scan.cardPaths.includes(cardPath)) scan.cardPaths.push(cardPath);
+      }
+    }
+    return [...sessions.values()];
+  } finally {
+    database.close();
+  }
+}
+
+const xdgDataHome =
+  process.env.XDG_DATA_HOME && isAbsolute(process.env.XDG_DATA_HOME)
+    ? process.env.XDG_DATA_HOME
+    : resolve(homedir(), '.local', 'share');
+
 const SCANNERS: Record<string, SessionScanner> = {
   claude: {
     sessionsRoot: resolve(homedir(), '.claude', 'projects'),
     envVar: 'CLAUDE_SESSIONS_DIR',
     scan: scanTranscript,
+  },
+  opencode: {
+    sessionsRoot: resolve(xdgDataHome, 'opencode', 'opencode.db'),
+    envVar: 'OPENCODE_SESSIONS_DB',
+    scanDatabase: scanOpenCodeDatabase,
   },
   pi: {
     sessionsRoot: resolve(homedir(), '.pi', 'agent', 'sessions'),
@@ -129,6 +233,23 @@ async function listSessionFiles(root: string, cutoff: number): Promise<string[]>
     }),
   );
   return nested.flat();
+}
+
+async function scanStoredSessions(
+  scanner: SessionScanner,
+  sessionsRoot: string,
+  cutoff: number,
+): Promise<StoredSessionScan[]> {
+  if (scanner.scanDatabase) return scanner.scanDatabase(sessionsRoot, cutoff);
+  const scan = scanner.scan;
+  if (!scan) return [];
+  const sessionFiles = await listSessionFiles(sessionsRoot, cutoff);
+  return Promise.all(
+    sessionFiles.map(async (sessionFile) => ({
+      ...scan(await readFile(sessionFile, 'utf8')),
+      sessionFile,
+    })),
+  );
 }
 
 function recoveredAssociation(
@@ -175,14 +296,13 @@ export async function backfillAssociations(options: BackfillOptions): Promise<Ba
   );
 
   const cutoff = (options.now ?? new Date()).getTime() - MAX_LOOKBACK_MS;
-  const sessionFiles = await listSessionFiles(sessionsRoot, cutoff);
+  const sessions = await scanStoredSessions(scanner, sessionsRoot, cutoff);
   const replacement = new Map<string, Association>();
   let matchedSessions = 0;
   let foundAssociations = 0;
   let existingAssociations = 0;
 
-  for (const sessionFile of sessionFiles) {
-    const scan = scanner.scan(await readFile(sessionFile, 'utf8'));
+  for (const scan of sessions) {
     if (!scan.sessionId || scan.cardPaths.length === 0) continue;
     let matched = false;
 
@@ -200,7 +320,7 @@ export async function backfillAssociations(options: BackfillOptions): Promise<Ba
           card,
           harness,
           scan.sessionId,
-          sessionFile,
+          scan.sessionFile,
           scan.updatedAt,
           existingAssociation,
         ),
@@ -213,7 +333,7 @@ export async function backfillAssociations(options: BackfillOptions): Promise<Ba
   const purgedAssociations = [...existing.keys()].filter((key) => !replacement.has(key)).length;
 
   return {
-    scannedSessions: sessionFiles.length,
+    scannedSessions: sessions.length,
     matchedSessions,
     foundAssociations,
     addedAssociations: [...replacement.keys()].filter((key) => !existing.has(key)).length,

@@ -23,7 +23,7 @@ interface CommandResult {
 }
 
 export interface ActionContext {
-  /** Absolute herdr executable path discovered during service installation. */
+  /** Herdr executable path from configuration or active PATH discovery. */
   herdrPath?: string;
   /** Injectable for tests; defaults to actually spawning the process. */
   run?: (command: string, args: string[]) => Promise<CommandResult>;

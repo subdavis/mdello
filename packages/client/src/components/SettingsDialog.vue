@@ -1,7 +1,14 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { useBoard } from '../composables/useBoard';
-import { setAutofocus, useAutofocus, useCompanionStatus } from '../composables/useCompanion';
+import {
+  setAutofocus,
+  setGitHubLinkEnrichment,
+  useAutofocus,
+  useCompanionStatus,
+  useGitHubEnabled,
+  useGitHubLinkEnrichment,
+} from '../composables/useCompanion';
 import { useTheme } from '../composables/useTheme';
 import { CONFIG_FILE, DEFAULT_CONFIG } from '../fs/config';
 import IconGlyph from './IconGlyph.vue';
@@ -25,7 +32,10 @@ const board = useBoard();
 const { themePreference } = useTheme();
 const companionStatus = useCompanionStatus();
 const autofocus = useAutofocus();
+const githubEnabled = useGitHubEnabled();
+const githubLinkEnrichment = useGitHubLinkEnrichment();
 const savingAutofocus = ref(false);
+const savingGitHubLinkEnrichment = ref(false);
 const path = ref(board.rootPath.value);
 const editor = ref(board.editorTemplate.value);
 const saving = ref(false);
@@ -75,6 +85,13 @@ async function toggleAutofocus(event: Event): Promise<void> {
   const enabled = (event.target as HTMLInputElement).checked;
   autofocusFailed.value = !(await setAutofocus(enabled));
   savingAutofocus.value = false;
+}
+
+async function toggleGitHubLinkEnrichment(event: Event): Promise<void> {
+  savingGitHubLinkEnrichment.value = true;
+  const enabled = (event.target as HTMLInputElement).checked;
+  autofocusFailed.value = !(await setGitHubLinkEnrichment(enabled));
+  savingGitHubLinkEnrichment.value = false;
 }
 
 /**
@@ -191,6 +208,27 @@ onMounted(() => pathInput.value?.focus());
               :checked="autofocus"
               :disabled="savingAutofocus"
               @change="toggleAutofocus"
+            />
+            <span aria-hidden="true" />
+          </span>
+        </label>
+      </section>
+
+      <section v-if="companionStatus === 'connected'" class="settings-note">
+        <label class="settings-toggle">
+          <span>
+            <span class="settings-label">GitHub link enrichment</span>
+            <small class="settings-hint">
+              Fetch PR and issue titles and statuses through <code>gh</code> when a card opens.
+            </small>
+          </span>
+          <span class="settings-switch">
+            <input
+              type="checkbox"
+              role="switch"
+              :checked="githubLinkEnrichment"
+              :disabled="savingGitHubLinkEnrichment || !githubEnabled"
+              @change="toggleGitHubLinkEnrichment"
             />
             <span aria-hidden="true" />
           </span>

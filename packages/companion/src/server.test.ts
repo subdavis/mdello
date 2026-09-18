@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { request } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -22,6 +22,19 @@ async function registerBoard(baseUrl: string, boardUuid: string, boardPath: stri
   const response = await fetch(eventsUrl(baseUrl, boardUuid, boardPath));
   assert.equal(response.status, 200);
   await response.body?.cancel();
+}
+
+async function readUntil(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  expected: string,
+): Promise<string> {
+  let output = '';
+  while (!output.includes(expected)) {
+    const result = await reader.read();
+    if (result.done) throw new Error(`Stream ended before ${expected}`);
+    output += new TextDecoder().decode(result.value);
+  }
+  return output;
 }
 
 function rawGet(
@@ -173,6 +186,66 @@ test('resolves subscribed live associations and defaults a missing harness', asy
     });
     assert.equal(unknown.status, 202);
     assert.deepEqual(await unknown.json(), { ignored: true, reason: 'unknown_card' });
+  } finally {
+    await companion.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('discovers herdr from the active PATH when no path is configured', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mdello-server-'));
+  const binDirectory = join(root, 'bin');
+  const herdrPath = join(binDirectory, 'herdr');
+  await mkdir(binDirectory);
+  await writeFile(herdrPath, '#!/bin/sh\n');
+  await chmod(herdrPath, 0o755);
+  const calls: [string, string[]][] = [];
+  const companion = await createCompanionServer({
+    port: 0,
+    dataFile: join(root, 'companion.jsonl'),
+    configFile: join(root, 'companion.json'),
+    environment: { PATH: binDirectory },
+    herdrRun: async (command, args) => {
+      calls.push([command, args]);
+      if (args[0] === 'agent' && args[1] === 'list') {
+        return {
+          stdout: JSON.stringify({
+            result: {
+              agents: [
+                {
+                  agent_session: { value: 'session-a' },
+                  pane_id: 'wA:pT',
+                  tab_id: 'wA:t8',
+                },
+              ],
+            },
+          }),
+        };
+      }
+      return { stdout: '' };
+    },
+  });
+  try {
+    const settings = await fetch(`${companion.url}/settings`);
+    assert.deepEqual(await settings.json(), {
+      autofocus: false,
+      githubEnabled: false,
+      githubLinkEnrichment: false,
+      herdrEnabled: true,
+    });
+
+    const response = await fetch(`${companion.url}/actions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'focus', harness: 'claude', sessionId: 'session-a' }),
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { ok: true });
+    assert.deepEqual(calls, [
+      [herdrPath, ['agent', 'list']],
+      [herdrPath, ['agent', 'focus', 'wA:pT']],
+      [herdrPath, ['tab', 'focus', 'wA:t8']],
+    ]);
   } finally {
     await companion.close();
     await rm(root, { recursive: true, force: true });
@@ -474,6 +547,68 @@ test('reads and persists autofocus in companion settings', async () => {
     });
     assert.equal(invalid.status, 400);
   } finally {
+    await companion.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('streams cached URL enrichment, refreshes, polls, and stops on close', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mdello-server-'));
+  const configFile = join(root, 'companion.json');
+  let calls = 0;
+  const companion = await createCompanionServer({
+    port: 0,
+    dataFile: join(root, 'companion.jsonl'),
+    configFile,
+    githubPath: '/usr/local/bin/gh',
+    enrichmentPollIntervalMs: 100,
+    githubRun: async () => {
+      calls += 1;
+      return {
+        stdout: JSON.stringify({ number: 12, title: `Feature ${calls}`, state: 'OPEN' }),
+      };
+    },
+  });
+  const url = 'https://github.com/owner/repo/pull/12';
+  const streamUrl = `${companion.url}/enrichments?${new URLSearchParams({ url })}`;
+  const firstController = new AbortController();
+  const secondController = new AbortController();
+
+  try {
+    const saved = await fetch(`${companion.url}/settings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ githubLinkEnrichment: true }),
+    });
+    assert.equal(saved.status, 200);
+    assert.equal(JSON.parse(await readFile(configFile, 'utf8')).githubLinkEnrichment, true);
+
+    const first = await fetch(streamUrl, { signal: firstController.signal });
+    assert.equal(first.headers.get('content-type'), 'text/event-stream');
+    const firstReader = first.body?.getReader();
+    assert.ok(firstReader);
+    const firstEvents = await readUntil(firstReader, 'Feature 1');
+    assert.match(firstEvents, /"items":\[\]/);
+    await firstReader.cancel();
+    firstController.abort();
+
+    const second = await fetch(streamUrl, { signal: secondController.signal });
+    const secondReader = second.body?.getReader();
+    assert.ok(secondReader);
+    const secondEvents = await readUntil(secondReader, 'Feature 2');
+    assert.ok(secondEvents.indexOf('Feature 1') < secondEvents.indexOf('Feature 2'));
+
+    await new Promise((resolve) => setTimeout(resolve, 130));
+    assert.ok(calls >= 3);
+    await secondReader.cancel();
+    secondController.abort();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    const callsAfterClose = calls;
+    await new Promise((resolve) => setTimeout(resolve, 130));
+    assert.equal(calls, callsAfterClose);
+  } finally {
+    firstController.abort();
+    secondController.abort();
     await companion.close();
     await rm(root, { recursive: true, force: true });
   }
@@ -829,50 +964,6 @@ test('creates missing parent directory when purging companion session data', asy
     await purgeAssociations(dataFile);
 
     assert.equal(await readFile(dataFile, 'utf8'), '');
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-});
-
-test('stops scheduled extensions when the companion closes', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'mdello-server-'));
-  try {
-    const boardPath = join(root, 'board');
-    const configFile = join(root, 'companion.json');
-    await mkdir(boardPath);
-    await writeFile(join(boardPath, 'mdello.yml'), 'uuid: board-a\ncolumns: [Triage]\n');
-    await writeFile(
-      configFile,
-      JSON.stringify({
-        boards: [
-          {
-            uuid: 'board-a',
-            path: boardPath,
-            updatedAt: '2026-09-18T12:00:00Z',
-          },
-        ],
-        extensions: {
-          'github-assignment': {
-            schedule: '0 * * * *',
-            organizations: [],
-            boardUuid: 'board-a',
-          },
-        },
-      }),
-    );
-    let stopped = false;
-    const companion = await createCompanionServer({
-      port: 0,
-      dataFile: join(root, 'companion.jsonl'),
-      configFile,
-      extensionDependencies: {
-        schedule: () => ({ stop: () => (stopped = true) }),
-      },
-    });
-
-    assert.equal(stopped, false);
-    await companion.close();
-    assert.equal(stopped, true);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

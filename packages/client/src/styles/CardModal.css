@@ -277,6 +277,67 @@
   filter: brightness(0.92);
 }
 
+.github-ref {
+  --github-status-bg: var(--column-bg);
+  --github-status-line: var(--line-strong);
+  --github-status-text: var(--muted);
+  max-width: 100%;
+  background: var(--github-status-bg);
+}
+
+.github-ref.is-open {
+  --github-status-text: var(--success-text);
+}
+
+.github-ref.is-closed {
+  --github-status-text: var(--danger-text);
+}
+
+.github-ref.is-draft {
+  --github-status-text: var(--warning-text);
+}
+
+.github-ref.is-merged {
+  --github-status-text: var(--accent);
+}
+
+.github-ref-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.github-ref-status,
+.github-ci {
+  flex: none;
+  border-left: 1px solid var(--github-status-line);
+  padding: 0 var(--space-1);
+  color: var(--github-status-text);
+  font-size: var(--font-2xs);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.github-ci {
+  --github-ci-line: var(--line-strong);
+  --github-ci-text: var(--muted);
+  border-left-color: var(--github-ci-line);
+  background: var(--github-ci-bg);
+  color: var(--github-ci-text);
+}
+
+.github-ci[data-status="passing"] {
+  --github-ci-text: var(--success-text);
+}
+
+.github-ci[data-status="failing"] {
+  --github-ci-text: var(--danger-text);
+}
+
+.github-ci[data-status="pending"] {
+  --github-ci-text: var(--warning-text);
+}
+
 .history-item {
   margin-right: var(--space-2);
   padding: calc(var(--space-1) / 2);

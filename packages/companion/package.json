@@ -11,7 +11,6 @@
   "dependencies": {
     "@mdello/claude-extension": "workspace:*",
     "@mdello/common": "workspace:*",
-    "croner": "^10.0.1",
     "js-yaml": "^5.3.0"
   },
   "devDependencies": {
