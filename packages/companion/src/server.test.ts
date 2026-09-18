@@ -438,6 +438,47 @@ test('restricts browser requests to configured and loopback origins', async () =
   }
 });
 
+test('reads and persists autofocus in companion settings', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mdello-server-'));
+  const configFile = join(root, 'companion.json');
+  await writeFile(
+    configFile,
+    JSON.stringify({ autofocus: true, webOrigin: 'https://mdello.example' }),
+  );
+  const companion = await createCompanionServer({
+    port: 0,
+    dataFile: join(root, 'companion.jsonl'),
+    configFile,
+  });
+
+  try {
+    const initial = await fetch(`${companion.url}/settings`);
+    assert.equal(((await initial.json()) as { autofocus: boolean }).autofocus, true);
+
+    const saved = await fetch(`${companion.url}/settings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ autofocus: false }),
+    });
+    assert.equal(saved.status, 200);
+    assert.equal(((await saved.json()) as { autofocus: boolean }).autofocus, false);
+    assert.deepEqual(JSON.parse(await readFile(configFile, 'utf8')), {
+      autofocus: false,
+      webOrigin: 'https://mdello.example',
+    });
+
+    const invalid = await fetch(`${companion.url}/settings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ autofocus: 'yes' }),
+    });
+    assert.equal(invalid.status, 400);
+  } finally {
+    await companion.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('rejects browser headers and non-loopback hosts on local hook routes', async () => {
   const root = await mkdtemp(join(tmpdir(), 'mdello-server-'));
   const companion = await createCompanionServer({

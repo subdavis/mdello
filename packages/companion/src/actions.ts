@@ -25,8 +25,6 @@ interface CommandResult {
 export interface ActionContext {
   /** Absolute herdr executable path discovered during service installation. */
   herdrPath?: string;
-  /** Bundle id of the terminal emulator herdr runs in, e.g. com.mitchellh.ghostty. */
-  herdrBundleId?: string;
   /** Injectable for tests; defaults to actually spawning the process. */
   run?: (command: string, args: string[]) => Promise<CommandResult>;
 }
@@ -68,8 +66,8 @@ function matchesSession(
 
 async function focus(request: ActionRequest, context: ActionContext): Promise<ActionOutcome> {
   if (request.action !== 'focus') return { ok: false, error: 'invalid_action' };
-  const { herdrBundleId: bundleId, herdrPath } = context;
-  if (!bundleId || !herdrPath) return { ok: false, error: 'herdr_not_configured' };
+  const { herdrPath } = context;
+  if (!herdrPath) return { ok: false, error: 'herdr_not_configured' };
 
   const run = resolveRun(context);
   const { stdout } = await run(herdrPath, ['agent', 'list']);
@@ -81,7 +79,6 @@ async function focus(request: ActionRequest, context: ActionContext): Promise<Ac
   // Herdr 0.9's per-client views do not project `agent focus` navigation to attached clients.
   // Focusing the resolved tab does, while the preceding command selects the exact split pane.
   if (agent.tab_id) await run(herdrPath, ['tab', 'focus', agent.tab_id]);
-  await run('open', ['-b', bundleId]);
   return { ok: true };
 }
 

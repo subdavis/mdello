@@ -23,11 +23,10 @@ const AGENT_LIST = JSON.stringify({
   },
 });
 
-function recordingContext(bundleId?: string): ActionContext & { calls: [string, string[]][] } {
+function recordingContext(): ActionContext & { calls: [string, string[]][] } {
   const calls: [string, string[]][] = [];
   return {
     herdrPath: '/usr/local/bin/herdr',
-    herdrBundleId: bundleId,
     calls,
     run: async (command, args) => {
       calls.push([command, args]);
@@ -59,24 +58,14 @@ function recordingContext(bundleId?: string): ActionContext & { calls: [string, 
 }
 
 test('rejects a request that is not a recognized action', async () => {
-  const context = recordingContext('com.mitchellh.ghostty');
+  const context = recordingContext();
   assert.equal(await performAction({ action: 'run-agent' }, context), 'invalid');
   assert.equal(await performAction({ action: 'focus' }, context), 'invalid');
   assert.equal(await performAction(null, context), 'invalid');
 });
 
-test('refuses to focus when no bundle id is configured', async () => {
-  const context = recordingContext();
-  const result = await performAction(
-    { action: 'focus', harness: 'claude', sessionId: 'claude-session-a' },
-    context,
-  );
-  assert.deepEqual(result, { ok: false, error: 'herdr_not_configured' });
-  assert.deepEqual(context.calls, []);
-});
-
 test('refuses to focus when no herdr path is configured', async () => {
-  const context = recordingContext('com.mitchellh.ghostty');
+  const context = recordingContext();
   context.herdrPath = undefined;
   const result = await performAction(
     { action: 'focus', harness: 'claude', sessionId: 'claude-session-a' },
@@ -87,7 +76,7 @@ test('refuses to focus when no herdr path is configured', async () => {
 });
 
 test('reports session_not_found when no herdr pane matches', async () => {
-  const context = recordingContext('com.mitchellh.ghostty');
+  const context = recordingContext();
   const result = await performAction(
     { action: 'focus', harness: 'claude', sessionId: 'unknown-session' },
     context,
@@ -95,8 +84,8 @@ test('reports session_not_found when no herdr pane matches', async () => {
   assert.deepEqual(result, { ok: false, error: 'session_not_found' });
 });
 
-test('matches a claude session on sessionId and raises the configured bundle', async () => {
-  const context = recordingContext('com.mitchellh.ghostty');
+test('matches a claude session on sessionId without raising its terminal', async () => {
+  const context = recordingContext();
   const result = await performAction(
     { action: 'focus', harness: 'claude', sessionId: 'claude-session-a' },
     context,
@@ -106,12 +95,11 @@ test('matches a claude session on sessionId and raises the configured bundle', a
     ['/usr/local/bin/herdr', ['agent', 'list']],
     ['/usr/local/bin/herdr', ['agent', 'focus', 'wA:pT']],
     ['/usr/local/bin/herdr', ['tab', 'focus', 'wA:t8']],
-    ['open', ['-b', 'com.mitchellh.ghostty']],
   ]);
 });
 
 test('matches a pi session on sessionFile rather than sessionId', async () => {
-  const context = recordingContext('com.mitchellh.ghostty');
+  const context = recordingContext();
   const result = await performAction(
     {
       action: 'focus',
@@ -131,7 +119,6 @@ test('matches a pi session on sessionFile rather than sessionId', async () => {
 test('reports herdr_command_failed when the herdr CLI errors', async () => {
   const context: ActionContext = {
     herdrPath: '/usr/local/bin/herdr',
-    herdrBundleId: 'com.mitchellh.ghostty',
     run: async () => {
       throw new Error('herdr: no server running');
     },

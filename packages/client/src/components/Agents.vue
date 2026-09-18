@@ -11,6 +11,7 @@ import {
   focusSession,
   forgetSession,
   resumeCommand,
+  useAutofocus,
   useCompanion,
   useHerdrEnabled,
 } from '../composables/useCompanion';
@@ -24,6 +25,7 @@ const props = defineProps<{ card: Card }>();
 
 const board = useBoard();
 const associations = useCompanion(board.rootPath, props.card);
+const autofocus = useAutofocus();
 const herdrEnabled = useHerdrEnabled();
 const forgetActions = [
   { label: 'This card', value: 'card' },
@@ -31,6 +33,18 @@ const forgetActions = [
 ];
 
 watch(associations, (entries) => void acknowledgeReadyForReview(entries), { immediate: true });
+
+let autofocusAttempted = false;
+watch(
+  [autofocus, herdrEnabled, associations],
+  ([enabled, canFocus, entries]) => {
+    const association = entries.find((entry) => entry.status !== 'closed');
+    if (!enabled || !canFocus || autofocusAttempted || !association) return;
+    autofocusAttempted = true;
+    void focusSession(association);
+  },
+  { immediate: true },
+);
 
 async function copyResumeCommand(association: Association): Promise<void> {
   const command = resumeCommand(association);
@@ -88,4 +102,3 @@ async function forget(association: Association, scope: string): Promise<void> {
     </dd>
   </template>
 </template>
-

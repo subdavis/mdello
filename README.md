@@ -94,6 +94,10 @@ npx mdello-companion install claude # then run run `/reload-plugins`
 npx mdello-companion help
 ```
 
+- Every install command is safe to rerun and updates its existing installation.
+- Companion configuration follows XDG paths: `${XDG_CONFIG_HOME:-~/.config}/mdello/companion.json`.
+- Persistent association state and launch-agent logs use `${XDG_STATE_HOME:-~/.local/state}/mdello/`.
+
 | Integration | Installs                                                                           |
 | ----------- | ---------------------------------------------------------------------------------- |
 | `macos`     | `~/Library/LaunchAgents/com.mdello.companion.plist`, started with `launchctl`      |
@@ -101,17 +105,15 @@ npx mdello-companion help
 | `opencode`  | `packages/opencode-extension/dist/index.js` symlinked into OpenCode's plugin dir.  |
 | `claude`    | a plugin at `~/.claude/skills/mdello-companion` whose hooks post to the companion. |
 
-- Every install command is safe to rerun and updates its existing installation.
-- Companion configuration follows XDG paths: `${XDG_CONFIG_HOME:-~/.config}/mdello/companion.json`.
-- Persistent association state and launch-agent logs use `${XDG_STATE_HOME:-~/.local/state}/mdello/`.
-
 ### Agent plugins
 
 Agent extensions discover associations from absolute Markdown paths in user input and from successful Markdown edit or write tool calls. See [`docs/agent-extension.md`](docs/agent-extension.md) for the lifecycle event mapping and the contract a new harness must satisfy.
 
+Herdr session enhancements require that herdr's own integrations are configured properly.
+
 ### Uninstall
 
-Too many tools give
+More tools should tell you how to erase them from your system. Here's how to get rid of Mdello Companion.
 
 ```bash
 # Remove every integration

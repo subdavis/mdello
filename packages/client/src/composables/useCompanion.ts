@@ -32,6 +32,7 @@ export type CompanionConnectionStatus = 'disabled' | 'connecting' | 'connected' 
 const associations = reactive(new Map<string, Association>());
 const connectionStatus = ref<CompanionConnectionStatus>('disabled');
 const herdrEnabled = ref(false);
+const autofocus = ref(false);
 const RECONNECT_DELAY_MS = 1_000;
 
 let eventSource: EventSource | undefined;
@@ -106,12 +107,16 @@ export async function acknowledgeReadyForReview(entries: Association[]): Promise
   );
 }
 
-async function refreshHerdrEnabled(): Promise<void> {
+async function refreshCompanionSettings(): Promise<void> {
   try {
     const response = await fetch(`${endpoint}/settings`);
-    const settings = response.ok ? ((await response.json()) as { herdrEnabled?: boolean }) : {};
+    const settings = response.ok
+      ? ((await response.json()) as { autofocus?: boolean; herdrEnabled?: boolean })
+      : {};
+    autofocus.value = settings.autofocus === true;
     herdrEnabled.value = settings.herdrEnabled === true;
   } catch {
+    autofocus.value = false;
     herdrEnabled.value = false;
   }
 }
@@ -128,6 +133,7 @@ function disconnect(): void {
   source?.close();
   associations.clear();
   connectionStatus.value = 'disabled';
+  autofocus.value = false;
   herdrEnabled.value = false;
 }
 
@@ -160,7 +166,7 @@ function connect(boardUuid: string, boardPath: string): void {
   source.addEventListener('open', () => {
     if (eventSource !== source) return;
     connectionStatus.value = 'connected';
-    void refreshHerdrEnabled();
+    void refreshCompanionSettings();
   });
   source.addEventListener('error', () => {
     if (eventSource !== source) return;
@@ -197,6 +203,29 @@ export function useCompanionConnectionStatus(
 
 export function useHerdrEnabled(): Readonly<Ref<boolean>> {
   return readonly(herdrEnabled);
+}
+
+export function useCompanionStatus(): Readonly<Ref<CompanionConnectionStatus>> {
+  return readonly(connectionStatus);
+}
+
+export function useAutofocus(): Readonly<Ref<boolean>> {
+  return readonly(autofocus);
+}
+
+export async function setAutofocus(enabled: boolean): Promise<boolean> {
+  try {
+    const response = await fetch(`${endpoint}/settings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ autofocus: enabled }),
+    });
+    if (!response.ok) return false;
+    autofocus.value = enabled;
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function focusSession(association: Association): Promise<boolean> {

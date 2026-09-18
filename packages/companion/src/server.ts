@@ -17,10 +17,10 @@ import {
   listActiveCards,
   loadBoards,
   loadConfig,
-  loadHerdrBundleId,
   loadWebOrigin,
   registerBoard,
   resolveCard,
+  saveAutofocus,
 } from './boards.ts';
 import { createDebugLogger } from './debug.ts';
 import { type ExtensionDependencies, startCompanionExtensions } from './extensions.ts';
@@ -683,16 +683,16 @@ export async function createCompanionServer(options: CompanionOptions = {}): Pro
     options.configFile ?? process.env.MDELLO_COMPANION_CONFIG ?? DEFAULT_CONFIG_FILE;
   let associations = await loadAssociations(dataFile);
   const [config, boards] = await Promise.all([loadConfig(configFile), loadBoards(configFile)]);
-  const herdrBundleId = await loadHerdrBundleId(configFile);
   const webOrigin = await loadWebOrigin(configFile);
   const herdrPath = options.herdrPath ?? process.env.HERDR_PATH;
-  const actionContext: ActionContext = { herdrBundleId, herdrPath, run: options.herdrRun };
+  const actionContext: ActionContext = { herdrPath, run: options.herdrRun };
   const herdrCache = new HerdrSessionCache(actionContext);
   const presentAssociations: PresentAssociations = async (entries, ensureSessions = false) => {
     if (ensureSessions) await Promise.all(entries.map((entry) => herdrCache.ensure(entry)));
     return herdrCache.present(entries);
   };
-  const herdrEnabled = Boolean(herdrBundleId && herdrPath);
+  const herdrEnabled = Boolean(herdrPath);
+  let autofocus = config.autofocus === true;
   const clients = new Map<ServerResponse, string>();
   await mkdir(dirname(dataFile), { recursive: true });
   await open(dataFile, 'a').then((file) => file.close());
@@ -800,7 +800,24 @@ export async function createCompanionServer(options: CompanionOptions = {}): Pro
     }
 
     if (request.method === 'GET' && url.pathname === '/settings') {
-      sendJson(response, 200, { herdrEnabled });
+      sendJson(response, 200, { autofocus, herdrEnabled });
+      return;
+    }
+
+    if (request.method === 'POST' && url.pathname === '/settings') {
+      try {
+        const input = (await readBody(request)) as { autofocus?: unknown };
+        if (typeof input.autofocus !== 'boolean') {
+          sendJson(response, 400, { error: 'Invalid settings' });
+          return;
+        }
+        await saveAutofocus(configFile, input.autofocus);
+        autofocus = input.autofocus;
+        sendJson(response, 200, { autofocus, herdrEnabled });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        sendJson(response, 400, { error: message });
+      }
       return;
     }
 

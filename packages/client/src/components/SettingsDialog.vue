@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { useBoard } from '../composables/useBoard';
+import { setAutofocus, useAutofocus, useCompanionStatus } from '../composables/useCompanion';
 import { useTheme } from '../composables/useTheme';
 import { CONFIG_FILE, DEFAULT_CONFIG } from '../fs/config';
 import IconGlyph from './IconGlyph.vue';
@@ -22,10 +23,14 @@ const PRESETS = [
 
 const board = useBoard();
 const { themePreference } = useTheme();
+const companionStatus = useCompanionStatus();
+const autofocus = useAutofocus();
+const savingAutofocus = ref(false);
 const path = ref(board.rootPath.value);
 const editor = ref(board.editorTemplate.value);
 const saving = ref(false);
 const failed = ref(false);
+const autofocusFailed = ref(false);
 const pathInput = ref<HTMLInputElement | null>(null);
 
 const editable = computed(
@@ -41,6 +46,7 @@ const dirty = computed(
 const status = computed(() => {
   if (!editable.value) return 'This board is read-only right now';
   if (saving.value) return 'Saving…';
+  if (autofocusFailed.value) return 'Could not update companion settings';
   if (failed.value) return `Could not write ${CONFIG_FILE}`;
   return dirty.value ? 'Unsaved changes' : 'Saved';
 });
@@ -62,6 +68,13 @@ async function save(): Promise<boolean> {
     editor.value = board.editorTemplate.value;
   }
   return saved;
+}
+
+async function toggleAutofocus(event: Event): Promise<void> {
+  savingAutofocus.value = true;
+  const enabled = (event.target as HTMLInputElement).checked;
+  autofocusFailed.value = !(await setAutofocus(enabled));
+  savingAutofocus.value = false;
 }
 
 /**
@@ -165,8 +178,27 @@ onMounted(() => pathInput.value?.focus());
         </p>
       </section>
 
+      <section v-if="companionStatus === 'connected'" class="settings-note">
+        <label class="settings-toggle">
+          <span>
+            <span class="settings-label">Autofocus</span>
+            <small class="settings-hint">Focus the active Herdr session when its card opens.</small>
+          </span>
+          <span class="settings-switch">
+            <input
+              type="checkbox"
+              role="switch"
+              :checked="autofocus"
+              :disabled="savingAutofocus"
+              @change="toggleAutofocus"
+            />
+            <span aria-hidden="true" />
+          </span>
+        </label>
+      </section>
+
       <footer class="settings-foot">
-        <span class="settings-state" :class="{ 'is-error': failed }">{{
+        <span class="settings-state" :class="{ 'is-error': failed || autofocusFailed }">{{
           status
         }}</span>
         <button

@@ -41,9 +41,10 @@ Default endpoint: `http://127.0.0.1:51618`. JSON request bodies are limited to 6
 | `DELETE /associations?cardUuid=…&harness=…&sessionId=…` | Forgets that harness session from only the selected card, preserving its associations with other cards. |
 | `GET /events?boardUuid=…&boardPath=…` | Validates and registers board, reconciles stored paths/UUIDs, then opens SSE stream. One Herdr state sync runs when the frontend connects. Sends `snapshot` first and `association` after each update for that board, enriched from the companion's cached Herdr state when resolvable. |
 | `POST /hooks/<harness>` | Body is that harness's raw lifecycle payload. A registered [harness adapter](agent-extension.md) translates it; the companion publishes to the event's cards plus every card already held for that `(harness, sessionId)`. Sessions resolve against cached Herdr state; an unknown session triggers one state sync, and a still-unresolved session is negatively cached. Always answers `{}`. Browser requests carrying `Origin`, `Referer`, or `Sec-Fetch-Site` are rejected with `403`; hooks are for local agent clients only. Unknown harness returns `404`. |
-| `GET /settings` | Returns `{ herdrEnabled: boolean }`, true when `herdrBundleId` and an installed `HERDR_PATH` are configured. The client uses this to decide whether to show herdr-only controls. |
+| `GET /settings` | Returns `{ autofocus: boolean, herdrEnabled: boolean }`; Herdr controls are enabled when `HERDR_PATH` is installed. |
+| `POST /settings` | Persists `{ autofocus: boolean }` in the companion config. |
 | `POST /actions` | Body is `{ action, ... }`. Actions live in their own module ([`actions.ts`](../packages/companion/src/actions.ts)), isolated from the association/board logic above, as a small `ACTIONS` registry keyed by action name. Returns `200 { ok: true }` on success, `400` for a body that isn't a recognized action, `500` if the herdr CLI itself fails. |
-| ↳ `focus` | `{ action: "focus", harness, sessionId, sessionFile? }` — the session to focus. Joins `herdr agent list` against `sessionId` (or `sessionFile` for `harness: pi`), runs `herdr agent focus <pane_id>`, projects its `tab_id` to attached Herdr clients with `herdr tab focus <tab_id>`, then uses `open -b <herdrBundleId>` to raise the terminal. `404` if no pane matches, `409` if no `herdrBundleId` is configured. |
+| ↳ `focus` | `{ action: "focus", harness, sessionId, sessionFile? }` — the session to focus. Joins `herdr agent list` against `sessionId` (or `sessionFile` for `harness: pi`), runs `herdr agent focus <pane_id>`, then projects its `tab_id` to attached Herdr clients with `herdr tab focus <tab_id>`. `404` if no pane matches, `409` if `HERDR_PATH` is unavailable. |
 
 Errors use `{ error: string }`. Invalid requests return `400`, internal delete failures `500`, and unknown routes `404`. Backfill is deliberately absent: it rewrites the whole log, so it is a CLI command only.
 
@@ -78,12 +79,12 @@ stdout/stderr logs go to the state directory. It then writes absolute executable
 the launchd plist without copying the shell `PATH`, restarts the service, and removes `~/.mdello`
 when empty. Missing `herdr` is allowed and disables herdr actions.
 
-`companion.json` holds `boards` plus user-edited settings the companion never writes itself. `webOrigin` is the HTTP(S) origin allowed to call browser-facing routes and defaults to `https://subdavis.github.io`; configure an origin only, without an application path. Loopback browser origins remain allowed for local development. `herdrBundleId` is the bundle id of the terminal emulator herdr runs in (e.g. `com.mitchellh.ghostty`), needed to raise the right app window without an Automation (TCC) grant a launchd agent could never obtain. Saving board registrations preserves both settings rather than overwriting them.
+`companion.json` holds `boards`, `autofocus`, and user-edited settings. `webOrigin` is the HTTP(S) origin allowed to call browser-facing routes and defaults to `https://subdavis.github.io`; configure an origin only, without an application path. Loopback browser origins remain allowed for local development. Saving board registrations or autofocus preserves every other setting.
 
 ```json
 {
-  "webOrigin": "https://example.com",
-  "herdrBundleId": "com.mitchellh.ghostty"
+  "autofocus": true,
+  "webOrigin": "https://example.com"
 }
 ```
 

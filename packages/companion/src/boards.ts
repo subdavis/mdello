@@ -12,9 +12,9 @@ export interface BoardRegistration {
 }
 
 export interface CompanionConfig {
+  autofocus?: boolean;
   boards: BoardRegistration[];
   extensions?: Record<string, unknown>;
-  herdrBundleId?: string;
   webOrigin?: string;
 }
 
@@ -96,16 +96,6 @@ export async function loadBoards(configFile = DEFAULT_CONFIG_FILE): Promise<Boar
   return Array.isArray(config.boards) ? config.boards.filter(validBoard) : [];
 }
 
-/** User-edited settings that live alongside board registrations in the same config file. */
-export async function loadHerdrBundleId(
-  configFile = DEFAULT_CONFIG_FILE,
-): Promise<string | undefined> {
-  const { herdrBundleId } = await loadConfig(configFile);
-  return typeof herdrBundleId === 'string' && herdrBundleId.trim()
-    ? herdrBundleId.trim()
-    : undefined;
-}
-
 export async function loadWebOrigin(configFile = DEFAULT_CONFIG_FILE): Promise<string> {
   const { webOrigin } = await loadConfig(configFile);
   if (typeof webOrigin !== 'string' || !webOrigin.trim()) return DEFAULT_WEB_ORIGIN;
@@ -117,7 +107,13 @@ export async function loadWebOrigin(configFile = DEFAULT_CONFIG_FILE): Promise<s
   }
 }
 
-/** Preserves every other top-level key (e.g. herdrBundleId) instead of overwriting the file. */
+export async function saveAutofocus(configFile: string, autofocus: boolean): Promise<void> {
+  const config = await loadConfig(configFile);
+  await mkdir(dirname(configFile), { recursive: true });
+  await writeFile(configFile, `${JSON.stringify({ ...config, autofocus }, null, 2)}\n`);
+}
+
+/** Preserves every other top-level setting instead of overwriting the file. */
 async function saveBoards(configFile: string, boards: BoardRegistration[]): Promise<void> {
   const config = await loadConfig(configFile);
   await mkdir(dirname(configFile), { recursive: true });

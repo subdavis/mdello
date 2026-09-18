@@ -75,7 +75,7 @@ function helpText(): string {
       ['MDELLO_COMPANION_DATA', `Association log (${tilde(DEFAULT_DATA_FILE)})`],
       [
         'MDELLO_COMPANION_CONFIG',
-        `Tracked boards + settings, e.g. herdrBundleId (${tilde(DEFAULT_CONFIG_FILE)})`,
+        `Tracked boards + settings, e.g. webOrigin (${tilde(DEFAULT_CONFIG_FILE)})`,
       ],
       ...BACKFILL_SOURCES.map(({ harness, envVar, sessionsRoot }): [string, string] => [
         envVar,

@@ -225,6 +225,8 @@ const STARTER_CARDS: Array<{
       'folder and drawn centred and cropped to cover.',
       '',
       'Delete the file to go back to the plain board.',
+      '',
+      'The National Gallery of Art has [some lovely options](https://www.nga.gov/artwork-search?f[]=awtype:107231&f[]=movement:46221&f[]=movement:58341&page=3).'
     ].join('\n'),
   },
   {

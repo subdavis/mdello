@@ -4,8 +4,11 @@ import { effectScope, type Ref, ref } from 'vue';
 import {
   type Association,
   type CompanionConnectionStatus,
+  focusSession,
   forgetSession,
   resumeCommand,
+  setAutofocus,
+  useAutofocus,
   useCompanionConnectionStatus,
 } from './useCompanion.ts';
 
@@ -71,6 +74,43 @@ test('requests session forgetting for one card or all cards', async () => {
     assert.equal(requests[0].url.searchParams.get('cardUuid'), 'card-a');
     assert.equal(requests[0].method, 'DELETE');
     assert.equal(requests[1].url.searchParams.get('cardUuid'), null);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('persists autofocus through companion settings', async () => {
+  const originalFetch = globalThis.fetch;
+  let body = '';
+  globalThis.fetch = async (_input, init) => {
+    body = String(init?.body);
+    return new Response(JSON.stringify({ autofocus: true }), { status: 200 });
+  };
+
+  try {
+    assert.equal(await setAutofocus(true), true);
+    assert.deepEqual(JSON.parse(body), { autofocus: true });
+    assert.equal(useAutofocus().value, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('requests session focus without window-raising options', async () => {
+  const originalFetch = globalThis.fetch;
+  let body = '';
+  globalThis.fetch = async (_input, init) => {
+    body = String(init?.body);
+    return new Response(null, { status: 200 });
+  };
+
+  try {
+    assert.equal(await focusSession(association), true);
+    assert.deepEqual(JSON.parse(body), {
+      action: 'focus',
+      harness: 'pi',
+      sessionId: 'session with spaces',
+    });
   } finally {
     globalThis.fetch = originalFetch;
   }
