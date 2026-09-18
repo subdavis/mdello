@@ -47,6 +47,7 @@
   --text: #172b4d;
   --muted: #3a3a3a;
   --accent: #0c66e4;
+  --github-merged-text: #8250df;
   --interactive-subtle: rgb(9 30 66 / 0.06);
   --interactive-strong: rgb(9 30 66 / 0.15);
   --slot-bg: rgb(9 30 66 / 0.08);
@@ -114,6 +115,7 @@
   --text: #f1f2f4;
   --muted: #b6c2cf;
   --accent: #579dff;
+  --github-merged-text: #a371f7;
   --interactive-subtle: rgb(182 194 207 / 0.12);
   --interactive-strong: rgb(182 194 207 / 0.22);
   --slot-bg: rgb(182 194 207 / 0.14);

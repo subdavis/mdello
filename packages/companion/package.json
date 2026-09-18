@@ -11,6 +11,8 @@
   "dependencies": {
     "@mdello/claude-extension": "workspace:*",
     "@mdello/common": "workspace:*",
+    "@mdello/opencode-extension": "workspace:*",
+    "@mdello/pi-extension": "workspace:*",
     "js-yaml": "^5.3.0"
   },
   "devDependencies": {

@@ -4,6 +4,7 @@
   "type": "module",
   "exports": {
     "./associations": "./src/associations.ts",
+    "./backfill": "./src/backfill.ts",
     "./frontmatter": "./src/frontmatter.ts",
     "./harness": "./src/harness.ts",
     "./paths": "./src/paths.ts"

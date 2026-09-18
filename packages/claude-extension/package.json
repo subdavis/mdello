@@ -4,6 +4,7 @@
   "type": "module",
   "exports": {
     ".": "./index.ts",
+    "./backfill": "./backfill.ts",
     "./transcript": "./transcript.ts"
   },
   "scripts": {

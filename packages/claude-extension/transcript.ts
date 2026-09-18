@@ -1,4 +1,4 @@
-import type { HarnessSessionScan } from '@mdello/common/harness';
+import type { HarnessSessionScan } from '@mdello/common/backfill';
 import { extractMarkdownPaths, markdownToolPath, messageText } from '@mdello/common/paths';
 
 const MODIFICATION_TOOLS = ['Edit', 'MultiEdit', 'Write'] as const;

@@ -959,7 +959,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@mdello/opencode-extension@workspace:packages/opencode-extension":
+"@mdello/opencode-extension@workspace:*, @mdello/opencode-extension@workspace:packages/opencode-extension":
   version: 0.0.0-use.local
   resolution: "@mdello/opencode-extension@workspace:packages/opencode-extension"
   dependencies:
@@ -973,7 +973,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@mdello/pi-extension@workspace:packages/pi-extension":
+"@mdello/pi-extension@workspace:*, @mdello/pi-extension@workspace:packages/pi-extension":
   version: 0.0.0-use.local
   resolution: "@mdello/pi-extension@workspace:packages/pi-extension"
   dependencies:
@@ -2457,6 +2457,8 @@ __metadata:
   dependencies:
     "@mdello/claude-extension": "workspace:*"
     "@mdello/common": "workspace:*"
+    "@mdello/opencode-extension": "workspace:*"
+    "@mdello/pi-extension": "workspace:*"
     "@types/node": "npm:^26.2.0"
     js-yaml: "npm:^5.3.0"
     typescript: "npm:^5"

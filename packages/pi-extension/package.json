@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
+  "exports": {
+    ".": "./dist/index.js",
+    "./backfill": "./backfill.ts"
+  },
   "pi": {
     "extensions": [
       "./dist/index.js"

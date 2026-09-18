@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
+  "exports": {
+    ".": "./dist/index.js",
+    "./backfill": "./backfill.ts"
+  },
   "scripts": {
     "build": "rolldown index.ts --file dist/index.js --format esm --platform node",
     "test": "node --experimental-strip-types --test",

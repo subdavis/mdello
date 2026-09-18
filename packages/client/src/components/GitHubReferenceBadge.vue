@@ -15,14 +15,17 @@ defineProps<{ details: GitHubLinkDetails }>();
     :title="details.url"
   >
     <img class="ref-icon" :src="REFERENCE_ICONS.git" alt="" />
-    <span class="github-ref-label">#{{ details.number }} {{ details.title }}</span>
+    <span>#{{ details.number }}</span>
     <span class="github-ref-status">{{ details.status }}</span>
+    <span class="github-ref-label">{{ details.title }}</span>
     <span
-      v-if="details.ciStatus"
+      v-if="details.ciStatus && details.ciStatus !== 'none'"
       class="github-ref-ci github-ci"
       :data-status="details.ciStatus"
+      :aria-label="`CI ${details.ciStatus}`"
+      :title="`CI ${details.ciStatus}`"
     >
-      CI {{ details.ciStatus }}
+      <span class="github-ci-icon" aria-hidden="true"></span>
     </span>
   </a>
 </template>
