@@ -3,11 +3,12 @@ import { computed, onMounted, ref } from 'vue';
 import { useBoard } from '../composables/useBoard';
 import {
   setAutofocus,
-  setGitHubLinkEnrichment,
+  setLinkEnrichment,
   useAutofocus,
   useCompanionStatus,
   useGitHubEnabled,
-  useGitHubLinkEnrichment,
+  useLinkEnrichment,
+  useJiraEnabled,
 } from '../composables/useCompanion';
 import { useTheme } from '../composables/useTheme';
 import { CONFIG_FILE, DEFAULT_CONFIG } from '../fs/config';
@@ -33,9 +34,10 @@ const { themePreference } = useTheme();
 const companionStatus = useCompanionStatus();
 const autofocus = useAutofocus();
 const githubEnabled = useGitHubEnabled();
-const githubLinkEnrichment = useGitHubLinkEnrichment();
+const linkEnrichment = useLinkEnrichment();
+const jiraEnabled = useJiraEnabled();
 const savingAutofocus = ref(false);
-const savingGitHubLinkEnrichment = ref(false);
+const savingLinkEnrichment = ref(false);
 const path = ref(board.rootPath.value);
 const editor = ref(board.editorTemplate.value);
 const saving = ref(false);
@@ -87,11 +89,11 @@ async function toggleAutofocus(event: Event): Promise<void> {
   savingAutofocus.value = false;
 }
 
-async function toggleGitHubLinkEnrichment(event: Event): Promise<void> {
-  savingGitHubLinkEnrichment.value = true;
+async function toggleLinkEnrichment(event: Event): Promise<void> {
+  savingLinkEnrichment.value = true;
   const enabled = (event.target as HTMLInputElement).checked;
-  autofocusFailed.value = !(await setGitHubLinkEnrichment(enabled));
-  savingGitHubLinkEnrichment.value = false;
+  autofocusFailed.value = !(await setLinkEnrichment(enabled));
+  savingLinkEnrichment.value = false;
 }
 
 /**
@@ -217,18 +219,18 @@ onMounted(() => pathInput.value?.focus());
       <section v-if="companionStatus === 'connected'" class="settings-note">
         <label class="settings-toggle">
           <span>
-            <span class="settings-label">GitHub link enrichment</span>
+            <span class="settings-label">Enrich links</span>
             <small class="settings-hint">
-              Fetch PR and issue titles and statuses through <code>gh</code> when a card opens.
+              Fetch GitHub and Jira titles and statuses through their CLIs when a card opens.
             </small>
           </span>
           <span class="settings-switch">
             <input
               type="checkbox"
               role="switch"
-              :checked="githubLinkEnrichment"
-              :disabled="savingGitHubLinkEnrichment || !githubEnabled"
-              @change="toggleGitHubLinkEnrichment"
+              :checked="linkEnrichment"
+              :disabled="savingLinkEnrichment || (!githubEnabled && !jiraEnabled)"
+              @change="toggleLinkEnrichment"
             />
             <span aria-hidden="true" />
           </span>

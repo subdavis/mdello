@@ -230,8 +230,9 @@ test('discovers herdr from the active PATH when no path is configured', async ()
     assert.deepEqual(await settings.json(), {
       autofocus: false,
       githubEnabled: false,
-      githubLinkEnrichment: false,
       herdrEnabled: true,
+      jiraEnabled: false,
+      linkEnrichment: false,
     });
 
     const response = await fetch(`${companion.url}/actions`, {
@@ -578,10 +579,10 @@ test('streams cached URL enrichment, refreshes, polls, and stops on close', asyn
     const saved = await fetch(`${companion.url}/settings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ githubLinkEnrichment: true }),
+      body: JSON.stringify({ linkEnrichment: true }),
     });
     assert.equal(saved.status, 200);
-    assert.equal(JSON.parse(await readFile(configFile, 'utf8')).githubLinkEnrichment, true);
+    assert.equal(JSON.parse(await readFile(configFile, 'utf8')).linkEnrichment, true);
 
     const first = await fetch(streamUrl, { signal: firstController.signal });
     assert.equal(first.headers.get('content-type'), 'text/event-stream');
@@ -609,6 +610,60 @@ test('streams cached URL enrichment, refreshes, polls, and stops on close', asyn
   } finally {
     firstController.abort();
     secondController.abort();
+    await companion.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('streams Jira enrichment under the shared link setting', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mdello-server-'));
+  const configFile = join(root, 'companion.json');
+  const calls: string[][] = [];
+  const companion = await createCompanionServer({
+    port: 0,
+    dataFile: join(root, 'companion.jsonl'),
+    configFile,
+    jiraPath: '/usr/local/bin/jira',
+    jiraRun: async (_command, args) => {
+      calls.push(args);
+      return {
+        stdout: JSON.stringify({
+          key: 'SCA-1234',
+          fields: { summary: 'Add Jira enrichment', status: { name: 'In Progress' } },
+        }),
+      };
+    },
+  });
+  const issueUrl = 'https://sonarsource.atlassian.net/browse/SCA-1234';
+  const controller = new AbortController();
+
+  try {
+    const settings = (await (await fetch(`${companion.url}/settings`)).json()) as {
+      jiraEnabled: boolean;
+    };
+    assert.equal(settings.jiraEnabled, true);
+
+    const saved = await fetch(`${companion.url}/settings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ linkEnrichment: true }),
+    });
+    assert.equal(saved.status, 200);
+    assert.equal(JSON.parse(await readFile(configFile, 'utf8')).linkEnrichment, true);
+
+    const query = new URLSearchParams({ url: issueUrl });
+    const response = await fetch(`${companion.url}/enrichments?${query}`, {
+      signal: controller.signal,
+    });
+    const reader = response.body?.getReader();
+    assert.ok(reader);
+    const events = await readUntil(reader, 'Add Jira enrichment');
+    assert.match(events, /"provider":"jira"/);
+    assert.match(events, /"status":"In Progress"/);
+    assert.deepEqual(calls[0], ['issue', 'view', 'SCA-1234', '--raw']);
+    await reader.cancel();
+  } finally {
+    controller.abort();
     await companion.close();
     await rm(root, { recursive: true, force: true });
   }

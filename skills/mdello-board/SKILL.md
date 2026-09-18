@@ -87,3 +87,5 @@ removing a column, update affected cards' `column` values too.
 - Don't add tags for the sake of it. Use a tag if one is truly relevant to the card.
 - If you don't know the board root, tell the user and ask that they specify it in their
   system agent prompt file such as CLAUDE.md or AGENTS.md
+- When assets, issues, prs, or other external references are generated, those should
+  be attached to the card.

@@ -21,7 +21,7 @@ import {
   registerBoard,
   resolveCard,
   saveAutofocus,
-  saveGitHubLinkEnrichment,
+  saveLinkEnrichment,
 } from './boards.ts';
 import { createDebugLogger } from './debug.ts';
 import { enrichmentUrls, handleEnrichmentStream, type UrlEnrichment } from './enrichment-stream.ts';
@@ -29,6 +29,7 @@ import { discoverExecutable } from './executables.ts';
 import { createGitHubEnrichmentProvider, type GitHubCommandRunner } from './github-links.ts';
 import { HerdrSessionCache } from './herdr.ts';
 import { findAdapter, harnessFromPath, hookAssociationInputs } from './hooks.ts';
+import { createJiraEnrichmentProvider, type JiraCommandRunner } from './jira-links.ts';
 import { companionPaths } from './xdg.ts';
 
 export type { Association, AssociationStatus };
@@ -43,6 +44,8 @@ export interface CompanionOptions {
   herdrRun?: ActionContext['run'];
   githubPath?: string;
   githubRun?: GitHubCommandRunner;
+  jiraPath?: string;
+  jiraRun?: JiraCommandRunner;
   enrichmentPollIntervalMs?: number;
   environment?: NodeJS.ProcessEnv;
 }
@@ -691,9 +694,10 @@ export async function createCompanionServer(options: CompanionOptions = {}): Pro
   let associations = await loadAssociations(dataFile);
   const [config, boards] = await Promise.all([loadConfig(configFile), loadBoards(configFile)]);
   const webOrigin = await loadWebOrigin(configFile);
-  const [herdrPath, githubPath] = await Promise.all([
+  const [herdrPath, githubPath, jiraPath] = await Promise.all([
     options.herdrPath || environment.HERDR_PATH || discoverExecutable('herdr', environment),
     options.githubPath || environment.GH_PATH || discoverExecutable('gh', environment),
+    options.jiraPath || environment.JIRA_PATH || discoverExecutable('jira', environment),
   ]);
   const actionContext: ActionContext = { herdrPath, run: options.herdrRun };
   const herdrCache = new HerdrSessionCache(actionContext);
@@ -703,14 +707,16 @@ export async function createCompanionServer(options: CompanionOptions = {}): Pro
   };
   const herdrEnabled = Boolean(herdrPath);
   const githubEnabled = Boolean(githubPath);
+  const jiraEnabled = Boolean(jiraPath);
   let autofocus = config.autofocus === true;
-  let githubLinkEnrichment = config.githubLinkEnrichment === true;
+  let linkEnrichment = config.linkEnrichment === true;
   const clients = new Map<ServerResponse, string>();
   const enrichmentClients = new Set<ServerResponse>();
   const enrichmentCache = new Map<string, UrlEnrichment>();
-  const enrichmentProviders = githubPath
-    ? [createGitHubEnrichmentProvider(githubPath, options.githubRun)]
-    : [];
+  const enrichmentProviders = [
+    ...(githubPath ? [createGitHubEnrichmentProvider(githubPath, options.githubRun)] : []),
+    ...(jiraPath ? [createJiraEnrichmentProvider(jiraPath, options.jiraRun)] : []),
+  ];
   await mkdir(dirname(dataFile), { recursive: true });
   await open(dataFile, 'a').then((file) => file.close());
 
@@ -820,8 +826,9 @@ export async function createCompanionServer(options: CompanionOptions = {}): Pro
       sendJson(response, 200, {
         autofocus,
         githubEnabled,
-        githubLinkEnrichment,
         herdrEnabled,
+        linkEnrichment,
+        jiraEnabled,
       });
       return;
     }
@@ -830,14 +837,14 @@ export async function createCompanionServer(options: CompanionOptions = {}): Pro
       try {
         const input = (await readBody(request)) as {
           autofocus?: unknown;
-          githubLinkEnrichment?: unknown;
+          linkEnrichment?: unknown;
         };
         if (typeof input.autofocus === 'boolean') {
           await saveAutofocus(configFile, input.autofocus);
           autofocus = input.autofocus;
-        } else if (typeof input.githubLinkEnrichment === 'boolean') {
-          await saveGitHubLinkEnrichment(configFile, input.githubLinkEnrichment);
-          githubLinkEnrichment = input.githubLinkEnrichment;
+        } else if (typeof input.linkEnrichment === 'boolean') {
+          await saveLinkEnrichment(configFile, input.linkEnrichment);
+          linkEnrichment = input.linkEnrichment;
         } else {
           sendJson(response, 400, { error: 'Invalid settings' });
           return;
@@ -845,8 +852,9 @@ export async function createCompanionServer(options: CompanionOptions = {}): Pro
         sendJson(response, 200, {
           autofocus,
           githubEnabled,
-          githubLinkEnrichment,
           herdrEnabled,
+          linkEnrichment,
+          jiraEnabled,
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

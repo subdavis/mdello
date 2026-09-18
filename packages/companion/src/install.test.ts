@@ -37,6 +37,7 @@ const template = `
 <string>__COMPANION_STDERR__</string>
 __HERDR_ENV__
 __GH_ENV__
+__JIRA_ENV__
 `;
 
 async function fixture(): Promise<{ root: string; home: string; repoRoot: string }> {
@@ -78,7 +79,9 @@ test('macOS install updates plist and reloads launchd idempotently', async () =>
     if (command === 'launchctl' && args[0] === 'bootout') throw new Error('not loaded');
     return {
       stdout:
-        command === 'which' && (args[0] === 'herdr' || args[0] === 'gh') ? process.execPath : '',
+        command === 'which' && ['herdr', 'gh', 'jira'].includes(args[0] ?? '')
+          ? process.execPath
+          : '',
     };
   };
 
@@ -110,14 +113,18 @@ test('macOS install updates plist and reloads launchd idempotently', async () =>
     assert.match(plist, /xdg &amp; state/);
     assert.match(plist, /<key>HERDR_PATH<\/key>\s*<string>.*node<\/string>/);
     assert.match(plist, /<key>GH_PATH<\/key>\s*<string>.*node<\/string>/);
+    assert.match(plist, /<key>JIRA_PATH<\/key>\s*<string>.*node<\/string>/);
+    assert.doesNotMatch(plist, /<key>JIRA_API_TOKEN<\/key>/);
     assert.doesNotMatch(plist, /<key>PATH<\/key>/);
     assert.deepEqual(questions, [
       `NODE_PATH=${process.execPath} Y/n? `,
       `HERDR_PATH=${process.execPath} Y/n? `,
       `GH_PATH=${process.execPath} Y/n? `,
+      `JIRA_PATH=${process.execPath} Y/n? `,
       `NODE_PATH=${process.execPath} Y/n? `,
       `HERDR_PATH=${process.execPath} Y/n? `,
       `GH_PATH=${process.execPath} Y/n? `,
+      `JIRA_PATH=${process.execPath} Y/n? `,
     ]);
     assert.equal(
       calls.filter(([command, action]) => command === 'launchctl' && action === 'bootstrap').length,

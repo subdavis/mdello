@@ -8,11 +8,11 @@ import {
   forgetSession,
   resumeCommand,
   setAutofocus,
-  setGitHubLinkEnrichment,
+  setLinkEnrichment,
   subscribeUrlEnrichments,
   useAutofocus,
   useCompanionConnectionStatus,
-  useGitHubLinkEnrichment,
+  useLinkEnrichment,
 } from './useCompanion.ts';
 
 class FakeEventSource {
@@ -100,7 +100,7 @@ test('persists autofocus through companion settings', async () => {
   }
 });
 
-test('persists GitHub enrichment and subscribes through the generic URL API', async () => {
+test('persists link enrichment and subscribes through the generic URL API', async () => {
   const originalFetch = globalThis.fetch;
   const OriginalEventSource = globalThis.EventSource;
   let body = '';
@@ -112,12 +112,12 @@ test('persists GitHub enrichment and subscribes through the generic URL API', as
   globalThis.EventSource = FakeEventSource as unknown as typeof EventSource;
 
   try {
-    assert.equal(await setGitHubLinkEnrichment(true), true);
-    assert.equal(useGitHubLinkEnrichment().value, true);
-    assert.deepEqual(JSON.parse(body), { githubLinkEnrichment: true });
+    assert.equal(await setLinkEnrichment(true), true);
+    assert.equal(useLinkEnrichment().value, true);
+    assert.deepEqual(JSON.parse(body), { linkEnrichment: true });
 
     const first = 'https://github.com/owner/repo/issues/12';
-    const second = 'https://github.com/owner/repo/pull/13';
+    const second = 'https://sonarsource.atlassian.net/browse/SCA-13';
     const received: string[][] = [];
     const close = subscribeUrlEnrichments([first, second], (items) =>
       received.push(items.map((item) => item.url)),
@@ -135,7 +135,7 @@ test('persists GitHub enrichment and subscribes through the generic URL API', as
       'enrichments',
       JSON.stringify({
         items: [
-          { provider: 'github', url: second, number: 13, title: 'Add feature', status: 'open' },
+          { provider: 'jira', url: second, key: 'SCA-13', title: 'Add feature', status: 'Open' },
         ],
       }),
     );

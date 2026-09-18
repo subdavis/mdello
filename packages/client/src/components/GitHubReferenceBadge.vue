@@ -7,7 +7,7 @@ defineProps<{ details: GitHubLinkDetails }>();
 
 <template>
   <a
-    class="ref github-ref"
+    class="ref enriched-ref github-ref"
     :class="`is-${details.status}`"
     :href="details.url"
     target="_blank"
@@ -16,8 +16,8 @@ defineProps<{ details: GitHubLinkDetails }>();
   >
     <img class="ref-icon" :src="REFERENCE_ICONS.git" alt="" />
     <span>#{{ details.number }}</span>
-    <span class="github-ref-status">{{ details.status }}</span>
-    <span class="github-ref-label">{{ details.title }}</span>
+    <span class="enriched-ref-status">{{ details.status }}</span>
+    <span class="enriched-ref-label">{{ details.title }}</span>
     <span
       v-if="details.ciStatus && details.ciStatus !== 'none'"
       class="github-ref-ci github-ci"

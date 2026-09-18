@@ -182,6 +182,7 @@ interface MacOSServiceOptions extends ReturnType<typeof defaults> {
   nodePath: string;
   herdrPath?: string;
   ghPath?: string;
+  jiraPath?: string;
 }
 
 export async function installMacOSService(config: MacOSServiceOptions): Promise<string> {
@@ -196,6 +197,9 @@ export async function installMacOSService(config: MacOSServiceOptions): Promise<
   const ghEnvironment = config.ghPath
     ? `    <key>GH_PATH</key>\n    <string>${xmlEscape(config.ghPath)}</string>`
     : '';
+  const jiraEnvironment = config.jiraPath
+    ? `    <key>JIRA_PATH</key>\n    <string>${xmlEscape(config.jiraPath)}</string>`
+    : '';
   const plist = template
     .replaceAll('__NODE_BIN__', xmlEscape(config.nodePath))
     .replaceAll('__MDELLO_ROOT__', xmlEscape(config.repoRoot))
@@ -205,7 +209,8 @@ export async function installMacOSService(config: MacOSServiceOptions): Promise<
     .replaceAll('__COMPANION_STDOUT__', xmlEscape(paths.stdoutLog))
     .replaceAll('__COMPANION_STDERR__', xmlEscape(paths.stderrLog))
     .replaceAll('__HERDR_ENV__', herdrEnvironment)
-    .replaceAll('__GH_ENV__', ghEnvironment);
+    .replaceAll('__GH_ENV__', ghEnvironment)
+    .replaceAll('__JIRA_ENV__', jiraEnvironment);
 
   const domain = `gui/${config.uid}`;
   try {
@@ -236,7 +241,9 @@ export async function installMacOS(options: InstallOptions = {}): Promise<string
     const herdrPath = await resolveExecutable('HERDR_PATH', discoveredHerdr, false, prompt);
     const discoveredGh = await discoverExecutable('gh', config.run);
     const ghPath = await resolveExecutable('GH_PATH', discoveredGh, false, prompt);
-    return await installMacOSService({ ...config, nodePath, herdrPath, ghPath });
+    const discoveredJira = await discoverExecutable('jira', config.run);
+    const jiraPath = await resolveExecutable('JIRA_PATH', discoveredJira, false, prompt);
+    return await installMacOSService({ ...config, nodePath, herdrPath, ghPath, jiraPath });
   } finally {
     terminal?.close();
   }

@@ -43,6 +43,21 @@ test('registers multiple boards and updates a moved board by uuid', async () => 
   }
 });
 
+test('normalizes legacy provider enrichment settings into one link setting', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mdello-boards-'));
+  try {
+    const configFile = join(root, 'companion.json');
+    await writeFile(
+      configFile,
+      JSON.stringify({ githubLinkEnrichment: true, jiraLinkEnrichment: false }),
+    );
+
+    assert.deepEqual(await loadConfig(configFile), { linkEnrichment: true });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('loads a configured web origin and safely defaults invalid values', async () => {
   const root = await mkdtemp(join(tmpdir(), 'mdello-boards-'));
   try {

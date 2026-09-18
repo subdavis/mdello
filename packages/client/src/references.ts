@@ -24,6 +24,13 @@ export interface GitHubLinkDetails {
   ciStatus?: GitHubCiStatus;
 }
 
+export interface JiraLinkDetails {
+  url: string;
+  key: string;
+  title: string;
+  status: string;
+}
+
 export const REFERENCE_ICONS: Record<ReferenceKind, string> = {
   git: gitIcon,
   jira: jiraIcon,

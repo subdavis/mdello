@@ -41,9 +41,9 @@ Default endpoint: `http://127.0.0.1:51618`. JSON request bodies are limited to 6
 | `DELETE /associations?cardUuid=…&harness=…&sessionId=…` | Forgets that harness session from only the selected card, preserving its associations with other cards. |
 | `GET /events?boardUuid=…&boardPath=…` | Validates and registers board, reconciles stored paths/UUIDs, then opens SSE stream. One Herdr state sync runs when the frontend connects. Sends `snapshot` first and `association` after each update for that board, enriched from the companion's cached Herdr state when resolvable. |
 | `POST /hooks/<harness>` | Body is that harness's raw lifecycle payload. A registered [harness adapter](agent-extension.md) translates it; the companion publishes to the event's cards plus every card already held for that `(harness, sessionId)`. Sessions resolve against cached Herdr state; an unknown session triggers one state sync, and a still-unresolved session is negatively cached. Always answers `{}`. Browser requests carrying `Origin`, `Referer`, or `Sec-Fetch-Site` are rejected with `403`; hooks are for local agent clients only. Unknown harness returns `404`. |
-| `GET /settings` | Returns `{ autofocus, githubEnabled, githubLinkEnrichment, herdrEnabled }`; CLI controls are enabled when their executable is configured through `GH_PATH`/`HERDR_PATH` or discovered on the companion's active `PATH`. |
-| `POST /settings` | Persists either `{ autofocus: boolean }` or `{ githubLinkEnrichment: boolean }` in the companion config. |
-| `GET /enrichments?url=…` | Opens the provider-neutral SSE subscription for up to 50 repeated `url` parameters. Emits cached `{ items, errors }` first, immediately refreshes URLs through their registered providers, streams results as each lookup settles, and polls every 30 seconds until the client disconnects. Every item includes a `provider` discriminator. GitHub is currently the only provider: active PRs include `ciStatus` as `passing`, `failing`, `pending`, or `none`; closed and merged PRs omit it. Successful results are cached in companion memory. Returns `409` when no enrichment providers are available and `400` for unsupported URLs. |
+| `GET /settings` | Returns `{ autofocus, githubEnabled, herdrEnabled, jiraEnabled, linkEnrichment }`; CLI controls are enabled when their executable is configured through `GH_PATH`/`HERDR_PATH`/`JIRA_PATH` or discovered on the companion's active `PATH`. |
+| `POST /settings` | Persists either `{ autofocus: boolean }` or `{ linkEnrichment: boolean }` in the companion config. The single link setting controls every available enrichment provider. |
+| `GET /enrichments?url=…` | Opens the provider-neutral SSE subscription for up to 50 repeated `url` parameters. Emits cached `{ items, errors }` first, immediately refreshes URLs through their registered providers, streams results as each lookup settles, and polls every 30 seconds until the client disconnects. Every item includes a `provider` discriminator. GitHub active PRs include `ciStatus` as `passing`, `failing`, `pending`, or `none`; closed and merged PRs omit it. Jira issues include their key, status, and title. Successful results are cached in companion memory. Returns `409` when no enrichment providers are available and `400` for unsupported URLs. |
 | `POST /actions` | Body is `{ action, ... }`. Actions live in their own module ([`actions.ts`](../packages/companion/src/actions.ts)), isolated from the association/board logic above, as a small `ACTIONS` registry keyed by action name. Returns `200 { ok: true }` on success, `400` for a body that isn't a recognized action, `500` if the herdr CLI itself fails. |
 | ↳ `focus` | `{ action: "focus", harness, sessionId, sessionFile? }` — the session to focus. Joins `herdr agent list` against `sessionId` (or `sessionFile` for `harness: pi`), runs `herdr agent focus <pane_id>`, then projects its `tab_id` to attached Herdr clients with `herdr tab focus <tab_id>`. `404` if no pane matches, `409` if `herdr` is unavailable through both `HERDR_PATH` and `PATH`. |
 
@@ -73,23 +73,25 @@ the XDG base-directory specification. Backfill reads `CLAUDE_SESSIONS_DIR` (defa
 `${XDG_DATA_HOME:-~/.local/share}/opencode/opencode.db`), and `PI_SESSIONS_DIR` (default
 `~/.pi/agent/sessions`). Set `DEBUG=1` for
 structured stderr logs. When `HERDR_PATH` is unset, an interactively started companion discovers
-`herdr` from its active `PATH`. GitHub link enrichment similarly runs `gh` from active `PATH` when
-`GH_PATH` is unset.
+`herdr` from its active `PATH`. Link enrichment similarly discovers `gh` and `jira` when `GH_PATH`
+and `JIRA_PATH` are unset.
 
-The macOS installer interactively confirms the current Node executable and any discovered `herdr`
-or `gh` executable. Their absolute paths are stored as `HERDR_PATH` and `GH_PATH` in the launchd
-service because launchd does not inherit the shell `PATH`. It stops the launch agent before moving legacy files from `~/.mdello`. Each file is moved
+The macOS installer interactively confirms the current Node executable and any discovered `herdr`,
+`gh`, or `jira` executable. Their absolute paths are stored as `HERDR_PATH`, `GH_PATH`, and
+`JIRA_PATH` in the launchd service because launchd does not inherit the shell `PATH`. Jira
+credentials are not copied into the plist: `HOME` lets jira-cli use its normal config plus a
+matching `~/.netrc` entry or login-keychain credential. It stops the launch agent before moving legacy files from `~/.mdello`. Each file is moved
 only when its XDG destination is absent: config goes to the config directory; event history and
 stdout/stderr logs go to the state directory. It then writes absolute executable and XDG paths into
 the launchd plist without copying the shell `PATH`, restarts the service, and removes `~/.mdello`
 when empty. Missing `herdr` is allowed and disables herdr actions.
 
-`companion.json` holds `boards`, `autofocus`, `githubLinkEnrichment`, and user-edited settings. `webOrigin` is the HTTP(S) origin allowed to call browser-facing routes and defaults to `https://subdavis.github.io`; configure an origin only, without an application path. Loopback browser origins remain allowed for local development. Saving board registrations or autofocus preserves every other setting.
+`companion.json` holds `boards`, `autofocus`, link-enrichment settings, and user-edited settings. `webOrigin` is the HTTP(S) origin allowed to call browser-facing routes and defaults to `https://subdavis.github.io`; configure an origin only, without an application path. Loopback browser origins remain allowed for local development. Saving board registrations or autofocus preserves every other setting.
 
 ```json
 {
   "autofocus": true,
-  "githubLinkEnrichment": true,
+  "linkEnrichment": true,
   "webOrigin": "https://example.com"
 }
 ```

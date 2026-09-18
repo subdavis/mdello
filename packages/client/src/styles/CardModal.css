@@ -277,11 +277,9 @@
   filter: brightness(0.92);
 }
 
-.github-ref {
-  --github-status-bg: var(--column-bg);
-  --github-status-text: var(--muted);
+.enriched-ref {
+  --enriched-status-text: var(--muted);
   max-width: 100%;
-  background: var(--github-status-bg);
 }
 
 :root[data-theme="dark"] .github-ref .ref-icon {
@@ -289,32 +287,32 @@
 }
 
 .github-ref.is-open {
-  --github-status-text: var(--success-text);
+  --enriched-status-text: var(--success-text);
 }
 
 .github-ref.is-closed {
-  --github-status-text: var(--danger-text);
+  --enriched-status-text: var(--danger-text);
 }
 
 .github-ref.is-draft {
-  --github-status-text: var(--warning-text);
+  --enriched-status-text: var(--warning-text);
 }
 
 .github-ref.is-merged {
-  --github-status-text: var(--github-merged-text);
+  --enriched-status-text: var(--github-merged-text);
 }
 
-.github-ref-label {
+.enriched-ref-label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.github-ref-status,
+.enriched-ref-status,
 .github-ci {
   flex: none;
   padding: 0 var(--space-1);
-  color: var(--github-status-text);
+  color: var(--enriched-status-text);
   font-size: var(--font-2xs);
   font-weight: 700;
   text-transform: uppercase;

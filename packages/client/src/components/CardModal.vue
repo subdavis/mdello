@@ -4,7 +4,9 @@ import { useBoard } from '../composables/useBoard';
 import {
   subscribeUrlEnrichments,
   type UrlEnrichment,
-  useGitHubLinkEnrichment,
+  useGitHubEnabled,
+  useLinkEnrichment,
+  useJiraEnabled,
 } from '../composables/useCompanion';
 import { useMarkdownImport } from '../composables/useMarkdownImport';
 import { showToast } from '../composables/useToast';
@@ -12,9 +14,10 @@ import { formatStamp } from '../format';
 import type { CardAttachment } from '../fs/attachments';
 import type { Card } from '../fs/board';
 import { renderMarkdown, setTaskChecked } from '../markdown';
-import type { GitHubLinkDetails } from '../references';
+import type { GitHubLinkDetails, JiraLinkDetails } from '../references';
 import Agents from './Agents.vue';
 import GitHubReferenceBadge from './GitHubReferenceBadge.vue';
+import JiraReferenceBadge from './JiraReferenceBadge.vue';
 import IconGlyph from './IconGlyph.vue';
 import MarkdownEditor from './MarkdownEditor.vue';
 import Overlay from './Overlay.vue';
@@ -39,14 +42,19 @@ const editing = ref(false);
 const editor = ref<InstanceType<typeof MarkdownEditor> | null>(null);
 const modalWidth = ref(storedModalWidth());
 const modalStyle = computed(() => ({ width: `${modalWidth.value}px` }));
-const githubLinkEnrichment = useGitHubLinkEnrichment();
+const githubEnabled = useGitHubEnabled();
+const linkEnrichment = useLinkEnrichment();
+const jiraEnabled = useJiraEnabled();
 const githubLinks = ref<GitHubLinkDetails[]>([]);
+const jiraLinks = ref<JiraLinkDetails[]>([]);
 const githubLinksByUrl = computed(() => new Map(githubLinks.value.map((link) => [link.url, link])));
+const jiraLinksByUrl = computed(() => new Map(jiraLinks.value.map((link) => [link.url, link])));
 const rendered = computed(() => renderMarkdown(props.card.body || '_No description_'));
 const enrichedReferences = computed(() =>
   props.card.references.map((reference) => ({
     ...reference,
     github: githubLinksByUrl.value.get(reference.url),
+    jira: jiraLinksByUrl.value.get(reference.url),
   })),
 );
 const { fullPath, clipboardPath } = useBoardExtras(board, props.card.name);
@@ -63,7 +71,7 @@ const loadedAttachments = ref<LoadedAttachment[]>([]);
 const openImage = ref<LoadedAttachment | null>(null);
 const draggingFiles = ref(false);
 let attachmentLoad = 0;
-let closeGitHubLinkStream: () => void = () => undefined;
+let closeLinkStream: () => void = () => undefined;
 
 function isGitHubEnrichment(
   enrichment: UrlEnrichment,
@@ -71,20 +79,36 @@ function isGitHubEnrichment(
   return enrichment.provider === 'github';
 }
 
+function isJiraEnrichment(
+  enrichment: UrlEnrichment,
+): enrichment is UrlEnrichment & JiraLinkDetails {
+  return enrichment.provider === 'jira';
+}
+
 watch(
-  [githubLinkEnrichment, () => props.card.references.map((reference) => reference.url).join('\n')],
-  ([enabled]) => {
-    closeGitHubLinkStream();
+  [
+    githubEnabled,
+    linkEnrichment,
+    jiraEnabled,
+    () => props.card.references.map((reference) => reference.url).join('\n'),
+  ],
+  () => {
+    closeLinkStream();
     githubLinks.value = [];
-    if (!enabled) return;
+    jiraLinks.value = [];
     const urls = props.card.references
       .filter(
         (reference) =>
-          reference.kind === 'git' && /^https:\/\/(?:www\.)?github\.com\//.test(reference.url),
+          (githubEnabled.value &&
+            linkEnrichment.value &&
+            reference.kind === 'git' &&
+            /^https:\/\/(?:www\.)?github\.com\//.test(reference.url)) ||
+          (jiraEnabled.value && linkEnrichment.value && reference.kind === 'jira'),
       )
       .map((reference) => reference.url);
-    closeGitHubLinkStream = subscribeUrlEnrichments(urls, (enrichments) => {
+    closeLinkStream = subscribeUrlEnrichments(urls, (enrichments) => {
       githubLinks.value = enrichments.filter(isGitHubEnrichment);
+      jiraLinks.value = enrichments.filter(isJiraEnrichment);
     });
   },
   { immediate: true },
@@ -177,7 +201,7 @@ watch(
 
 onBeforeUnmount(() => {
   attachmentLoad += 1;
-  closeGitHubLinkStream();
+  closeLinkStream();
   revokeAttachments();
 });
 
@@ -303,6 +327,7 @@ function onEscape(): void {
           <div class="ref-row">
             <template v-for="reference in enrichedReferences" :key="reference.url">
               <GitHubReferenceBadge v-if="reference.github" :details="reference.github" />
+              <JiraReferenceBadge v-else-if="reference.jira" :details="reference.jira" />
               <a
                 v-else
                 class="ref"

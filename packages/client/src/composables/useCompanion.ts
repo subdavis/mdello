@@ -34,7 +34,8 @@ const connectionStatus = ref<CompanionConnectionStatus>('disabled');
 const herdrEnabled = ref(false);
 const autofocus = ref(false);
 const githubEnabled = ref(false);
-const githubLinkEnrichment = ref(false);
+const linkEnrichment = ref(false);
+const jiraEnabled = ref(false);
 const RECONNECT_DELAY_MS = 1_000;
 
 let eventSource: EventSource | undefined;
@@ -116,19 +117,22 @@ async function refreshCompanionSettings(): Promise<void> {
       ? ((await response.json()) as {
           autofocus?: boolean;
           githubEnabled?: boolean;
-          githubLinkEnrichment?: boolean;
+          linkEnrichment?: boolean;
           herdrEnabled?: boolean;
+          jiraEnabled?: boolean;
         })
       : {};
     autofocus.value = settings.autofocus === true;
     githubEnabled.value = settings.githubEnabled === true;
-    githubLinkEnrichment.value = settings.githubLinkEnrichment === true;
+    linkEnrichment.value = settings.linkEnrichment === true;
     herdrEnabled.value = settings.herdrEnabled === true;
+    jiraEnabled.value = settings.jiraEnabled === true;
   } catch {
     autofocus.value = false;
     githubEnabled.value = false;
-    githubLinkEnrichment.value = false;
+    linkEnrichment.value = false;
     herdrEnabled.value = false;
+    jiraEnabled.value = false;
   }
 }
 
@@ -146,8 +150,9 @@ function disconnect(): void {
   connectionStatus.value = 'disabled';
   autofocus.value = false;
   githubEnabled.value = false;
-  githubLinkEnrichment.value = false;
+  linkEnrichment.value = false;
   herdrEnabled.value = false;
+  jiraEnabled.value = false;
 }
 
 function scheduleReconnect(boardUuid: string, boardPath: string): void {
@@ -230,8 +235,12 @@ export function useGitHubEnabled(): Readonly<Ref<boolean>> {
   return readonly(githubEnabled);
 }
 
-export function useGitHubLinkEnrichment(): Readonly<Ref<boolean>> {
-  return readonly(githubLinkEnrichment);
+export function useLinkEnrichment(): Readonly<Ref<boolean>> {
+  return readonly(linkEnrichment);
+}
+
+export function useJiraEnabled(): Readonly<Ref<boolean>> {
+  return readonly(jiraEnabled);
 }
 
 export async function setAutofocus(enabled: boolean): Promise<boolean> {
@@ -249,15 +258,15 @@ export async function setAutofocus(enabled: boolean): Promise<boolean> {
   }
 }
 
-export async function setGitHubLinkEnrichment(enabled: boolean): Promise<boolean> {
+export async function setLinkEnrichment(enabled: boolean): Promise<boolean> {
   try {
     const response = await fetch(`${endpoint}/settings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ githubLinkEnrichment: enabled }),
+      body: JSON.stringify({ linkEnrichment: enabled }),
     });
     if (!response.ok) return false;
-    githubLinkEnrichment.value = enabled;
+    linkEnrichment.value = enabled;
     return true;
   } catch {
     return false;

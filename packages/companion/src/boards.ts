@@ -13,7 +13,7 @@ export interface BoardRegistration {
 
 export interface CompanionConfig {
   autofocus?: boolean;
-  githubLinkEnrichment?: boolean;
+  linkEnrichment?: boolean;
   boards: BoardRegistration[];
   webOrigin?: string;
 }
@@ -74,8 +74,19 @@ function validBoard(value: unknown): value is BoardRegistration {
 /** The whole config file, so callers reading one key never clobber another on save. */
 export async function loadConfig(configFile: string): Promise<Partial<CompanionConfig>> {
   try {
-    const parsed = JSON.parse(await readFile(configFile, 'utf8'));
-    return parsed && typeof parsed === 'object' ? (parsed as Partial<CompanionConfig>) : {};
+    const parsed: unknown = JSON.parse(await readFile(configFile, 'utf8'));
+    if (!parsed || typeof parsed !== 'object') return {};
+    const { githubLinkEnrichment, jiraLinkEnrichment, ...config } = parsed as Record<
+      string,
+      unknown
+    >;
+    if (
+      typeof config.linkEnrichment !== 'boolean' &&
+      (typeof githubLinkEnrichment === 'boolean' || typeof jiraLinkEnrichment === 'boolean')
+    ) {
+      config.linkEnrichment = githubLinkEnrichment === true || jiraLinkEnrichment === true;
+    }
+    return config as Partial<CompanionConfig>;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT' || error instanceof SyntaxError) {
       return {};
@@ -110,11 +121,11 @@ export async function saveAutofocus(configFile: string, autofocus: boolean): Pro
   await saveSetting(configFile, { autofocus });
 }
 
-export async function saveGitHubLinkEnrichment(
+export async function saveLinkEnrichment(
   configFile: string,
-  githubLinkEnrichment: boolean,
+  linkEnrichment: boolean,
 ): Promise<void> {
-  await saveSetting(configFile, { githubLinkEnrichment });
+  await saveSetting(configFile, { linkEnrichment });
 }
 
 /** Preserves every other top-level setting instead of overwriting the file. */
