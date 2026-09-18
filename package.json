@@ -14,9 +14,9 @@
     "companion": "yarn workspace mdello-companion start",
     "format": "biome check --write .",
     "lint": "biome check .",
-    "preview": "yarn workspace @mdello/client preview",
-    "test": "yarn workspace @mdello/client test && yarn workspace mdello-companion test && yarn workspace @mdello/opencode-extension test && yarn workspace @mdello/claude-extension test",
-    "typecheck": "yarn workspace @mdello/common typecheck && yarn workspace mdello-companion typecheck && yarn workspace @mdello/pi-extension typecheck && yarn workspace @mdello/opencode-extension typecheck && yarn workspace @mdello/claude-extension typecheck && yarn workspace @mdello/client typecheck"
+    "preview": "yarn workspaces foreach -A run preview",
+    "test": "yarn workspaces foreach -A -p run test",
+    "typecheck": "yarn workspaces foreach -A -p run typecheck"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.9"
