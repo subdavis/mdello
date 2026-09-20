@@ -4,7 +4,7 @@ import { useBoard } from '../composables/useBoard';
 import { chipStyle, type Label, labels, PALETTE, tagStyle } from '../composables/useLabels';
 import { useLayer } from '../composables/useLayer';
 import { showToast } from '../composables/useToast';
-import type { Card } from '../fs/board';
+import type { Card } from '../types/board';
 import IconGlyph from './IconGlyph.vue';
 
 interface Row {
@@ -50,7 +50,7 @@ async function edit(index?: number): Promise<void> {
   titleEl.value?.focus();
 }
 
-function submit(): void {
+async function submit(): Promise<void> {
   if (!editing.value) return;
 
   const name = editing.value.name.trim();
@@ -63,22 +63,21 @@ function submit(): void {
   }
 
   const next: Label = { name, color: editing.value.color };
-  if (editIndex.value === null) {
-    labels.value.push(next);
-  } else {
-    const previous = labels.value[editIndex.value].name;
-    labels.value[editIndex.value] = next;
-    if (previous !== name) board.renameTag(previous, name);
-  }
-
+  const index = editIndex.value;
+  const previous = index === null ? null : labels.value[index].name;
   editing.value = null;
+
+  // Each of these writes the board settings; only rename cards once that has landed.
+  const saved = index === null ? await board.addLabel(next) : await board.updateLabel(index, next);
+  if (saved && previous !== null && previous !== name) board.renameTag(previous, name);
 }
 
 /** Deleting only drops the option; cards keep the tag and it resurfaces as an unknown label. */
-function remove(): void {
+async function remove(): Promise<void> {
   if (editIndex.value === null) return;
-  labels.value.splice(editIndex.value, 1);
+  const index = editIndex.value;
   editing.value = null;
+  await board.removeLabel(index);
 }
 
 function onPointerDown(event: PointerEvent): void {

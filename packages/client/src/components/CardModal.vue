@@ -11,8 +11,7 @@ import {
 import { useMarkdownImport } from '../composables/useMarkdownImport';
 import { showToast } from '../composables/useToast';
 import { formatStamp } from '../format';
-import type { CardAttachment } from '../fs/attachments';
-import type { Card } from '../fs/board';
+import type { Card, CardAttachment } from '../types/board';
 import { renderMarkdown, setTaskChecked } from '../markdown';
 import type { GitHubLinkDetails, JiraLinkDetails } from '../references';
 import Agents from './Agents.vue';

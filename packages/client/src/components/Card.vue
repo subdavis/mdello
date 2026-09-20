@@ -5,7 +5,7 @@ import { useDrag } from '../composables/useDrag';
 import { tagStyle } from '../composables/useLabels';
 import { useBoard } from '../composables/useBoard';
 import { formatStamp } from '../format';
-import type { Card } from '../fs/board';
+import type { Card } from '../types/board';
 import IconGlyph from './IconGlyph.vue';
 import { useBoardExtras } from '../composables/useCardExtras.ts';
 

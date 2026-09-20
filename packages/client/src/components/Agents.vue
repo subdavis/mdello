@@ -16,7 +16,7 @@ import {
   useHerdrEnabled,
 } from '../composables/useCompanion';
 import { showToast } from '../composables/useToast';
-import type { Card } from '../fs/board';
+import type { Card } from '../types/board';
 import ActionDropdown from './ActionDropdown.vue';
 import IconGlyph from './IconGlyph.vue';
 import SessionStatusDetails from './SessionStatusDetails.vue';

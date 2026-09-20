@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { groupColumns } from '../src/fs/columns.ts';
+import { groupColumns } from '../src/board/columns.ts';
 
 test('prepends virtual columns for card columns missing from config', () => {
   const cards = [

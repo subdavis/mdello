@@ -3,7 +3,7 @@ import { computed, ref } from 'vue';
 import { useBoard } from '../composables/useBoard';
 import { useDrag } from '../composables/useDrag';
 import { markdownFile, useMarkdownImport } from '../composables/useMarkdownImport';
-import { ARCHIVE_DIR, type Card } from '../fs/board';
+import { ARCHIVE_TARGET, type Card } from '../types/board';
 import CardModal from './CardModal.vue';
 import Column from './Column.vue';
 
@@ -13,7 +13,7 @@ const markdownImport = useMarkdownImport();
 const openCard = ref<Card | null>(null);
 const archiveDropzone = ref<HTMLElement | null>(null);
 const archiveWarping = ref(false);
-const archiveOver = computed(() => drag.target.value?.column === ARCHIVE_DIR);
+const archiveOver = computed(() => drag.target.value?.column === ARCHIVE_TARGET);
 const isEmpty = computed(
   () => board.configReady.value && !board.loading.value && board.columns.value.length === 0,
 );
@@ -73,7 +73,7 @@ type DropTarget = NonNullable<typeof drag.target.value>;
 type ArchiveWarp = NonNullable<ReturnType<typeof playArchiveWarp>>;
 
 async function importMarkdown(file: File | undefined, target: DropTarget | null): Promise<boolean> {
-  if (!file || !target || target.column === ARCHIVE_DIR) return false;
+  if (!file || !target || target.column === ARCHIVE_TARGET) return false;
   const column = board.columns.value.find((entry) => entry.name === target.column);
   if (!column) return true;
 
@@ -97,7 +97,7 @@ async function onDrop(event: DragEvent): Promise<void> {
   const target = drag.target.value;
   const movedColumn = drag.column.value;
   const file = markdownFile(event.dataTransfer);
-  const archiveCard = source && target?.column === ARCHIVE_DIR ? findCard(source.id) : undefined;
+  const archiveCard = source && target?.column === ARCHIVE_TARGET ? findCard(source.id) : undefined;
   const warp = archiveCard ? playArchiveWarp(archiveCard.id, event) : null;
   if (warp) archiveWarping.value = true;
   drag.end();
@@ -109,7 +109,7 @@ async function onDrop(event: DragEvent): Promise<void> {
 
   const card = findCard(source.id);
   if (!card) return;
-  if (target.column === ARCHIVE_DIR) return dropIntoArchive(card, warp);
+  if (target.column === ARCHIVE_TARGET) return dropIntoArchive(card, warp);
 
   const column = board.columns.value.find((entry) => entry.name === target.column);
   if (column) await board.placeCard(card, column, target.index);
@@ -123,7 +123,7 @@ function onDragend(): void {
 
 function onArchiveDragover(event: DragEvent): void {
   if (markdownImport.draggingMarkdown.value) drag.clearTarget();
-  else drag.over(event, ARCHIVE_DIR, 0);
+  else drag.over(event, ARCHIVE_TARGET, 0);
 }
 </script>
 

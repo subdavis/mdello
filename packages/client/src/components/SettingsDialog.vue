@@ -11,7 +11,7 @@ import {
   useJiraEnabled,
 } from '../composables/useCompanion';
 import { useTheme } from '../composables/useTheme';
-import { CONFIG_FILE, DEFAULT_CONFIG } from '../fs/config';
+import { DEFAULT_EDITOR } from '../types/board';
 import IconGlyph from './IconGlyph.vue';
 import Overlay from './Overlay.vue';
 
@@ -59,7 +59,7 @@ const status = computed(() => {
   if (!editable.value) return 'This board is read-only right now';
   if (saving.value) return 'Saving…';
   if (autofocusFailed.value) return 'Could not update companion settings';
-  if (failed.value) return `Could not write ${CONFIG_FILE}`;
+  if (failed.value) return 'Could not save board settings';
   return dirty.value ? 'Unsaved changes' : 'Saved';
 });
 
@@ -162,7 +162,7 @@ onMounted(() => pathInput.value?.focus());
           autocomplete="off"
           spellcheck="false"
           type="text"
-          :placeholder="DEFAULT_CONFIG.editor"
+          :placeholder="DEFAULT_EDITOR"
         />
           <small class="settings-hint">
             Editors that support custom schemes are the only way a web page can hand a file to a native app.

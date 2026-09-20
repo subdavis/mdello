@@ -1,15 +1,7 @@
+import type { CardAttachment } from '../types/board';
 import { openWritable } from './writable';
 
 export const ATTACHMENTS_DIR = 'attachments';
-
-export interface CardAttachment {
-  /** Filename inside the board's `attachments` directory. */
-  file: string;
-  /** Original filename shown in the UI. */
-  name: string;
-  /** MIME type reported when the file was attached; may be empty. */
-  type: string;
-}
 
 function safeName(name: string): string {
   const safe = [...name.normalize('NFC')]

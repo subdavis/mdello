@@ -1,48 +1,8 @@
 import { dump, load } from 'js-yaml';
+import { type BoardSettings, DEFAULT_EDITOR, defaultSettings, type Label } from '../types/board.ts';
 import { openWritable } from './writable.ts';
 
 export const CONFIG_FILE = 'mdello.yml';
-
-export interface Label {
-  name: string;
-  color: string;
-}
-
-export interface BoardConfig {
-  /** Stable board identity, independent from its current filesystem path. */
-  uuid: string;
-  /** Ordered column names. Cards select one with their `column` frontmatter key. */
-  columns: string[];
-  /** Absolute path of the board folder on disk; only the user can supply it. */
-  path: string;
-  /** URL template used to open a card in an external editor. */
-  editor: string;
-  /** Whether the web app should connect to the local companion sidecar. */
-  companion: boolean;
-  labels: Label[];
-}
-
-const DEFAULT_EDITOR = 'vscode://file{path}';
-
-export const DEFAULT_CONFIG: BoardConfig = {
-  uuid: '',
-  columns: [],
-  path: '',
-  editor: DEFAULT_EDITOR,
-  companion: false,
-  labels: [],
-};
-
-export function createBoardConfig(overrides: Partial<BoardConfig> = {}): BoardConfig {
-  return { ...DEFAULT_CONFIG, uuid: crypto.randomUUID(), ...overrides };
-}
-
-/** Mirrors ensureCardUuid: boards predating board identity are adopted on first read. */
-export function ensureBoardUuid(config: BoardConfig): boolean {
-  if (config.uuid) return false;
-  config.uuid = crypto.randomUUID();
-  return true;
-}
 
 /** Comments are re-emitted on every write because js-yaml's dump() cannot keep them. */
 const HEADER = `# mdello board config — written by the app, safe to hand-edit.
@@ -96,13 +56,13 @@ function readLabels(value: unknown): Label[] {
 }
 
 /** Missing or corrupt config is not an error: fall back to defaults. */
-export async function readConfig(root: FileSystemDirectoryHandle): Promise<BoardConfig> {
+export async function readConfig(root: FileSystemDirectoryHandle): Promise<BoardSettings> {
   let raw: unknown = null;
   try {
     const handle = await root.getFileHandle(CONFIG_FILE);
     raw = load(await (await handle.getFile()).text());
   } catch {
-    return { ...DEFAULT_CONFIG };
+    return defaultSettings();
   }
 
   const data = (raw ?? {}) as Record<string, unknown>;
@@ -118,29 +78,10 @@ export async function readConfig(root: FileSystemDirectoryHandle): Promise<Board
 
 export async function writeConfig(
   root: FileSystemDirectoryHandle,
-  config: BoardConfig,
+  config: BoardSettings,
 ): Promise<void> {
   const handle = await root.getFileHandle(CONFIG_FILE, { create: true });
   const writable = await openWritable(handle);
   await writable.write(HEADER + dump(config, { lineWidth: -1 }));
   await writable.close();
-}
-
-/** Builds the editor URL for a card, or undefined while `path` is unset. */
-export function editorUrl(config: BoardConfig, card: { name: string }): string | undefined {
-  if (!config.path) return undefined;
-
-  // Windows paths need forward slashes and a leading one to be valid in a URL.
-  let root = config.path.replaceAll('\\', '/');
-  while (root.endsWith('/')) root = root.slice(0, -1);
-  const absolute = `${root.startsWith('/') ? '' : '/'}${root}/${card.name}`;
-
-  return config.editor.replace('{path}', encodeURI(absolute));
-}
-
-/** "vscode://file{path}" -> "VS Code", so the link names the app it will launch. */
-export function editorName(config: Pick<BoardConfig, 'editor'>): string {
-  const scheme = /^([a-z][\w+.-]*):/i.exec(config.editor)?.[1] ?? 'editor';
-  if (scheme.toLowerCase() === 'vscode') return 'VS Code';
-  return scheme.charAt(0).toUpperCase() + scheme.slice(1);
 }
