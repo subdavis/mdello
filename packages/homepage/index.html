@@ -8,66 +8,200 @@
       name="description"
       content="mdello reads and writes plain .md files directly on disk. Track with git, sync in Dropbox, or share with coding agents."
     />
-    <!-- Same blue the app declares, so installed-PWA and mobile browser chrome match it. -->
-    <meta name="theme-color" content="#0c66e4" />
+    <!-- The page accent, so mobile browser chrome matches it. Repeats the literal value of
+         --marketing-accent in homepage.css; the two have to move together. -->
+    <meta name="theme-color" content="#6dbde3" />
   </head>
   <body>
-    <section class="hero">
-      <!-- Root-absolute, like the script tag below: a path that escapes the package root is
-           hashed correctly by the build but left verbatim in dev, where it 404s. -->
-      <img class="hero-logo" src="/src/Mdello.png" width="800" height="546" alt="mdello" />
-      <h1 class="hero-title">Kanban with Markdown</h1>
-      <p class="hero-subtitle">
-        mdello reads and writes plain <code>.md</code> files directly on disk. Track with git,
-        sync in Dropbox, or share with coding agents.
-      </p>
-    </section>
-
     <!--
-      The app mounts here. Everything else on this page is static marketing markup; this is a
-      plain Vue app that happens to share a page with it. `.demo` is sized so its first 200px
-      land inside the opening viewport.
+      Deliberately not a replica of the app's own toolbar: a fake window chrome sitting 200px
+      above a real one reads as a costume. It borrows the app's surface, line and brand, and
+      is otherwise an ordinary nav.
     -->
-    <section class="demo">
-      <div id="demo"></div>
-    </section>
+    <header class="site-nav">
+      <div class="wrap site-nav-inner">
+        <a class="site-nav-brand" href="#top">
+          <span aria-hidden="true">🍺</span>
+          <span>mdello</span>
+        </a>
+        <span class="spacer"></span>
+        <a class="site-nav-link" href="#files">Files</a>
+        <a class="site-nav-link" href="#agents">Agents</a>
+        <a class="site-nav-link" href="https://github.com/subdavis/mdello">GitHub</a>
+        <a class="button-cta is-small" href="https://subdavis.github.io/mdello/">Open a board</a>
+      </div>
+    </header>
 
-    <section class="prose">
-      <h2>One file per card</h2>
-      <div style="display: flex; gap: 3rem;">
-      <pre style="flex: 1;"><code>---
-uuid: 550e8400-e29b-41d4-a716-446655440000
-title: Ship the demo site
-column: In progress
-order: 2
-tags: [writing, web]
-assignee: brandon
-created: '2026-09-20T14:52:58.000Z'
-attachments:
-  - file: 7f3a91c4-mockup.png
-    name: mockup.png
-    type: image/png
----
+    <main id="top">
+      <section class="band band-hero">
+        <div class="wrap hero">
+          <!-- Root-absolute, like the script tag below: a path that escapes the package root is
+               hashed correctly by the build but left verbatim in dev, where it 404s. -->
+          <img class="hero-logo" src="/src/Mdello.png" width="800" height="546" alt="mdello" />
+          <h1 class="hero-title">Kanban with Markdown</h1>
+          <p class="hero-subtitle">
+            mdello reads and writes plain <code>.md</code> files directly on disk. Track with
+            git, sync in Dropbox, or hand the whole board to a coding agent.
+          </p>
+          <div class="hero-actions">
+            <a class="button-cta" href="https://subdavis.github.io/mdello/">Open a board →</a>
+            <a class="button-ghost" href="https://github.com/subdavis/mdello">View source</a>
+          </div>
+          <p class="hero-note">
+            Runs in the browser, no account. Chromium only — it needs the File System Access
+            API.
+          </p>
+        </div>
+      </section>
 
-The body is ordinary markdown. Links to GitHub, Jira, Figma and
-Slack are hoisted as reference links on the card.</code></pre>
-<div style="flex: 1;">
-<p class="subtitle">
-  Metadata is stored as frontmatter.
-  <br />
-  The body is ordinary markdown.
-</p>
-</div>
-</div>
-    </section>
+      <!--
+        The app mounts here. Everything else on this page is static marketing markup; this is a
+        plain Vue app that happens to share a page with it. The window is wider than the text
+        column on purpose — it is the page's one hero object.
+      -->
+      <section class="band band-demo">
+        <div class="wrap is-wide">
+          <div id="demo"></div>
+          <p class="demo-caption">
+            That is the real app, running on an in-memory board. Drag a card, open one, add a
+            column — nothing is saved, and a refresh puts it all back.
+          </p>
+        </div>
+      </section>
 
-    <section class="prose">
-      <h2>Agents eat for free</h2>
-      <p class="subtitle">
-        Files are the cheapest abstraction for agents to understand. No MCP server or auth required.      
-      </p>
-      <pre><code>npx skills add https://github.com/subdavis/mdello/blob/main/skills/mdello-board</code></pre>
-    </section>
+      <section class="band" id="files">
+        <div class="wrap is-centered">
+          <h2 class="band-title">The file <em>is</em> the card</h2>
+          <p class="lede">
+            Not exported to markdown. Not backed by markdown. The card on your board is a file
+            in a folder you chose, and the app is a viewer for it.
+          </p>
+
+          <!--
+            Left: the file, written out by hand. Right: the app's own card modal, live, over
+            that same card on the in-memory board — edits on one side are edits to the other.
+            Keep this sample in step with `GUIDE_CARD_UUID` in demoSeed.ts.
+          -->
+          <div class="split">
+            <figure class="frame">
+              <figcaption class="frame-bar">
+                <span class="frame-label">write-the-getting-started-guide.md</span>
+              </figcaption>
+              <pre class="frame-body"><code><span class="c-rule">---</span>
+<span class="c-key">uuid</span>: 550e8400-e29b-41d4-a716-446655440000
+<span class="c-key">title</span>: <span class="c-val">Write the getting-started guide</span>
+<span class="c-key">column</span>: <span class="c-val">In progress</span>
+<span class="c-key">order</span>: <span class="c-num">1</span>
+<span class="c-key">tags</span>: [<span class="c-val">writing</span>]
+<span class="c-key">assignee</span>: <span class="c-val">you</span>
+<span class="c-key">created</span>: <span class="c-val">'2026-09-20T14:52:58.000Z'</span>
+<span class="c-rule">---</span>
+
+Cover the three things people get stuck on:
+
+- picking a folder, and why `~/.local/state` works
+- what belongs in `mdello.yml`
+- what happens when two tabs open one board
+
+Link the [support table](https://caniuse.com/filesystem)
+so nobody finds out the hard way.</code></pre>
+            </figure>
+
+            <figure class="frame">
+              <figcaption class="frame-bar">
+                <span class="frame-label">mdello</span>
+              </figcaption>
+              <div class="frame-body is-card">
+                <div id="card-modal"></div>
+              </div>
+            </figure>
+          </div>
+        </div>
+      </section>
+
+      <section class="band band-dark" id="agents">
+        <div class="wrap is-centered">
+          <h2 class="band-title">Agents eat for free</h2>
+          <p class="lede">
+            Files are the cheapest abstraction an agent can be handed. No server to run, no
+            tool schema to maintain, no token to rotate — your agent already knows how to read
+            a directory. Install the agent skill:
+          </p>
+
+          <figure class="frame is-terminal">
+            <figcaption class="frame-bar">
+              <span class="frame-light is-close"></span>
+              <span class="frame-light is-minimize"></span>
+              <span class="frame-light is-zoom"></span>
+              <span class="frame-label">zsh</span>
+              <span class="spacer"></span>
+              <button
+                class="copy-button"
+                type="button"
+                data-copy="npx skills add https://github.com/subdavis/mdello/blob/main/skills/mdello-board"
+              >
+                Copy
+              </button>
+            </figcaption>
+            <div class="frame-body">
+              <pre><code><span class="c-prompt">$</span> npx skills add \
+    https://github.com/subdavis/mdello/blob/main/skills/mdello-board</code></pre>
+            </div>
+          </figure>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="wrap footer-grid">
+        <div class="footer-brand">
+          <p class="footer-mark"><span aria-hidden="true">🍺</span> mdello</p>
+          <p>Kanban with markdown. Pronounced like the beer.</p>
+        </div>
+
+        <nav class="footer-col" aria-label="Product">
+          <h2>Product</h2>
+          <ul>
+            <li><a href="https://subdavis.github.io/mdello/">Open a board</a></li>
+            <li><a href="https://github.com/subdavis/mdello#user-guide">Install as a PWA</a></li>
+            <li>
+              <a href="https://github.com/subdavis/mdello#keyboard-shortcuts">
+                Keyboard shortcuts
+              </a>
+            </li>
+            <li>
+              <a href="https://github.com/subdavis/mdello#board-configuration--customization">
+                Board configuration
+              </a>
+            </li>
+          </ul>
+        </nav>
+
+        <nav class="footer-col" aria-label="Developers">
+          <h2>Developers</h2>
+          <ul>
+            <li><a href="https://github.com/subdavis/mdello">Source on GitHub</a></li>
+            <li><a href="https://github.com/subdavis/mdello#agent-skills">Agent skill</a></li>
+            <li>
+              <a href="https://github.com/subdavis/mdello#companion-integrations-optional">
+                Companion integrations
+              </a>
+            </li>
+            <li><a href="https://github.com/subdavis/mdello#frontmatter">Frontmatter</a></li>
+          </ul>
+        </nav>
+
+        <div class="footer-col">
+          <h2>Appearance</h2>
+          <div id="theme-toggle"></div>
+        </div>
+      </div>
+
+      <div class="wrap footer-colophon">
+        <p>Built by <a href="https://github.com/subdavis">subdavis</a> · MIT licensed</p>
+        <p>Set in JetBrains Mono &amp; your system sans</p>
+      </div>
+    </footer>
 
     <script type="module" src="/src/main.ts"></script>
   </body>

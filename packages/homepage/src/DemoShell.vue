@@ -41,12 +41,12 @@ async function submitColumn(): Promise<void> {
 </script>
 
 <template>
-  <div class="demo-app">
+  <div class="frame demo-app">
     <!-- The OS's share of the window. Decorative, and outside everything below. -->
-    <div class="demo-titlebar" aria-hidden="true">
-      <span class="demo-light is-close" />
-      <span class="demo-light is-minimize" />
-      <span class="demo-light is-zoom" />
+    <div class="frame-bar is-chrome" aria-hidden="true">
+      <span class="frame-light is-close" />
+      <span class="frame-light is-minimize" />
+      <span class="frame-light is-zoom" />
     </div>
 
     <div class="demo-window">

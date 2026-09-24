@@ -5,6 +5,9 @@ import type { MemorySeed } from '@client/board/stores/memoryBoardStore';
  * Deliberately hand-written rather than read from `demo-board/`: the marketing page should not
  * depend on a folder that exists for exercising the real filesystem backend.
  */
+/** Shared with the homepage so the "one file per card" section can open this exact card. */
+export const GUIDE_CARD_UUID = '550e8400-e29b-41d4-a716-446655440000';
+
 export const demoSeed: MemorySeed = {
   settings: {
     columns: ['Backlog', 'In progress', 'Done'],
@@ -35,13 +38,20 @@ export const demoSeed: MemorySeed = {
       order: 3,
       body: 'Open this one and you get a markdown editor.\n\n- lists work\n- so does `code`\n- and [links](https://github.com)\n\nKeys the app does not recognise are left alone, so you can keep your own frontmatter.',
     },
+    /*
+     * The card the "one file per card" section opens. Its uuid and created stamp are pinned
+     * because the code sample beside it is that same file written out by hand — if these
+     * drift, the section stops being true.
+     */
     {
+      uuid: GUIDE_CARD_UUID,
       title: 'Write the getting-started guide',
       column: 'In progress',
       order: 1,
       tags: ['writing'],
       assignee: 'you',
-      body: 'Covering: picking a folder, the config file, and what happens when two tabs open the\nsame board.',
+      created: '2026-09-20T14:52:58.000Z',
+      body: 'Cover the three things people get stuck on:\n\n- picking a folder, and why `~/.local/state` works\n- what belongs in `mdello.yml`\n- what happens when two tabs open one board\n\nLink the [support table](https://caniuse.com/filesystem)\nso nobody finds out the hard way.',
     },
     {
       title: 'Archive something',

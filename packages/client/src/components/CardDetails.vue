@@ -1,0 +1,401 @@
+<script setup lang="ts">
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import { useBoard } from '../composables/useBoard';
+import {
+  subscribeUrlEnrichments,
+  type UrlEnrichment,
+  useGitHubEnabled,
+  useLinkEnrichment,
+  useJiraEnabled,
+} from '../composables/useCompanion';
+import { useMarkdownImport } from '../composables/useMarkdownImport';
+import { showToast } from '../composables/useToast';
+import { formatStamp } from '../format';
+import type { Card, CardAttachment } from '../types/board';
+import { renderMarkdown, setTaskChecked } from '../markdown';
+import type { GitHubLinkDetails, JiraLinkDetails } from '../references';
+import Agents from './Agents.vue';
+import GitHubReferenceBadge from './GitHubReferenceBadge.vue';
+import JiraReferenceBadge from './JiraReferenceBadge.vue';
+import IconGlyph from './IconGlyph.vue';
+import MarkdownEditor from './MarkdownEditor.vue';
+import Overlay from './Overlay.vue';
+import TagEditor from './TagEditor.vue';
+import { useBoardExtras } from '../composables/useCardExtras.ts';
+
+/**
+ * Everything a card shows when it is open, and nothing about being a dialog. `CardModal.vue`
+ * wraps this in the overlay and owns dismissal, escape and resizing; embedding it directly —
+ * the marketing page does — gets the same editor in the flow of a document. `close` is a
+ * request the host decides what to do with, which is why nothing is flushed here.
+ */
+const props = withDefaults(defineProps<{ card: Card; closable?: boolean }>(), { closable: true });
+const emit = defineEmits<{ close: [] }>();
+
+const board = useBoard();
+const markdownImport = useMarkdownImport();
+const editing = ref(false);
+const editor = ref<InstanceType<typeof MarkdownEditor> | null>(null);
+const githubEnabled = useGitHubEnabled();
+const linkEnrichment = useLinkEnrichment();
+const jiraEnabled = useJiraEnabled();
+const githubLinks = ref<GitHubLinkDetails[]>([]);
+const jiraLinks = ref<JiraLinkDetails[]>([]);
+const githubLinksByUrl = computed(() => new Map(githubLinks.value.map((link) => [link.url, link])));
+const jiraLinksByUrl = computed(() => new Map(jiraLinks.value.map((link) => [link.url, link])));
+const rendered = computed(() => renderMarkdown(props.card.body || '_No description_'));
+const enrichedReferences = computed(() =>
+  props.card.references.map((reference) => ({
+    ...reference,
+    github: githubLinksByUrl.value.get(reference.url),
+    jira: jiraLinksByUrl.value.get(reference.url),
+  })),
+);
+const { fullPath, clipboardPath } = useBoardExtras(board, props.card.name);
+/** Undefined until `path` is filled in inside the board's mdello.yml. */
+const editorLink = computed(() => board.cardUrl(props.card));
+
+interface LoadedAttachment extends CardAttachment {
+  url: string;
+  size: number;
+  image: boolean;
+}
+
+const loadedAttachments = ref<LoadedAttachment[]>([]);
+const openImage = ref<LoadedAttachment | null>(null);
+const draggingFiles = ref(false);
+let attachmentLoad = 0;
+let closeLinkStream: () => void = () => undefined;
+
+function isGitHubEnrichment(
+  enrichment: UrlEnrichment,
+): enrichment is UrlEnrichment & GitHubLinkDetails {
+  return enrichment.provider === 'github';
+}
+
+function isJiraEnrichment(
+  enrichment: UrlEnrichment,
+): enrichment is UrlEnrichment & JiraLinkDetails {
+  return enrichment.provider === 'jira';
+}
+
+watch(
+  [
+    githubEnabled,
+    linkEnrichment,
+    jiraEnabled,
+    () => props.card.references.map((reference) => reference.url).join('\n'),
+  ],
+  () => {
+    closeLinkStream();
+    githubLinks.value = [];
+    jiraLinks.value = [];
+    const urls = props.card.references
+      .filter(
+        (reference) =>
+          (githubEnabled.value &&
+            linkEnrichment.value &&
+            reference.kind === 'git' &&
+            /^https:\/\/(?:www\.)?github\.com\//.test(reference.url)) ||
+          (jiraEnabled.value && linkEnrichment.value && reference.kind === 'jira'),
+      )
+      .map((reference) => reference.url);
+    closeLinkStream = subscribeUrlEnrichments(urls, (enrichments) => {
+      githubLinks.value = enrichments.filter(isGitHubEnrichment);
+      jiraLinks.value = enrichments.filter(isJiraEnrichment);
+    });
+  },
+  { immediate: true },
+);
+
+function revokeAttachments(): void {
+  for (const attachment of loadedAttachments.value) URL.revokeObjectURL(attachment.url);
+  loadedAttachments.value = [];
+}
+
+function imageFile(attachment: CardAttachment, file: File): boolean {
+  const type = file.type || attachment.type;
+  return (
+    type.startsWith('image/') || /\.(?:avif|bmp|gif|jpe?g|png|svg|webp)$/i.test(attachment.name)
+  );
+}
+
+async function loadAttachments(): Promise<void> {
+  const load = ++attachmentLoad;
+  const next: LoadedAttachment[] = [];
+  for (const attachment of props.card.attachments) {
+    const file = await board.attachmentFile(attachment);
+    if (!file) continue;
+    next.push({
+      ...attachment,
+      url: URL.createObjectURL(file),
+      size: file.size,
+      image: imageFile(attachment, file),
+    });
+  }
+
+  if (load !== attachmentLoad) {
+    for (const attachment of next) URL.revokeObjectURL(attachment.url);
+    return;
+  }
+  revokeAttachments();
+  loadedAttachments.value = next;
+}
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function isFileDrag(event: DragEvent): boolean {
+  return event.dataTransfer?.types.includes('Files') ?? false;
+}
+
+function onDragover(event: DragEvent): void {
+  if (!isFileDrag(event)) return;
+  event.preventDefault();
+  markdownImport.end();
+  draggingFiles.value = true;
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+}
+
+function onDragleave(event: DragEvent): void {
+  const bounds = (event.currentTarget as HTMLElement).getBoundingClientRect();
+  const outside =
+    event.clientX <= bounds.left ||
+    event.clientX >= bounds.right ||
+    event.clientY <= bounds.top ||
+    event.clientY >= bounds.bottom;
+  if (outside) draggingFiles.value = false;
+}
+
+async function onDrop(event: DragEvent): Promise<void> {
+  if (!isFileDrag(event)) return;
+  event.preventDefault();
+  markdownImport.end();
+  draggingFiles.value = false;
+  const files = [...(event.dataTransfer?.files ?? [])];
+  const added = await board.addAttachments(props.card, files);
+  if (added) showToast(`Attached ${added} file${added === 1 ? '' : 's'}`);
+}
+
+async function removeAttachment(attachment: LoadedAttachment): Promise<void> {
+  if (await board.removeAttachment(props.card, attachment)) {
+    if (openImage.value?.file === attachment.file) openImage.value = null;
+    showToast(`Removed ${attachment.name}`);
+  }
+}
+
+watch(
+  () => props.card.attachments.map((attachment) => attachment.file).join('\n'),
+  () => void loadAttachments(),
+  { immediate: true },
+);
+
+onBeforeUnmount(() => {
+  attachmentLoad += 1;
+  closeLinkStream();
+  revokeAttachments();
+});
+
+async function copyPath(): Promise<void> {
+  await navigator.clipboard.writeText(clipboardPath.value);
+  showToast('Copied path');
+}
+
+/** Double-clicked block elements carry a data-line attribute, see markdown.ts. */
+function lineFromEvent(event: MouseEvent): number {
+  const el = (event.target as HTMLElement).closest<HTMLElement>('[data-line]');
+  return Number(el?.dataset.line ?? 0);
+}
+
+async function startEditing(event?: MouseEvent): Promise<void> {
+  if ((event?.target as HTMLElement | undefined)?.closest('.task-list-item-checkbox')) return;
+
+  editing.value = true;
+  await nextTick();
+  await editor.value?.focus(event ? lineFromEvent(event) : 0);
+}
+
+function setTaskFromPreview(event: Event): void {
+  const checkbox = event.target;
+  if (!(checkbox instanceof HTMLInputElement) || !checkbox.matches('.task-list-item-checkbox')) {
+    return;
+  }
+
+  const line = Number(checkbox.dataset.taskLine);
+  const updated = setTaskChecked(props.card.body, line, checkbox.checked);
+  if (updated === props.card.body) return;
+
+  props.card.body = updated;
+  board.queueSave(props.card);
+}
+
+async function save(): Promise<void> {
+  editing.value = false;
+  await board.flushCard(props.card);
+}
+
+/** The host decides what closing means; escape handling needs to know if the editor is up. */
+defineExpose({ editing, save });
+</script>
+
+<template>
+  <div
+    class="modal-drop-surface"
+    @dragover.stop="onDragover"
+    @dragleave.stop="onDragleave"
+    @drop.stop="onDrop"
+  >
+    <header class="modal-head">
+      <input
+        class="modal-title"
+        aria-label="Card title"
+        :value="card.title"
+        @input="
+          card.title = ($event.target as HTMLInputElement).value;
+          board.queueSave(card);
+        "
+      />
+      <button v-if="closable" type="button" class="icon-button" title="Close" @click="emit('close')">
+        <IconGlyph name="close" aria-hidden="true" />
+      </button>
+    </header>
+
+    <dl class="meta">
+      <dt>History</dt>
+      <dd>
+          <span class="history-item">Created <span class="history-item-date">{{ formatStamp(card.created) }}</span></span>
+          <span class="history-item">Modified <span class="history-item-date">{{ formatStamp(card.modified) }}</span></span>
+      </dd>
+      <Agents :card="card" />
+      <template v-if="card.references.length">
+        <dt>References</dt>
+        <dd>
+          <div class="ref-row">
+            <template v-for="reference in enrichedReferences" :key="reference.url">
+              <GitHubReferenceBadge v-if="reference.github" :details="reference.github" />
+              <JiraReferenceBadge v-else-if="reference.jira" :details="reference.jira" />
+              <a
+                v-else
+                class="ref"
+                :href="reference.url"
+                target="_blank"
+                rel="noreferrer"
+                :title="reference.url"
+              >
+                <img class="ref-icon" :src="reference.icon" alt="" />
+                {{ reference.label }}
+              </a>
+            </template>
+          </div>
+        </dd>
+      </template>
+      <dt>File</dt>
+      <dd>
+        <button type="button" class="path copyable-details" title="Click to copy path" @click="copyPath">
+          {{ fullPath }}
+        </button>
+      </dd>
+      <dt>Labels</dt>
+      <dd><TagEditor :card="card" /></dd>
+    </dl>
+
+    <section class="card-content">
+      <div v-if="draggingFiles" class="attachment-dropzone">
+        <strong>Drop files to attach</strong>
+      </div>
+      <template v-else>
+        <div v-if="loadedAttachments.length" class="attachments" aria-label="Attachments">
+          <article
+            v-for="attachment in loadedAttachments"
+            :key="attachment.file"
+            class="attachment"
+          >
+            <button
+              type="button"
+              class="icon-button icon-button--small attachment-remove"
+              :title="`Remove ${attachment.name}`"
+              aria-label="Remove attachment"
+              draggable="false"
+              @pointerdown.stop
+              @dragstart.stop.prevent
+              @click.stop="removeAttachment(attachment)"
+            >
+              <IconGlyph name="close" aria-hidden="true" />
+            </button>
+            <button
+              v-if="attachment.image"
+              type="button"
+              class="attachment-image"
+              :title="`Open ${attachment.name}`"
+              @click="openImage = attachment"
+            >
+              <img :src="attachment.url" :alt="attachment.name" />
+            </button>
+            <a
+              v-else
+              class="attachment-file"
+              :href="attachment.url"
+              target="_blank"
+              rel="noopener noreferrer"
+              :title="`Open ${attachment.name}`"
+            >
+              <IconGlyph name="paperclip" class="attachment-file-icon" aria-hidden="true" />
+              <strong>{{ attachment.name }}</strong>
+              <small>{{ formatSize(attachment.size) }}</small>
+            </a>
+            <span class="attachment-caption" :title="attachment.name">{{ attachment.name }}</span>
+          </article>
+        </div>
+
+        <MarkdownEditor
+          v-if="editing"
+          ref="editor"
+          :model-value="card.body"
+          @update:model-value="
+            card.body = $event;
+            board.queueSave(card);
+          "
+        />
+        <!-- eslint-disable-next-line vue/no-v-html -- markdown-it runs with html: false -->
+        <div
+          v-else
+          class="body markdown"
+          title="Double-click to edit"
+          @change="setTaskFromPreview"
+          @dblclick="startEditing"
+          v-html="rendered"
+        />
+      </template>
+    </section>
+
+    <footer class="modal-foot">
+      <span class="save-state">{{ board.saveState.value }}</span>
+      <a
+        v-if="editorLink"
+        class="editor-link"
+        :href="editorLink"
+        :title="editorLink"
+      >
+        Open in {{ board.editorName.value }}
+      </a>
+      <button v-if="editing" type="button" class="primary" @click="save">Save</button>
+      <button v-else type="button" @click="startEditing">Edit</button>
+    </footer>
+
+    <Overlay
+      v-if="openImage"
+      place="center"
+      panel-class="image-viewer"
+      :label="openImage.name"
+      @close="openImage = null"
+      @escape="openImage = null"
+    >
+      <img class="image-viewer-image" :src="openImage.url" :alt="openImage.name" />
+    </Overlay>
+  </div>
+</template>
+
+<style src="../styles/CardModal.css"></style>
