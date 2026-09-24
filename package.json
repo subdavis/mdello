@@ -7,10 +7,12 @@
   ],
   "scripts": {
     "dev": "yarn workspace @mdello/client dev",
+    "dev:homepage": "yarn workspace @mdello/homepage dev",
     "build:client": "yarn workspace @mdello/client build",
+    "build:homepage": "yarn workspace @mdello/homepage build",
     "build:pi-extension": "yarn workspace @mdello/pi-extension build",
     "build:opencode-extension": "yarn workspace @mdello/opencode-extension build",
-    "build": "yarn build:client && yarn build:pi-extension && yarn build:opencode-extension",
+    "build": "yarn build:client && yarn build:homepage && yarn build:pi-extension && yarn build:opencode-extension",
     "companion": "yarn workspace mdello-companion start",
     "format": "biome check --write .",
     "lint": "biome check .",

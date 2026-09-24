@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>mdello — kanban with markdown</title>
+    <meta
+      name="description"
+      content="mdello reads and writes plain .md files directly on disk. Track with git, sync in Dropbox, or share with coding agents."
+    />
+    <!-- Same blue the app declares, so installed-PWA and mobile browser chrome match it. -->
+    <meta name="theme-color" content="#0c66e4" />
+  </head>
+  <body>
+    <section class="hero">
+      <!-- Root-absolute, like the script tag below: a path that escapes the package root is
+           hashed correctly by the build but left verbatim in dev, where it 404s. -->
+      <img class="hero-logo" src="/src/Mdello.png" width="800" height="546" alt="mdello" />
+      <h1 class="hero-title">Kanban with Markdown</h1>
+      <p class="hero-subtitle">
+        mdello reads and writes plain <code>.md</code> files directly on disk. Track with git,
+        sync in Dropbox, or share with coding agents.
+      </p>
+    </section>
+
+    <!--
+      The app mounts here. Everything else on this page is static marketing markup; this is a
+      plain Vue app that happens to share a page with it. `.demo` is sized so its first 200px
+      land inside the opening viewport.
+    -->
+    <section class="demo">
+      <div id="demo"></div>
+    </section>
+
+    <section class="prose">
+      <h2>One file per card</h2>
+      <div style="display: flex; gap: 3rem;">
+      <pre style="flex: 1;"><code>---
+uuid: 550e8400-e29b-41d4-a716-446655440000
+title: Ship the demo site
+column: In progress
+order: 2
+tags: [writing, web]
+assignee: brandon
+created: '2026-09-20T14:52:58.000Z'
+attachments:
+  - file: 7f3a91c4-mockup.png
+    name: mockup.png
+    type: image/png
+---
+
+The body is ordinary markdown. Links to GitHub, Jira, Figma and
+Slack are hoisted as reference links on the card.</code></pre>
+<div style="flex: 1;">
+<p class="subtitle">
+  Metadata is stored as frontmatter.
+  <br />
+  The body is ordinary markdown.
+</p>
+</div>
+</div>
+    </section>
+
+    <section class="prose">
+      <h2>Agents eat for free</h2>
+      <p class="subtitle">
+        Files are the cheapest abstraction for agents to understand. No MCP server or auth required.      
+      </p>
+      <pre><code>npx skills add https://github.com/subdavis/mdello/blob/main/skills/mdello-board</code></pre>
+    </section>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -225,8 +225,9 @@
 
 .image-viewer-image {
   display: block;
-  max-width: calc(100vw - var(--space-12));
-  max-height: calc(100vh - var(--space-12));
+  /* Relative to the panel, not the viewport: an embedded board's window is smaller than both. */
+  max-width: 100%;
+  max-height: calc(100% - var(--space-12));
   object-fit: contain;
 }
 

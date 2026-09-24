@@ -931,7 +931,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@mdello/client@workspace:packages/client":
+"@mdello/client@workspace:*, @mdello/client@workspace:packages/client":
   version: 0.0.0-use.local
   resolution: "@mdello/client@workspace:packages/client"
   dependencies:
@@ -956,6 +956,20 @@ __metadata:
     "@types/node": "npm:^26.2.0"
     js-yaml: "npm:^5.3.0"
     typescript: "npm:^5"
+  languageName: unknown
+  linkType: soft
+
+"@mdello/homepage@workspace:packages/homepage":
+  version: 0.0.0-use.local
+  resolution: "@mdello/homepage@workspace:packages/homepage"
+  dependencies:
+    "@mdello/client": "workspace:*"
+    "@types/node": "npm:^26.2.0"
+    "@vitejs/plugin-vue": "npm:^6.0.8"
+    typescript: "npm:^5"
+    vite: "npm:^8.2.1"
+    vue: "npm:^3.5.41"
+    vue-tsc: "npm:^3.3.9"
   languageName: unknown
   linkType: soft
 

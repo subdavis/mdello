@@ -3,21 +3,7 @@ import { archiveWithSessionAssociations } from '../archiveAssociations';
 import { buildColumns } from '../board/columns';
 import { editorName, editorUrl } from '../board/editor';
 import type { BoardStore, StorageInvalidation } from '../board/store';
-import { FileSystemBoardStore } from '../board/stores/fileSystemBoardStore';
-import {
-  type BoardAccess,
-  type BoardRef,
-  forgetBoard,
-  grantPermission,
-  listBoards,
-  noteBoardPath,
-  pickBoard,
-  restoreBoard,
-  selectBoard,
-} from '../fs/handle';
-import { acquireBoardLock, releaseBoardLock } from '../fs/lock';
 import { parseMarkdownImport } from '../importMarkdown';
-import { promptForColumnMigration } from '../migrations/folderColumns';
 import { findReferences } from '../references';
 import {
   type ArchiveToken,
@@ -37,9 +23,6 @@ const WATCH_DELAY = 250;
 /** The open backend. Everything below persists through this and nothing else. */
 const store = shallowRef<BoardStore | null>(null);
 
-const access = shallowRef<BoardAccess>({ state: 'none' });
-/** Shallow: the entries hold native directory handles, which must not be proxied. */
-const boards = shallowRef<BoardRef[]>([]);
 const columns = ref<Column[]>([]);
 const loading = ref(false);
 const error = ref<string | null>(null);
@@ -55,8 +38,6 @@ const background = ref('');
 
 /** True while a live change watcher is attached, so callers can skip focus polling. */
 const watching = ref(false);
-/** True when another tab of this browser already has this board open. */
-const locked = ref(false);
 
 let disconnectWatcher: (() => void) | null = null;
 let watchTimer: ReturnType<typeof setTimeout> | undefined;
@@ -72,6 +53,13 @@ let columnSnapshot: string[] | null = null;
  */
 export const labels = computed<readonly Label[]>(() => settings.value?.labels ?? []);
 
+/**
+ * Hoisted rather than rebuilt per `useBoard()` call, because the filesystem shell watches them
+ * from module scope to keep its board registry in step with whatever board is loaded.
+ */
+export const rootPath = computed(() => settings.value?.path ?? '');
+export const configReady = computed(() => settings.value !== null);
+
 function requireStore(): BoardStore {
   if (!store.value) throw new Error('No board is open');
   return store.value;
@@ -82,7 +70,11 @@ function requireSettings(): BoardSettings {
   return settings.value;
 }
 
-async function guard<T>(action: () => Promise<T>): Promise<T | undefined> {
+/**
+ * Runs an action, routing any failure to the one shared error banner. Exported so the
+ * filesystem shell reports picker and permission failures the same way board rules do.
+ */
+export async function guard<T>(action: () => Promise<T>): Promise<T | undefined> {
   try {
     error.value = null;
     return await action();
@@ -99,18 +91,6 @@ async function guard<T>(action: () => Promise<T>): Promise<T | undefined> {
  */
 function cardSnapshot(card: Card): Card {
   return structuredClone(toRaw(card));
-}
-
-const activeId = computed(() => ('id' in access.value ? access.value.id : null));
-
-async function refreshBoards(): Promise<void> {
-  boards.value = await listBoards();
-}
-
-/** The switcher lists boards by path where it can: every board folder tends to be `content`. */
-async function noteSettingsPath(path: string): Promise<void> {
-  const id = activeId.value;
-  if (id && (await noteBoardPath(id, path))) await refreshBoards();
 }
 
 // ---------------------------------------------------------------------------
@@ -157,7 +137,6 @@ async function loadSnapshot(): Promise<void> {
     const snapshot = await current.load();
     settings.value = snapshot.settings;
     columns.value = mergeColumns(buildColumns(snapshot.cards, snapshot.settings.columns));
-    await noteSettingsPath(snapshot.settings.path);
   });
   loading.value = false;
 }
@@ -192,7 +171,7 @@ async function persistSettings(): Promise<boolean> {
 /** Every label edit is a settings write, so they all go through one rollback-on-failure path. */
 async function editLabels(mutate: (labels: Label[]) => void): Promise<boolean> {
   const current = settings.value;
-  if (!current || locked.value) return false;
+  if (!current) return false;
 
   const previous = current.labels;
   const next = current.labels.map((label) => ({ ...label }));
@@ -280,64 +259,6 @@ async function closeStore(): Promise<void> {
   columnSnapshot = null;
   saveState.value = 'idle';
   error.value = null;
-}
-
-// ---------------------------------------------------------------------------
-// Filesystem shell
-//
-// Picker, permissions, registry, locking and migration are filesystem concerns that have not
-// been extracted yet. They are the only part of this file that knows a backend by name.
-// ---------------------------------------------------------------------------
-
-function setAccess(next: BoardAccess): void {
-  access.value = next;
-}
-
-/** Takes the folder lock, then opens a store over it. A losing tab shows a gate and touches nothing. */
-async function openBoard(): Promise<void> {
-  locked.value = false;
-  const current = access.value;
-
-  // Nothing to open: an unsupported browser, or a profile with no boards yet.
-  if (current.state !== 'ready') {
-    releaseBoardLock();
-    return;
-  }
-
-  if (!(await acquireBoardLock(current.id))) {
-    locked.value = true;
-    columns.value = [];
-    return;
-  }
-
-  const migrated = await guard(async () => promptForColumnMigration(current.handle));
-  if (migrated === undefined) return;
-
-  await openStore(new FileSystemBoardStore(current.id, current.handle));
-}
-
-async function closeBoard(): Promise<void> {
-  await closeStore();
-  releaseBoardLock();
-}
-
-async function switchBoard(id: string): Promise<void> {
-  if (id === activeId.value) return;
-
-  // Permission is settled before the teardown: requestPermission needs the user gesture that
-  // opened the switcher, and flushing the old board's writes can outlive it.
-  const next = await guard(async () => selectBoard(id));
-  if (!next) return;
-
-  const opened =
-    next.state === 'needs-permission'
-      ? ((await guard(async () => grantPermission(next.id, next.handle))) ?? next)
-      : next;
-
-  await closeBoard();
-  setAccess(opened);
-  await openBoard();
-  await refreshBoards();
 }
 
 // ---------------------------------------------------------------------------
@@ -454,18 +375,14 @@ function normalizeColumnOrder(): void {
 
 export function useBoard() {
   return {
-    access,
-    boards,
-    activeId,
-    locked,
     watching,
     columns,
     labels,
     editorName: computed(() => editorName(settings.value ?? { editor: DEFAULT_EDITOR })),
     editorTemplate: computed(() => settings.value?.editor ?? DEFAULT_EDITOR),
-    rootPath: computed(() => settings.value?.path ?? ''),
+    rootPath,
     boardUuid: computed(() => settings.value?.uuid ?? ''),
-    configReady: computed(() => settings.value !== null),
+    configReady,
     companionEnabled: computed(() => settings.value?.companion ?? false),
     background,
     cardUrl: (card: Pick<Card, 'name'>) =>
@@ -473,62 +390,14 @@ export function useBoard() {
     loading,
     error,
     saveState,
-    /** The open store names the board; before one exists the gates still need a label. */
-    boardName: computed(
-      () => store.value?.name ?? ('handle' in access.value ? access.value.handle.name : ''),
-    ),
-
-    async init(): Promise<void> {
-      await guard(async () => setAccess(await restoreBoard()));
-      await refreshBoards();
-      await openBoard();
-    },
-
-    /** Adds a folder to the registry and opens it; re-picking a known board just switches. */
-    async pick(): Promise<void> {
-      const picked = await guard(async () => pickBoard());
-      // Cancelling the picker leaves the current board alone.
-      if (!picked) return;
-      if (picked.state === 'unsupported') {
-        setAccess(picked);
-        return;
-      }
-      if (picked.state === 'ready' && picked.id === activeId.value) return;
-
-      await closeBoard();
-      setAccess(picked);
-      await refreshBoards();
-      await openBoard();
-    },
-
-    async grant(): Promise<void> {
-      if (access.value.state !== 'needs-permission') return;
-      const { id, handle } = access.value;
-      await guard(async () => setAccess(await grantPermission(id, handle)));
-      await openBoard();
-    },
-
-    switchBoard,
-
-    /** Drops a board from the switcher. Files are untouched; re-pick the folder to get it back. */
-    async forgetBoard(id: string): Promise<void> {
-      await guard(async () => forgetBoard(id));
-      await refreshBoards();
-      if (id !== activeId.value) return;
-
-      await closeBoard();
-      await guard(async () => setAccess(await restoreBoard()));
-      await openBoard();
-    },
-
-    /** Re-attempt after the other tab closed. */
-    retry: openBoard,
+    /** Whatever backend is open names the board. Empty between boards. */
+    boardName: computed(() => store.value?.name ?? ''),
 
     refresh: loadSnapshot,
 
     /** Drop target for images. */
     async setBackground(file: File): Promise<boolean> {
-      if (!store.value || locked.value) return false;
+      if (!store.value) return false;
       const done = await guard(async () => {
         await requireStore().writeBackground(file);
         return true;
@@ -539,7 +408,7 @@ export function useBoard() {
 
     async setCompanionEnabled(enabled: boolean): Promise<void> {
       const loaded = settings.value;
-      if (!store.value || locked.value || !loaded || loaded.companion === enabled) return;
+      if (!store.value || !loaded || loaded.companion === enabled) return;
       const previous = loaded.companion;
       loaded.companion = enabled;
       if (!(await persistSettings())) loaded.companion = previous;
@@ -551,7 +420,7 @@ export function useBoard() {
      */
     async saveSettings(next: { path: string; editor: string }): Promise<boolean> {
       const loaded = settings.value;
-      if (!store.value || locked.value || !loaded) return false;
+      if (!store.value || !loaded) return false;
 
       const path = next.path.trim();
       const editor = next.editor.trim() || DEFAULT_EDITOR;
@@ -564,8 +433,6 @@ export function useBoard() {
         Object.assign(loaded, previous);
         return false;
       }
-
-      await noteSettingsPath(path);
       return true;
     },
 
@@ -581,7 +448,7 @@ export function useBoard() {
 
     /** Settings + cards + wallpaper, for the manual button and the focus fallback. */
     async reload(): Promise<void> {
-      if (locked.value || !store.value) return;
+      if (!store.value) return;
       await loadSnapshot();
       await loadBackground();
     },
@@ -600,7 +467,7 @@ export function useBoard() {
     flushCard,
 
     async addAttachments(card: Card, files: File[]): Promise<number> {
-      if (!files.length || !store.value || locked.value) return 0;
+      if (!files.length || !store.value) return 0;
       const current = requireStore();
       const added = await guard(async () =>
         Promise.all(files.map((file) => current.writeAttachment(file))),
@@ -830,11 +697,16 @@ export function useBoard() {
 }
 
 /**
- * Attaches a backend to the shared controller, replacing whatever was open. The filesystem
- * shell above calls this with a `FileSystemBoardStore`; a demo entry would call it with a
- * `MemoryBoardStore` and mount the same UI. Controller tests use it to skip the shell.
+ * Attaches a backend to the shared controller, replacing whatever was open.
+ * `useFilesystemBoards()` calls this with a `FileSystemBoardStore`; the marketing entry calls
+ * it with a `MemoryBoardStore` and mounts the same UI. Controller tests use it to skip both.
  */
 export async function openBoardStore(next: BoardStore): Promise<void> {
   await closeStore();
   await openStore(next);
+}
+
+/** Detaches the current backend, leaving the controller with no board at all. */
+export async function closeBoardStore(): Promise<void> {
+  await closeStore();
 }

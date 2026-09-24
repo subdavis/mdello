@@ -2,6 +2,7 @@ import { createApp } from 'vue';
 import App from './App.vue';
 import { initializeTheme } from './composables/useTheme';
 import './styles/style.css';
+import './styles/Topbar.css';
 import './styles/Agents.css';
 
 initializeTheme();

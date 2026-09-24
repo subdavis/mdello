@@ -10,6 +10,7 @@ import {
   useLinkEnrichment,
   useJiraEnabled,
 } from '../composables/useCompanion';
+import { useFilesystemBoards } from '../composables/useFilesystemBoards';
 import { useTheme } from '../composables/useTheme';
 import { DEFAULT_EDITOR } from '../types/board';
 import IconGlyph from './IconGlyph.vue';
@@ -30,6 +31,7 @@ const PRESETS = [
 ];
 
 const board = useBoard();
+const fs = useFilesystemBoards();
 const { themePreference } = useTheme();
 const companionStatus = useCompanionStatus();
 const autofocus = useAutofocus();
@@ -46,7 +48,7 @@ const autofocusFailed = ref(false);
 const pathInput = ref<HTMLInputElement | null>(null);
 
 const editable = computed(
-  () => board.access.value.state === 'ready' && board.configReady.value && !board.locked.value,
+  () => fs.access.value.state === 'ready' && board.configReady.value && !fs.locked.value,
 );
 
 const dirty = computed(

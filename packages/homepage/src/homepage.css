@@ -1,0 +1,229 @@
+/*
+ * Imported after the client's style.css, which is load-bearing: that file sizes <body> for a
+ * full-viewport app shell, and a marketing page has to scroll instead.
+ */
+
+:root {
+  /* How much of the window sits inside the opening viewport. */
+  --peek: 200px;
+  /* Deliberately not --bg: the page has to read as a different surface from the app on it. */
+  --page-bg: #e3e6ea;
+  --page-ink: #172b4d;
+  --subtitle-font-size: 1.5rem;
+  --window-radius: 12px;
+  --section-gap: 8rem;
+  --window-shadow: 0 24px 56px rgb(9 30 66 / 0.2), 0 2px 8px rgb(9 30 66 / 0.14);
+
+  /* The blue the app declares as its PWA theme colour, kept literal so the titlebar and the
+     <meta name="theme-color"> in index.html cannot drift apart. Not var(--accent): that one
+     lightens to #579dff in dark mode, which is far too loud for window chrome. */
+  --window-chrome: #0c66e4;
+  --window-chrome-ink: #dce8fb;
+  /*
+   * The chrome is a saturated blue in both themes, so the lights keep the app's dark-mode
+   * status colours throughout — the light-mode ones (#c9372c, #b38600, #1f845a) are too dark
+   * to read against it.
+   */
+  --window-light-close: #ff5630;
+  --window-light-minimize: #f5cd47;
+  --window-light-zoom: #4bce97;
+}
+
+:root[data-theme="dark"] {
+  --page-bg: #0b0e10;
+  --page-ink: #c7d1db;
+  --window-shadow: 0 24px 64px rgb(0 0 0 / 0.66), 0 2px 8px rgb(0 0 0 / 0.5);
+}
+
+body {
+  height: auto;
+  display: block;
+  overflow: visible;
+  background: var(--page-bg);
+  color: var(--page-ink);
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 var(--space-6) var(--space-12);
+}
+
+/* ------------------------------------------------------------------ hero */
+
+.hero {
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  justify-content: center;
+  gap: var(--space-5);
+  margin: var(--section-gap) 0;
+  
+}
+
+.hero-logo {
+  width: min(260px, 60vw);
+  height: auto;
+}
+
+.hero-title {
+  margin: 0;
+  max-width: 18ch;
+  font-size: clamp(2rem, 7vw, 4rem);
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+}
+
+.hero-subtitle {
+  margin: 0;
+  max-width: 54ch;
+  font-size: var(--subtitle-font-size);
+  line-height: 1.5;
+  opacity: 0.75;
+}
+
+/* ---------------------------------------------------------------- window */
+
+
+#demo {
+  height: min(78vh, 700px);
+  max-width: 1180px;
+  margin: 0 auto;
+}
+
+.demo-app {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: var(--window-radius);
+  background: var(--bg);
+  box-shadow: var(--window-shadow);
+  overflow: hidden;
+}
+
+/* The OS's share of the frame: lights only, and never covered by anything the app puts up. */
+.demo-titlebar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: var(--space-2) var(--space-3);
+  background: var(--window-chrome);
+  color: var(--window-chrome-ink);
+  border-bottom: 1px solid rgb(0 0 0 / 0.18);
+}
+
+.demo-light {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--window-light-close);
+}
+
+.demo-light.is-minimize {
+  background: var(--window-light-minimize);
+}
+
+.demo-light.is-zoom {
+  background: var(--window-light-zoom);
+}
+
+/*
+ * Everything the app owns, and nothing the OS does. Paint containment makes this the
+ * containing block for `position: fixed`, so the modal scrim and the toast stop at the
+ * titlebar instead of covering the frame — or, before the overlay host existed, the page.
+ */
+.demo-window {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  contain: paint;
+  /*
+   * The app's wallpaper slot. In the real app this is set from the board folder's
+   * `background.*` file; there is no folder here, so it is filled statically — the rule
+   * below is the same one `style.css` puts on <body>.
+   */
+  --board-bg: url("./background.jpg");
+}
+
+.demo-board {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  background: var(--board-bg, none) center / cover no-repeat var(--bg);
+}
+
+/* A wrapper for teleported modals only; it must not take part in the window's layout. */
+.demo-layers {
+  display: contents;
+}
+
+/* style.css sizes columns against the viewport, which is right for the full-page app and
+   wrong inside a fixed-height window. */
+.demo-board .column {
+  max-height: 100%;
+}
+
+/* ----------------------------------------------------------------- prose */
+
+section.prose {
+  margin: var(--section-gap) 0;
+}
+
+.prose .subtitle {
+  font-size: var(--subtitle-font-size);
+}
+
+.prose h2 {
+  font-size: clamp(1.6rem, 3.5vw, 3rem);
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+.prose p {
+  font-size: var(--font-md);
+  line-height: 1.6;
+  opacity: 0.85;
+}
+
+.prose .prose-note {
+  font-size: var(--font-sm);
+  opacity: 0.6;
+}
+
+/* Inline code reads as a chip; block code below is left plain. Declared first so the more
+   specific `.prose pre code` that follows is not a descending-specificity trap. */
+.hero-subtitle code,
+.prose p code {
+  padding: 0 var(--space-1);
+  border-radius: var(--window-radius);
+  background: var(--code-bg);
+  font-family: var(--mono);
+  font-size: 0.9em;
+ 
+}
+
+/* Deliberately unadorned: the window frame belongs to the demo, not to sample code. */
+.prose pre {
+  padding: var(--space-4);
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--window-radius);
+  background: var(--code-bg);
+}
+
+.prose pre code {
+  font-family: var(--mono);
+  font-size: var(--font-2sm);
+  line-height: 1.55;
+}
+
+@media (width < 40rem) {
+  .demo {
+    padding: 0 var(--space-3) var(--space-8);
+  }
+
+  .prose {
+    padding: 0 var(--space-4) var(--space-8);
+  }
+}

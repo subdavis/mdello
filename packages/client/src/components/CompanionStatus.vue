@@ -2,8 +2,10 @@
 import { computed, ref } from 'vue';
 import { useBoard } from '../composables/useBoard';
 import { useCompanionConnectionStatus } from '../composables/useCompanion';
+import { useFilesystemBoards } from '../composables/useFilesystemBoards';
 
 const board = useBoard();
+const fs = useFilesystemBoards();
 const status = useCompanionConnectionStatus(
   board.companionEnabled,
   board.boardUuid,
@@ -13,10 +15,10 @@ const saving = ref(false);
 const label = computed(() => status.value.replace('_', ' '));
 const canToggle = computed(
   () =>
-    board.access.value.state === 'ready' &&
+    fs.access.value.state === 'ready' &&
     board.configReady.value &&
     Boolean(board.rootPath.value) &&
-    !board.locked.value &&
+    !fs.locked.value &&
     !saving.value,
 );
 const action = computed(() => (board.companionEnabled.value ? 'Disable' : 'Enable'));
