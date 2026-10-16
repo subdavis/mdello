@@ -15,12 +15,14 @@ import { dirname, join } from 'node:path';
 import test from 'node:test';
 import {
   installClaude,
+  installCodex,
   installIntegrations,
   installMacOS,
   installOpencode,
   installPi,
   resolveExecutable,
   uninstallClaude,
+  uninstallCodex,
   uninstallIntegrations,
   uninstallMacOS,
   uninstallOpencode,
@@ -504,25 +506,83 @@ test('Claude install and uninstall spare a plugin directory they do not own', as
   }
 });
 
+test('Codex install merges hooks and uninstall removes only owned entries', async () => {
+  const { root, home } = await fixture();
+  const path = join(home, '.codex/hooks.json');
+  const original = {
+    description: 'user hooks',
+    hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo user' }] }] },
+  };
+  try {
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, JSON.stringify(original), { mode: 0o600 });
+    await installCodex({ home, endpoint: 'http://127.0.0.1:41337/' });
+    assert.equal((await lstat(path)).mode & 0o777, 0o600);
+    const installed = JSON.parse(await readFile(path, 'utf8'));
+    assert.equal(installed.hooks.Stop.length, 2);
+    assert.match(installed.hooks.Stop[1].hooks[0].command, /41337\/hooks\/codex/);
+    await installCodex({ home });
+    const repeated = JSON.parse(await readFile(path, 'utf8'));
+    assert.equal(repeated.hooks.Stop.length, 2);
+    repeated.hooks.Stop[1].hooks.push({ type: 'command', command: 'echo added' });
+    await writeFile(path, JSON.stringify(repeated));
+    await uninstallCodex({ home });
+    const remaining = JSON.parse(await readFile(path, 'utf8'));
+    assert.equal(remaining.description, original.description);
+    assert.deepEqual(remaining.hooks.Stop, [
+      ...original.hooks.Stop,
+      { hooks: [{ type: 'command', command: 'echo added' }] },
+    ]);
+    assert.equal((await lstat(path)).mode & 0o777, 0o600);
+    await uninstallCodex({ home });
+    await writeFile(path, '{ invalid');
+    await assert.rejects(installCodex({ home }), SyntaxError);
+    assert.equal(await readFile(path, 'utf8'), '{ invalid');
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('Codex install and uninstall respect CODEX_HOME and preserve unrelated hooks', async () => {
+  const { root, home } = await fixture();
+  const directory = join(root, 'custom-codex');
+  const path = join(directory, 'hooks.json');
+  const original = { hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo user' }] }] } };
+  try {
+    await mkdir(directory);
+    await writeFile(path, JSON.stringify(original));
+    const options = { home, environment: { CODEX_HOME: directory } };
+    assert.match(await installCodex(options), /custom-codex/);
+    assert.equal(JSON.parse(await readFile(path, 'utf8')).hooks.Stop.length, 2);
+    await assert.rejects(lstat(join(home, '.codex/hooks.json')), { code: 'ENOENT' });
+    await uninstallCodex(options);
+    assert.deepEqual(JSON.parse(await readFile(path, 'utf8')), original);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('aggregate install and uninstall skip macOS integration on other platforms', async () => {
   const { root, home, repoRoot } = await fixture();
 
   try {
     const installed = await installIntegrations(undefined, { home, repoRoot, platform: 'linux' });
-    assert.equal(installed.length, 3);
+    assert.equal(installed.length, 4);
     assert.match(installed[0] ?? '', /Installed Pi extension/);
     assert.match(installed[1] ?? '', /Installed OpenCode extension/);
     assert.match(installed[2] ?? '', /Installed Claude plugin/);
+    assert.match(installed[3] ?? '', /Installed Codex hooks/);
 
     const uninstalled = await uninstallIntegrations(undefined, {
       home,
       repoRoot,
       platform: 'linux',
     });
-    assert.equal(uninstalled.length, 3);
+    assert.equal(uninstalled.length, 4);
     assert.match(uninstalled[0] ?? '', /Removed Pi extension/);
     assert.match(uninstalled[1] ?? '', /Removed OpenCode extension/);
     assert.match(uninstalled[2] ?? '', /Removed Claude plugin/);
+    assert.match(uninstalled[3] ?? '', /Removed Codex hooks/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

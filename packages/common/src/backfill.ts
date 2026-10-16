@@ -8,6 +8,8 @@ export interface HarnessSessionScan {
   /** Latest activity in session, used as recovered association timestamp. */
   updatedAt?: string;
   cardPaths: string[];
+  /** Some modifications are not represented as individual calls in this transcript. */
+  incomplete?: boolean;
 }
 
 export interface StoredHarnessSessionScan extends HarnessSessionScan {

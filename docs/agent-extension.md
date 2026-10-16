@@ -38,13 +38,13 @@ Publish status changes to every card associated with the session. Re-associating
 
 ### Per-harness events
 
-| Status | Pi event | OpenCode event/hook | Claude Code hook |
-| --- | --- | --- | --- |
-| `idle` | `session_start`, `ui_prompt_end` when idle | `session.created` | `SessionStart` except `source: compact` |
-| `running` | `agent_start`, `ui_prompt_end` when busy | `chat.message`, busy/retry `session.status`, prompt/permission result | `UserPromptSubmit`; matching question, permission, or elicitation result |
-| `waiting_for_input` | `ui_prompt_start` | `permission.updated`, `question.asked`, or before `question` tool | `PreToolUse(AskUserQuestion)`, `PermissionRequest`, `Elicitation`, blocking notifications |
-| `ready_for_review` | `agent_settled` | `session.idle`, `session.error` | `Stop`, `StopFailure` |
-| `closed` | `session_shutdown` | `session.deleted`, plugin disposal | `SessionEnd` |
+| Status | Pi event | OpenCode event/hook | Claude Code hook | Codex hook |
+| --- | --- | --- | --- | --- |
+| `idle` | `session_start`, `ui_prompt_end` when idle | `session.created` | `SessionStart` except `source: compact` | `SessionStart` except `source: compact` |
+| `running` | `agent_start`, `ui_prompt_end` when busy | `chat.message`, busy/retry `session.status`, prompt/permission result | `UserPromptSubmit`; matching question, permission, or elicitation result | `UserPromptSubmit`, `PostToolUse` |
+| `waiting_for_input` | `ui_prompt_start` | `permission.updated`, `question.asked`, or before `question` tool | `PreToolUse(AskUserQuestion)`, `PermissionRequest`, `Elicitation`, blocking notifications | `PermissionRequest` |
+| `ready_for_review` | `agent_settled` | `session.idle`, `session.error` | `Stop`, `StopFailure` | `Stop`, `Interrupt` |
+| `closed` | `session_shutdown` | `session.deleted`, plugin disposal | `SessionEnd` | `SessionEnd` |
 
 Claude Code has no separate "agent started" event, so `UserPromptSubmit` both discovers cards in the prompt and moves the session to `running`.
 
@@ -52,7 +52,7 @@ Claude Code has no separate "agent started" event, so `UserPromptSubmit` both di
 
 A harness that loads code into its own process is a **client**: it discovers cards, tracks its session, and posts to `/associations` itself. Pi and OpenCode work this way.
 
-A harness that only offers per-event callbacks is an **adapter**: it posts the raw event payload to `/hooks/<harness>` and the companion does the rest. Claude Code works this way, because spawning a process per lifecycle event costs far more than the work itself — a measured 77 ms for a Node script versus roughly zero for a webhook.
+A harness that only offers per-event callbacks is an **adapter**: it posts the raw event payload to `/hooks/<harness>` and the companion does the rest. Claude Code works this way, because spawning a process per lifecycle event costs far more than the work itself — a measured 77 ms for a Node script versus roughly zero for a webhook. Codex uses the same adapter shape, but its hooks currently support command transport only, so each event invokes a short-lived `curl` command.
 
 An adapter implements [`HarnessAdapter`](../packages/common/src/harness.ts):
 
@@ -88,6 +88,7 @@ Return `undefined` for anything not worth publishing — an unknown event, a mis
 | Pi | client | [`packages/pi-extension/index.ts`](../packages/pi-extension/index.ts) | bundle symlinked into `~/.pi/agent/extensions` |
 | OpenCode | client | [`packages/opencode-extension/index.ts`](../packages/opencode-extension/index.ts) | bundle symlinked into `${XDG_CONFIG_HOME:-~/.config}/opencode/plugins` |
 | Claude Code | adapter | [`packages/claude-extension/index.ts`](../packages/claude-extension/index.ts) | generated plugin directory at `~/.claude/skills/mdello-companion` |
+| Codex | adapter | [`packages/codex-extension/index.ts`](../packages/codex-extension/index.ts) | owned hook groups in `~/.codex/hooks.json` |
 
 ### OpenCode specifics
 
@@ -96,6 +97,13 @@ Return `undefined` for anything not worth publishing — an unknown event, a mis
 - History is restored lazily on the first event for each session with `client.session.messages()`. Non-synthetic user text and completed edit/write tool parts are republished.
 - Question tool and permission events map interactive waits. Session idle/error maps completion, while deletion or plugin disposal closes tracked sessions.
 - Installation uses OpenCode's auto-loaded global plugin directory and never edits `opencode.json`. OpenCode loads plugins only at startup, so restart it after install or uninstall.
+
+### Codex specifics
+
+- Codex loads command hooks from `${CODEX_HOME:-~/.codex}/hooks.json`; `mdello-companion install codex` merges owned groups into existing hooks, and `uninstall codex` removes only those groups. Malformed settings are never overwritten. Restart Codex after changing hooks; use `/hooks` to enable or trust them when prompted.
+- Hooks send raw JSON stdin to local companion via `curl` with a 2-second network limit, swallow failures, and emit no stdout (including `Stop`/`Interrupt`, which reject plain text output). No agent decision is changed.
+- `SessionStart` restores user paths and successful explicit Markdown edit/write calls from the rollout transcript. `UserPromptSubmit` discovers absolute Markdown paths; `PostToolUse` handles direct edit/write and `apply_patch` file headers, including move destinations. Generic shell commands cannot safely be interpreted as edits. `mdello-companion backfill codex` scans `${CODEX_SESSIONS_DIR:-${CODEX_HOME:-~/.codex}/sessions}` (30-day window). Code-mode rollouts omit individual nested tool calls, so backfill preserves existing associations for valid cards in those sessions. Without an existing association or a user path in the transcript, nested edits cannot be recovered.
+- `PermissionRequest` marks waiting; `PostToolUse` resumes running; `Stop`/`Interrupt` settle. Permission denial without a tool result and other interactive waits lack dedicated Codex hooks, so status may stay waiting until next prompt or terminal event.
 
 ### Claude Code specifics
 

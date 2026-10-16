@@ -1,9 +1,16 @@
 import { resolve } from 'node:path';
 import { claudeBackfill } from '@mdello/claude-extension/backfill';
-import type { HarnessBackfill } from '@mdello/common/backfill';
+import { codexBackfill } from '@mdello/codex-extension/backfill';
+import type { HarnessBackfill, StoredHarnessSessionScan } from '@mdello/common/backfill';
 import { opencodeBackfill } from '@mdello/opencode-extension/backfill';
 import { piBackfill } from '@mdello/pi-extension/backfill';
-import { DEFAULT_CONFIG_FILE, loadBoards, type ResolvedCard, resolveCard } from './boards.ts';
+import {
+  type BoardRegistration,
+  DEFAULT_CONFIG_FILE,
+  loadBoards,
+  type ResolvedCard,
+  resolveCard,
+} from './boards.ts';
 import {
   type Association,
   associationKey,
@@ -30,7 +37,7 @@ export interface BackfillResult {
 }
 
 const MAX_LOOKBACK_MS = 30 * 24 * 60 * 60 * 1000;
-const BACKFILLS: HarnessBackfill[] = [claudeBackfill, opencodeBackfill, piBackfill];
+const BACKFILLS: HarnessBackfill[] = [claudeBackfill, codexBackfill, opencodeBackfill, piBackfill];
 
 export const BACKFILL_HARNESSES = BACKFILLS.map(({ harness }) => harness);
 
@@ -65,6 +72,46 @@ function recoveredAssociation(
   return { ...recovered, status: existing.status, updatedAt: existing.updatedAt };
 }
 
+async function recoverSession(
+  scan: StoredHarnessSessionScan,
+  harness: string,
+  boards: BoardRegistration[],
+  existing: Map<string, Association>,
+): Promise<Map<string, Association>> {
+  const recovered = new Map<string, Association>();
+  if (!scan.sessionId) return recovered;
+  if (scan.incomplete) {
+    for (const association of existing.values()) {
+      if (association.sessionId !== scan.sessionId) continue;
+      const card = await resolveCard(association.cardPath, boards);
+      if (!card || card.cardUuid !== association.cardUuid) continue;
+      recovered.set(associationKey(association), {
+        ...association,
+        ...card,
+        sessionFile: scan.sessionFile,
+      });
+    }
+  }
+  for (const cardPath of scan.cardPaths) {
+    const card = await resolveCard(cardPath, boards);
+    if (!card) continue;
+    const key = associationKey({ ...card, harness, sessionId: scan.sessionId });
+    if (recovered.has(key)) continue;
+    recovered.set(
+      key,
+      recoveredAssociation(
+        card,
+        harness,
+        scan.sessionId,
+        scan.sessionFile,
+        scan.updatedAt,
+        existing.get(key),
+      ),
+    );
+  }
+  return recovered;
+}
+
 export async function backfillAssociations(options: BackfillOptions): Promise<BackfillResult> {
   const { harness } = options;
   const backfill = BACKFILLS.find((candidate) => candidate.harness === harness);
@@ -92,34 +139,11 @@ export async function backfillAssociations(options: BackfillOptions): Promise<Ba
   const sessions = await backfill.scan(sessionsRoot, cutoff);
   const replacement = new Map<string, Association>();
   let matchedSessions = 0;
-  let foundAssociations = 0;
-  let existingAssociations = 0;
 
   for (const scan of sessions) {
-    if (!scan.sessionId || scan.cardPaths.length === 0) continue;
-    let matched = false;
-
-    for (const cardPath of scan.cardPaths) {
-      const card = await resolveCard(cardPath, boards);
-      if (!card) continue;
-      matched = true;
-      foundAssociations += 1;
-      const key = associationKey({ ...card, harness, sessionId: scan.sessionId });
-      const existingAssociation = existing.get(key);
-      if (existingAssociation) existingAssociations += 1;
-      replacement.set(
-        key,
-        recoveredAssociation(
-          card,
-          harness,
-          scan.sessionId,
-          scan.sessionFile,
-          scan.updatedAt,
-          existingAssociation,
-        ),
-      );
-    }
-    if (matched) matchedSessions += 1;
+    const recovered = await recoverSession(scan, harness, boards, existing);
+    if (recovered.size) matchedSessions += 1;
+    for (const [key, association] of recovered) replacement.set(key, association);
   }
 
   await saveAssociations(dataFile, [...retained, ...replacement.values()]);
@@ -128,9 +152,9 @@ export async function backfillAssociations(options: BackfillOptions): Promise<Ba
   return {
     scannedSessions: sessions.length,
     matchedSessions,
-    foundAssociations,
+    foundAssociations: replacement.size,
     addedAssociations: [...replacement.keys()].filter((key) => !existing.has(key)).length,
-    existingAssociations,
+    existingAssociations: [...replacement.keys()].filter((key) => existing.has(key)).length,
     purgedAssociations,
   };
 }

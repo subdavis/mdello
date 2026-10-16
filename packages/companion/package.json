@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@mdello/claude-extension": "workspace:*",
+    "@mdello/codex-extension": "workspace:*",
     "@mdello/common": "workspace:*",
     "@mdello/opencode-extension": "workspace:*",
     "@mdello/pi-extension": "workspace:*",

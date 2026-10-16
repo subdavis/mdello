@@ -330,6 +330,9 @@ export function resumeCommand(association: Association): string | undefined {
   if (association.harness === 'claude') {
     return `claude --resume ${association.sessionId}`;
   }
+  if (association.harness === 'codex') {
+    return `codex resume ${association.sessionId}`;
+  }
   if (association.harness === 'opencode') {
     return `opencode --session ${association.sessionId}`;
   }

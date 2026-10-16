@@ -467,6 +467,47 @@ test('publishes a harness hook payload to the whole session', async () => {
   }
 });
 
+test('Codex hook publishes and settles card associations', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mdello-codex-server-'));
+  const boardPath = join(root, 'board');
+  const cardPath = join(boardPath, 'card.md');
+  await mkdir(boardPath);
+  await writeFile(cardPath, '---\nuuid: card-a\n---\n');
+  const companion = await createCompanionServer({
+    port: 0,
+    dataFile: join(root, 'companion.jsonl'),
+    configFile: join(root, 'companion.json'),
+  });
+  try {
+    await registerBoard(companion.url, 'board-a', boardPath);
+    const hook = (event: string, extra: object = {}) =>
+      fetch(`${companion.url}/hooks/codex`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hook_event_name: event, session_id: 'codex-a', ...extra }),
+      });
+    assert.equal((await hook('UserPromptSubmit', { prompt: cardPath })).status, 202);
+    assert.equal((await hook('PermissionRequest')).status, 202);
+    let associations = (await (await fetch(`${companion.url}/associations`)).json()) as {
+      harness: string;
+      status: string;
+    }[];
+    assert.deepEqual(
+      associations.map(({ harness, status }) => [harness, status]),
+      [['codex', 'waiting_for_input']],
+    );
+    assert.equal((await hook('Stop')).status, 202);
+    associations = (await (await fetch(`${companion.url}/associations`)).json()) as {
+      harness: string;
+      status: string;
+    }[];
+    assert.equal(associations[0]?.status, 'ready_for_review');
+  } finally {
+    await companion.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('restricts browser requests to configured and loopback origins', async () => {
   const root = await mkdtemp(join(tmpdir(), 'mdello-server-'));
   const configFile = join(root, 'companion.json');
