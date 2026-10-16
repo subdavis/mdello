@@ -7,39 +7,13 @@ import {
   readTags,
   serializeFile,
 } from '@mdello/common/frontmatter';
-import { findReferences, type Reference } from '../references';
-import { type CardAttachment, readAttachments } from './attachments';
-import { groupColumns } from './columns';
-import { CONFIG_FILE, createBoardConfig, writeConfig } from './config';
+import { findReferences } from '../references';
+import { type Card, createBoardSettings } from '../types/board.ts';
+import { readAttachments } from './attachments';
+import { CONFIG_FILE, writeConfig } from './config';
 import { openWritable } from './writable';
 
 export const ARCHIVE_DIR = 'archive';
-
-export interface Card {
-  /** Stable identity persisted in frontmatter. */
-  id: string;
-  uuid: string;
-  name: string;
-  column: string;
-  title: string;
-  tags: string[];
-  assignee?: string;
-  created?: string;
-  order?: number;
-  modified: number;
-  body: string;
-  attachments: CardAttachment[];
-  /** Parsed from the body on load and on save, never per keystroke. */
-  references: Reference[];
-  data: Frontmatter;
-}
-
-export interface Column {
-  name: string;
-  cards: Card[];
-  /** Discovered from card frontmatter but absent from the board config. */
-  virtual: boolean;
-}
 
 function toCard(
   name: string,
@@ -71,60 +45,38 @@ function toCard(
   };
 }
 
-function sortCards(cards: Card[]): void {
-  cards.sort(
-    (a, b) =>
-      (a.order ?? Number.MAX_SAFE_INTEGER) - (b.order ?? Number.MAX_SAFE_INTEGER) ||
-      b.modified - a.modified,
-  );
-}
-
-/** Archive and support directories are never scanned. Cards live directly in board root. */
-export async function scanBoard(
-  root: FileSystemDirectoryHandle,
-  columnNames: string[],
-): Promise<Column[]> {
+/**
+ * Every card in the board root, unsorted and ungrouped. Archive and support directories are
+ * never scanned. Layout is the controller's job, so this deliberately returns a flat list.
+ */
+export async function scanBoard(root: FileSystemDirectoryHandle): Promise<Card[]> {
   const files: FileSystemFileHandle[] = [];
 
   for await (const entry of root.values()) {
     if (entry.kind === 'file' && entry.name.endsWith('.md')) files.push(entry);
   }
 
-  const cards = await Promise.all(
+  return Promise.all(
     files.map(async (entry) => {
       const file = await entry.getFile();
       const { card, uuidCreated } = toCard(entry.name, await file.text(), file.lastModified);
-      if (uuidCreated) card.modified = await writeCard(root, card);
+      if (uuidCreated) card.modified = await writeCard(root, card.name, card.data, card.body);
       return card;
     }),
   );
-
-  const columns = groupColumns(cards, columnNames);
-  for (const column of columns) sortCards(column.cards);
-  return columns;
 }
 
 export async function writeCard(
   root: FileSystemDirectoryHandle,
-  card: Pick<Card, 'column' | 'name' | 'data' | 'body'>,
+  name: string,
+  data: Frontmatter,
+  body: string,
 ): Promise<number> {
-  card.data.column = card.column;
-  const handle = await root.getFileHandle(card.name, { create: true });
+  const handle = await root.getFileHandle(name, { create: true });
   const writable = await openWritable(handle);
-  await writable.write(serializeFile(card.data, card.body));
+  await writable.write(serializeFile(data, body));
   await writable.close();
   return (await handle.getFile()).lastModified;
-}
-
-/** Renumbers a column 1..n, rewriting only cards whose order changed. */
-export async function persistOrder(root: FileSystemDirectoryHandle, column: Column): Promise<void> {
-  for (const [index, card] of column.cards.entries()) {
-    const order = index + 1;
-    if (card.order === order) continue;
-    card.order = order;
-    card.data.order = order;
-    card.modified = await writeCard(root, card);
-  }
 }
 
 function slugify(title: string, fallback = 'card'): string {
@@ -169,7 +121,7 @@ export async function createCard(
     order,
     created: new Date().toISOString(),
   };
-  const modified = await writeCard(root, { column, name, data, body });
+  const modified = await writeCard(root, name, data, body);
 
   return toCard(name, serializeFile(data, body), modified).card;
 }
@@ -226,7 +178,7 @@ const STARTER_CARDS: Array<{
       '',
       'Delete the file to go back to the plain board.',
       '',
-      'The National Gallery of Art has [some lovely options](https://www.nga.gov/artwork-search?f[]=awtype:107231&f[]=movement:46221&f[]=movement:58341&page=3).'
+      'The National Gallery of Art has [some lovely options](https://www.nga.gov/artwork-search?f[]=awtype:107231&f[]=movement:46221&f[]=movement:58341&page=3).',
     ].join('\n'),
   },
   {
@@ -267,7 +219,7 @@ const STARTER_CARDS: Array<{
 export async function initBoard(root: FileSystemDirectoryHandle): Promise<void> {
   await writeConfig(
     root,
-    createBoardConfig({
+    createBoardSettings({
       columns: STARTER_COLUMNS,
       labels: [
         { name: SETUP_TAG, color: SETUP_COLOR },
@@ -283,7 +235,7 @@ export async function initBoard(root: FileSystemDirectoryHandle): Promise<void> 
     orders[card.column] = order;
     const created = await createCard(root, card.column, card.title, order);
     created.data.tags = card.tags ?? [];
-    await writeCard(root, { ...created, body: card.body });
+    await writeCard(root, created.name, created.data, card.body);
   }
 }
 

@@ -1,293 +1,80 @@
-import { computed, markRaw, ref, shallowRef, toRaw, watch } from 'vue';
+import { computed, ref, shallowRef, toRaw } from 'vue';
 import { archiveWithSessionAssociations } from '../archiveAssociations';
-import {
-  ATTACHMENTS_DIR,
-  type CardAttachment,
-  deleteAttachment,
-  readAttachment,
-  writeAttachment,
-} from '../fs/attachments';
-import { readBackground, writeBackground } from '../fs/background';
-import {
-  ARCHIVE_DIR,
-  archiveCard,
-  type Card,
-  type Column,
-  createCard,
-  initBoard,
-  persistOrder,
-  scanBoard,
-  unarchiveCard,
-  writeCard,
-} from '../fs/board';
-import {
-  type BoardConfig,
-  CONFIG_FILE,
-  DEFAULT_CONFIG,
-  editorName,
-  editorUrl,
-  ensureBoardUuid,
-  readConfig,
-  writeConfig,
-} from '../fs/config';
-import {
-  type BoardAccess,
-  type BoardRef,
-  forgetBoard,
-  grantPermission,
-  listBoards,
-  noteBoardPath,
-  pickBoard,
-  restoreBoard,
-  selectBoard,
-} from '../fs/handle';
-import { acquireBoardLock, releaseBoardLock } from '../fs/lock';
-import { changePaths, watchBoard } from '../fs/watch';
+import { buildColumns } from '../board/columns';
+import { editorName, editorUrl } from '../board/editor';
+import type { BoardStore, StorageInvalidation } from '../board/store';
 import { parseMarkdownImport } from '../importMarkdown';
-import { promptForColumnMigration } from '../migrations/folderColumns';
 import { findReferences } from '../references';
+import {
+  type ArchiveToken,
+  type BoardSettings,
+  type Card,
+  type CardAttachment,
+  type Column,
+  DEFAULT_EDITOR,
+  type Label,
+} from '../types/board';
 import { expungeCardAssociations, fetchCardAssociations } from './useCompanion';
-import { labels, takeLegacyLabels } from './useLabels';
 import { showToast } from './useToast';
 
 const SAVE_DELAY = 600;
 const WATCH_DELAY = 250;
-const ECHO_WINDOW = 1000;
 
-const access = shallowRef<BoardAccess>({ state: 'none' });
-/** Shallow: the entries hold native directory handles, which must not be proxied. */
-const boards = shallowRef<BoardRef[]>([]);
+/** The open backend. Everything below persists through this and nothing else. */
+const store = shallowRef<BoardStore | null>(null);
+
 const columns = ref<Column[]>([]);
 const loading = ref(false);
 const error = ref<string | null>(null);
 const saveState = ref<'idle' | 'dirty' | 'saving' | 'saved'>('idle');
 const pendingSaves = new Map<string, ReturnType<typeof setTimeout>>();
-/** Tail of each card's write chain. A card never has two writable streams open concurrently. */
+/** Tail of each card's write chain. A card never has two writes in flight concurrently. */
 const inFlightSaves = new Map<string, Promise<void>>();
 
-const config = ref<BoardConfig | null>(null);
-/** Blob URL for `background.<ext>` in the board root, empty when the board has none. */
+/** Board settings, including labels. There is no other copy of them anywhere. */
+const settings = ref<BoardSettings | null>(null);
+/** Object URL for the wallpaper blob the store handed us; empty when the board has none. */
 const background = ref('');
 
-async function loadBackground(): Promise<void> {
-  const next = root.value ? await readBackground(root.value) : null;
-  if (background.value) URL.revokeObjectURL(background.value);
-  background.value = next ?? '';
-}
-/** Set while the config file is being applied, so loading labels does not write them back. */
-let applyingConfig = false;
-
-/** Labels live in the board config, so any edit to them rewrites that file. */
-async function loadConfig(): Promise<void> {
-  if (!root.value) return;
-
-  const loaded = await readConfig(requireRoot());
-  const identityCreated = ensureBoardUuid(loaded);
-  const legacy = loaded.labels.length === 0 ? takeLegacyLabels() : [];
-  loaded.labels = legacy.length ? legacy : loaded.labels;
-
-  applyingConfig = true;
-  config.value = loaded;
-  labels.value = loaded.labels;
-  applyingConfig = false;
-
-  // The switcher lists boards by path where it can: every board folder is called `content`.
-  const id = activeId.value;
-  if (id && (await noteBoardPath(id, loaded.path))) await refreshBoards();
-
-  if (legacy.length || identityCreated) await saveConfig();
-}
-
-async function refreshBoards(): Promise<void> {
-  boards.value = await listBoards();
-}
-
-async function saveConfig(): Promise<boolean> {
-  if (!root.value || !config.value) return false;
-  const loaded = config.value;
-  loaded.labels = [...labels.value];
-  lastConfigWrite = Date.now();
-  const saved = await guard(async () => {
-    await writeConfig(requireRoot(), loaded);
-    return true;
-  });
-  lastConfigWrite = Date.now();
-  return saved === true;
-}
-
-// flush: 'sync' is load-bearing, not a tuning choice. The default pre-flush runs the
-// callback after loadConfig has already cleared `applyingConfig`, so every load — including
-// the one the file watcher fires after you hand-edit mdello.yml — wrote the config straight
-// back, dropping unknown keys and your comments. Firing inside the mutation keeps the guard
-// a real critical section. Trade-off: writes no longer coalesce per tick, which is free only
-// while every mutation site touches `labels` exactly once. Bind a control to a live label
-// (v-model="labels[i].color") and this becomes a write per keystroke; batch there instead.
-watch(
-  labels,
-  () => {
-    if (!applyingConfig) void saveConfig();
-  },
-  { deep: true, flush: 'sync' },
-);
-
-/** True while a FileSystemObserver is attached, so callers can skip focus polling. */
+/** True while a live change watcher is attached, so callers can skip focus polling. */
 const watching = ref(false);
+
 let disconnectWatcher: (() => void) | null = null;
 let watchTimer: ReturnType<typeof setTimeout> | undefined;
+let staleBoard = false;
+let staleBackground = false;
 
-let lastConfigWrite = 0;
-let configChanged = false;
-let backgroundChanged = false;
-let cardsChanged = false;
+/** Column order as it was before the current drag started; null when no drag is previewing. */
+let columnSnapshot: string[] | null = null;
 
-/** Observer also reports our own writes, so debounce and scan the cheap flat card list once. */
-function onFileChange(records: FileSystemChangeRecord[]): void {
-  for (const record of records) {
-    for (const path of changePaths(record)) {
-      const [top, ...rest] = path;
-      if (top === undefined) {
-        configChanged = true;
-        backgroundChanged = true;
-        cardsChanged = true;
-      } else if (top === CONFIG_FILE && rest.length === 0) configChanged = true;
-      else if (rest.length === 0 && /^background\./i.test(top)) backgroundChanged = true;
-      else if (rest.length === 0 && top.endsWith('.md') && !top.startsWith('.'))
-        cardsChanged = true;
-      else if (top === ARCHIVE_DIR || top === ATTACHMENTS_DIR || top.startsWith('.')) continue;
-    }
-  }
+/**
+ * Board labels, which live in settings and nowhere else. Exported as one shared computed so
+ * per-tag styling in a render loop reads it rather than building a new one every call.
+ */
+export const labels = computed<readonly Label[]>(() => settings.value?.labels ?? []);
 
-  clearTimeout(watchTimer);
-  watchTimer = setTimeout(() => {
-    void (async () => {
-      const externalConfig = configChanged && Date.now() - lastConfigWrite > ECHO_WINDOW;
-      configChanged = false;
-      if (externalConfig) {
-        await loadConfig();
-        cardsChanged = true;
-      }
-      if (backgroundChanged) await loadBackground();
-      backgroundChanged = false;
-      if (pendingSaves.size > 0 || inFlightSaves.size > 0) return;
-      if (cardsChanged) {
-        cardsChanged = false;
-        await refresh();
-      }
-    })();
-  }, WATCH_DELAY);
+/**
+ * Hoisted rather than rebuilt per `useBoard()` call, because the filesystem shell watches them
+ * from module scope to keep its board registry in step with whatever board is loaded.
+ */
+export const rootPath = computed(() => settings.value?.path ?? '');
+export const configReady = computed(() => settings.value !== null);
+
+function requireStore(): BoardStore {
+  if (!store.value) throw new Error('No board is open');
+  return store.value;
 }
 
-function detachWatcher(): void {
-  disconnectWatcher?.();
-  disconnectWatcher = null;
-  watching.value = false;
+function requireSettings(): BoardSettings {
+  if (!settings.value) throw new Error('Board settings have not loaded');
+  return settings.value;
 }
 
-async function attachWatcher(): Promise<void> {
-  detachWatcher();
-  if (!root.value) return;
-
-  disconnectWatcher = await watchBoard(root.value, onFileChange);
-  watching.value = disconnectWatcher !== null;
-}
-
-const root = computed(() => (access.value.state === 'ready' ? access.value.handle : null));
-
-/** Registry id of the board being shown, including one still waiting on permission. */
-const activeId = computed(() => ('id' in access.value ? access.value.id : null));
-
-/** True when another tab of this browser already has this folder open. */
-const locked = ref(false);
-
-/** Takes the folder lock, then loads. A losing tab shows a gate and touches nothing. */
-async function openBoard(): Promise<void> {
-  locked.value = false;
-  const current = access.value;
-
-  if (current.state !== 'ready') {
-    releaseBoardLock();
-  } else if (!(await acquireBoardLock(current.id))) {
-    locked.value = true;
-    detachWatcher();
-    columns.value = [];
-    return;
-  }
-
-  const migration = await guard(async () => promptForColumnMigration(requireRoot()));
-  if (migration === undefined) return;
-
-  await loadConfig();
-  await loadBackground();
-  await refresh();
-  await attachWatcher();
-}
-
-/** Everything `openBoard` set up, undone, so the next board starts from a clean slate. */
-async function closeBoard(): Promise<void> {
-  // Queued card writes resolve their folder through `root` at flush time, so anything still
-  // pending when the root changes lands in the board we are switching *to*. Drain first.
-  await flushPending();
-  detachWatcher();
-  releaseBoardLock();
-  clearTimeout(watchTimer);
-
-  if (background.value) URL.revokeObjectURL(background.value);
-  background.value = '';
-  columns.value = [];
-  config.value = null;
-
-  // The guard is what makes clearing labels safe: their watcher is flush:'sync', so it runs
-  // inside this assignment and would otherwise write the empty list straight back into the
-  // board being left. Clearing matters because openBoard can bail before loadConfig replaces
-  // them — a board locked by another tab keeps a live root with the previous board's labels.
-  applyingConfig = true;
-  labels.value = [];
-  applyingConfig = false;
-
-  configChanged = false;
-  backgroundChanged = false;
-  cardsChanged = false;
-  lastConfigWrite = 0;
-  columnSnapshot = null;
-  saveState.value = 'idle';
-  error.value = null;
-}
-
-async function switchBoard(id: string): Promise<void> {
-  if (id === activeId.value) return;
-
-  // Permission is settled before the teardown: requestPermission needs the user gesture that
-  // opened the switcher, and flushing the old board's writes can outlive it.
-  const next = await guard(async () => selectBoard(id));
-  if (!next) return;
-
-  const opened =
-    next.state === 'needs-permission'
-      ? ((await guard(async () => grantPermission(next.id, next.handle))) ?? next)
-      : next;
-
-  await closeBoard();
-  setAccess(opened);
-  await openBoard();
-  await refreshBoards();
-}
-
-function setAccess(next: BoardAccess): void {
-  // Native handles must not be wrapped in a reactive proxy.
-  access.value = 'handle' in next ? { ...next, handle: markRaw(next.handle) } : next;
-}
-
-function requireRoot(): FileSystemDirectoryHandle {
-  if (!root.value) throw new Error('No board folder is open');
-  return root.value;
-}
-
-function requireConfig(): BoardConfig {
-  if (!config.value) throw new Error('Board config has not loaded');
-  return config.value;
-}
-
-async function guard<T>(action: () => Promise<T>): Promise<T | undefined> {
+/**
+ * Runs an action, routing any failure to the one shared error banner. Exported so the
+ * filesystem shell reports picker and permission failures the same way board rules do.
+ */
+export async function guard<T>(action: () => Promise<T>): Promise<T | undefined> {
   try {
     error.value = null;
     return await action();
@@ -298,7 +85,20 @@ async function guard<T>(action: () => Promise<T>): Promise<T | undefined> {
 }
 
 /**
- * Reuses card objects that are still on disk, so open modals and in-flight drags keep
+ * A plain, fully detached copy for the store to serialize. Cloning here is what lets
+ * `saveCard` take a `Readonly<Card>`: storage can never observe a later edit mid-write,
+ * and the controller never has to mutate a card just to get it written.
+ */
+function cardSnapshot(card: Card): Card {
+  return structuredClone(toRaw(card));
+}
+
+// ---------------------------------------------------------------------------
+// Loading
+// ---------------------------------------------------------------------------
+
+/**
+ * Reuses card objects that are still present, so open modals and in-flight drags keep
  * pointing at live state instead of an orphaned copy.
  */
 function mergeCards(current: Card[], fresh: Card[]): Card[] {
@@ -307,7 +107,7 @@ function mergeCards(current: Card[], fresh: Card[]): Card[] {
   return fresh.map((next) => {
     const existing = byId.get(next.id);
     if (!existing) return next;
-    // A queued or in-flight save means memory is ahead of disk; never merge backwards.
+    // A queued or in-flight save means memory is ahead of storage; never merge backwards.
     if (pendingSaves.has(next.id) || inFlightSaves.has(next.id)) return existing;
     if (existing.modified !== next.modified) Object.assign(existing, next);
     return existing;
@@ -327,27 +127,143 @@ function mergeColumns(fresh: Column[]): Column[] {
   });
 }
 
-function configuredColumnNames(): string[] {
-  return columns.value.filter((column) => !column.virtual).map((column) => column.name);
-}
+/** Settings and cards in one read. Grouping and sorting happen here, for every backend. */
+async function loadSnapshot(): Promise<void> {
+  const current = store.value;
+  if (!current) return;
 
-/** Virtual columns always lead the UI but never enter config until promoted. */
-function normalizeColumnOrder(): void {
-  columns.value = [
-    ...columns.value.filter((column) => column.virtual),
-    ...columns.value.filter((column) => !column.virtual),
-  ];
-}
-
-export async function refresh(): Promise<void> {
-  if (!root.value || !config.value) return;
-  const loaded = config.value;
   loading.value = true;
   await guard(async () => {
-    columns.value = mergeColumns(await scanBoard(requireRoot(), loaded.columns));
+    const snapshot = await current.load();
+    settings.value = snapshot.settings;
+    columns.value = mergeColumns(buildColumns(snapshot.cards, snapshot.settings.columns));
   });
   loading.value = false;
 }
+
+async function loadBackground(): Promise<void> {
+  const blob = store.value ? await store.value.readBackground() : null;
+  const next = blob ? URL.createObjectURL(blob) : '';
+  if (background.value) URL.revokeObjectURL(background.value);
+  background.value = next;
+}
+
+// ---------------------------------------------------------------------------
+// Settings
+// ---------------------------------------------------------------------------
+
+/** Throws. Use inside an existing `guard`, so one failure reports one message. */
+async function writeSettings(): Promise<void> {
+  // Detached for the same reason card writes are: storage must not observe a later edit
+  // landing between the call and the moment it actually serializes.
+  await requireStore().saveSettings(structuredClone(toRaw(requireSettings())));
+}
+
+async function persistSettings(): Promise<boolean> {
+  if (!store.value || !settings.value) return false;
+  const saved = await guard(async () => {
+    await writeSettings();
+    return true;
+  });
+  return saved === true;
+}
+
+/** Every label edit is a settings write, so they all go through one rollback-on-failure path. */
+async function editLabels(mutate: (labels: Label[]) => void): Promise<boolean> {
+  const current = settings.value;
+  if (!current) return false;
+
+  const previous = current.labels;
+  const next = current.labels.map((label) => ({ ...label }));
+  mutate(next);
+  current.labels = next;
+
+  if (await persistSettings()) return true;
+  current.labels = previous;
+  return false;
+}
+
+// ---------------------------------------------------------------------------
+// Watching
+// ---------------------------------------------------------------------------
+
+/**
+ * The store says what went stale; deciding what to re-read is ours. Coalesced, because a
+ * single user-visible change can produce a burst of events.
+ */
+function onInvalidate(change: StorageInvalidation): void {
+  if (change === 'background' || change === 'all') staleBackground = true;
+  if (change !== 'background') staleBoard = true;
+  armWatchTimer();
+}
+
+function armWatchTimer(): void {
+  clearTimeout(watchTimer);
+  watchTimer = setTimeout(() => {
+    void drainInvalidations();
+  }, WATCH_DELAY);
+}
+
+async function drainInvalidations(): Promise<void> {
+  if (staleBackground) {
+    staleBackground = false;
+    await loadBackground();
+  }
+  if (!staleBoard) return;
+
+  // Our own writes are already suppressed by the store, so a pending save will not produce
+  // another event to retry on. Re-arm instead of dropping the reload on the floor.
+  if (pendingSaves.size > 0 || inFlightSaves.size > 0) {
+    armWatchTimer();
+    return;
+  }
+
+  staleBoard = false;
+  await loadSnapshot();
+}
+
+// ---------------------------------------------------------------------------
+// Store lifecycle
+// ---------------------------------------------------------------------------
+
+async function openStore(next: BoardStore): Promise<void> {
+  store.value = next;
+  await loadSnapshot();
+  await loadBackground();
+
+  disconnectWatcher = await next.watch(onInvalidate);
+  watching.value = disconnectWatcher !== null;
+}
+
+/** Everything `openStore` set up, undone, so the next board starts from a clean slate. */
+async function closeStore(): Promise<void> {
+  // Queued card writes resolve their store at flush time, so anything still pending when the
+  // store changes would land in the board we are switching *to*. Drain first.
+  await flushPending();
+
+  disconnectWatcher?.();
+  disconnectWatcher = null;
+  watching.value = false;
+  clearTimeout(watchTimer);
+  staleBoard = false;
+  staleBackground = false;
+
+  const current = store.value;
+  store.value = null;
+  await current?.close();
+
+  if (background.value) URL.revokeObjectURL(background.value);
+  background.value = '';
+  columns.value = [];
+  settings.value = null;
+  columnSnapshot = null;
+  saveState.value = 'idle';
+  error.value = null;
+}
+
+// ---------------------------------------------------------------------------
+// Card writes
+// ---------------------------------------------------------------------------
 
 /** Debounced write. Card object is mutated first so the UI stays immediate. */
 function queueSave(card: Card): void {
@@ -361,22 +277,76 @@ function queueSave(card: Card): void {
   );
 }
 
-/** Archives one card, first folding any live companion sessions into its frontmatter. */
-async function archiveOne(card: Card): Promise<{ dir: string; name: string }> {
-  const loaded = requireConfig();
-  if (!loaded.companion) return archiveCard(requireRoot(), card);
+function flushCard(card: Card): Promise<void> {
+  const timer = pendingSaves.get(card.id);
+  if (timer !== undefined) clearTimeout(timer);
 
-  const current = await fetchCardAssociations(loaded.uuid, card.uuid);
-  return archiveWithSessionAssociations(card.data, current, {
+  const previous = inFlightSaves.get(card.id);
+  if (!pendingSaves.delete(card.id)) return previous ?? Promise.resolve();
+
+  // Domain normalization, not serialization: an empty assignee is no assignee, and the
+  // reference chips are derived from the body once per save rather than per keystroke.
+  card.references = findReferences(card.body);
+  card.assignee = card.assignee?.trim() || undefined;
+
+  const current = requireStore();
+  const snapshot = cardSnapshot(card);
+
+  saveState.value = 'saving';
+  const operation = (previous ?? Promise.resolve()).then(async () => {
+    const result = await guard(async () => current.saveCard(snapshot));
+    if (result !== undefined) card.modified = result.modified;
+  });
+  inFlightSaves.set(card.id, operation);
+
+  void operation.finally(() => {
+    if (inFlightSaves.get(card.id) !== operation) return;
+    inFlightSaves.delete(card.id);
+    if (inFlightSaves.size > 0) saveState.value = 'saving';
+    else if (pendingSaves.size > 0) saveState.value = 'dirty';
+    else saveState.value = error.value ? 'idle' : 'saved';
+  });
+
+  return operation;
+}
+
+/** Drain debounced writes before board switches or bulk column changes. */
+async function flushPending(): Promise<void> {
+  for (const column of columns.value) {
+    for (const card of column.cards) await flushCard(card);
+  }
+}
+
+/** Renumbers a column 1..n, writing only the cards whose position actually changed. */
+async function renumber(column: Column): Promise<void> {
+  const current = requireStore();
+  for (const [index, card] of column.cards.entries()) {
+    const order = index + 1;
+    if (card.order === order) continue;
+    card.order = order;
+    const { modified } = await current.saveCard(cardSnapshot(card));
+    card.modified = modified;
+  }
+}
+
+/** Archives one card, first folding any live companion sessions into its metadata. */
+async function archiveOne(card: Card): Promise<ArchiveToken> {
+  const current = requireStore();
+  const loaded = requireSettings();
+  if (!loaded.companion) return current.archiveCard(cardSnapshot(card));
+
+  const live = await fetchCardAssociations(loaded.uuid, card.uuid);
+  return archiveWithSessionAssociations(card.data, live, {
     persist: async () => {
-      card.modified = await writeCard(requireRoot(), card);
+      const { modified } = await current.saveCard(cardSnapshot(card));
+      card.modified = modified;
     },
     expunge: () => expungeCardAssociations(card.uuid),
-    move: () => archiveCard(requireRoot(), card),
+    move: () => current.archiveCard(cardSnapshot(card)),
   });
 }
 
-/** Renaming a label rewrites loaded cards only; archived files keep the old tag. */
+/** Renaming a label rewrites loaded cards only; archived cards keep the old tag. */
 function renameTag(from: string, to: string): void {
   for (const column of columns.value) {
     for (const card of column.cards) {
@@ -387,81 +357,49 @@ function renameTag(from: string, to: string): void {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Columns
+// ---------------------------------------------------------------------------
+
+function configuredColumnNames(): string[] {
+  return columns.value.filter((column) => !column.virtual).map((column) => column.name);
+}
+
+/** Virtual columns always lead the UI but never enter settings until promoted. */
+function normalizeColumnOrder(): void {
+  columns.value = [
+    ...columns.value.filter((column) => column.virtual),
+    ...columns.value.filter((column) => !column.virtual),
+  ];
+}
+
 export function useBoard() {
   return {
-    access,
-    boards,
-    activeId,
-    locked,
     watching,
     columns,
-    editorName: computed(() => editorName(config.value ?? DEFAULT_CONFIG)),
-    editorTemplate: computed(() => config.value?.editor ?? DEFAULT_CONFIG.editor),
-    rootPath: computed(() => config.value?.path ?? ''),
-    boardUuid: computed(() => config.value?.uuid ?? ''),
-    configReady: computed(() => config.value !== null),
-    companionEnabled: computed(() => config.value?.companion ?? false),
+    labels,
+    editorName: computed(() => editorName(settings.value ?? { editor: DEFAULT_EDITOR })),
+    editorTemplate: computed(() => settings.value?.editor ?? DEFAULT_EDITOR),
+    rootPath,
+    boardUuid: computed(() => settings.value?.uuid ?? ''),
+    configReady,
+    companionEnabled: computed(() => settings.value?.companion ?? false),
     background,
     cardUrl: (card: Pick<Card, 'name'>) =>
-      config.value ? editorUrl(config.value, card) : undefined,
+      settings.value ? editorUrl(settings.value, card) : undefined,
     loading,
     error,
     saveState,
-    boardName: computed(() => ('handle' in access.value ? access.value.handle.name : '')),
+    /** Whatever backend is open names the board. Empty between boards. */
+    boardName: computed(() => store.value?.name ?? ''),
 
-    async init(): Promise<void> {
-      await guard(async () => setAccess(await restoreBoard()));
-      await refreshBoards();
-      await openBoard();
-    },
+    refresh: loadSnapshot,
 
-    /** Adds a folder to the registry and opens it; re-picking a known board just switches. */
-    async pick(): Promise<void> {
-      const picked = await guard(async () => pickBoard());
-      // Cancelling the picker leaves the current board alone.
-      if (!picked) return;
-      if (picked.state === 'unsupported') {
-        setAccess(picked);
-        return;
-      }
-      if (picked.state === 'ready' && picked.id === activeId.value) return;
-
-      await closeBoard();
-      setAccess(picked);
-      await refreshBoards();
-      await openBoard();
-    },
-
-    async grant(): Promise<void> {
-      if (access.value.state !== 'needs-permission') return;
-      const { id, handle } = access.value;
-      await guard(async () => setAccess(await grantPermission(id, handle)));
-      await openBoard();
-    },
-
-    switchBoard,
-
-    /** Drops a board from the switcher. Files are untouched; re-pick the folder to get it back. */
-    async forgetBoard(id: string): Promise<void> {
-      await guard(async () => forgetBoard(id));
-      await refreshBoards();
-      if (id !== activeId.value) return;
-
-      await closeBoard();
-      await guard(async () => setAccess(await restoreBoard()));
-      await openBoard();
-    },
-
-    /** Re-attempt after the other tab closed. */
-    retry: openBoard,
-
-    refresh,
-
-    /** Drop target for images: writes background.<ext> into the board root. */
+    /** Drop target for images. */
     async setBackground(file: File): Promise<boolean> {
-      if (!root.value || locked.value) return false;
+      if (!store.value) return false;
       const done = await guard(async () => {
-        await writeBackground(requireRoot(), file);
+        await requireStore().writeBackground(file);
         return true;
       });
       await loadBackground();
@@ -469,55 +407,59 @@ export function useBoard() {
     },
 
     async setCompanionEnabled(enabled: boolean): Promise<void> {
-      const loaded = config.value;
-      if (!root.value || locked.value || !loaded || loaded.companion === enabled) return;
+      const loaded = settings.value;
+      if (!store.value || !loaded || loaded.companion === enabled) return;
       const previous = loaded.companion;
       loaded.companion = enabled;
-      if (!(await saveConfig())) loaded.companion = previous;
+      if (!(await persistSettings())) loaded.companion = previous;
     },
 
     /**
-     * The two config scalars the settings dialog owns. A blank editor means "the default",
-     * not "no editor", because an empty template would silently break every card link.
+     * The two settings the dialog owns. A blank editor means "the default", not "no editor",
+     * because an empty template would silently break every card link.
      */
     async saveSettings(next: { path: string; editor: string }): Promise<boolean> {
-      const loaded = config.value;
-      if (!root.value || locked.value || !loaded) return false;
+      const loaded = settings.value;
+      if (!store.value || !loaded) return false;
 
       const path = next.path.trim();
-      const editor = next.editor.trim() || DEFAULT_CONFIG.editor;
+      const editor = next.editor.trim() || DEFAULT_EDITOR;
       if (loaded.path === path && loaded.editor === editor) return true;
 
       const previous = { path: loaded.path, editor: loaded.editor };
       loaded.path = path;
       loaded.editor = editor;
-      if (!(await saveConfig())) {
+      if (!(await persistSettings())) {
         Object.assign(loaded, previous);
         return false;
       }
-
-      // The switcher lists boards by path, so the registry has to learn the new one too.
-      const id = activeId.value;
-      if (id && (await noteBoardPath(id, path))) await refreshBoards();
       return true;
     },
 
-    /** Config + cards, for the manual button and the focus fallback. */
+    addLabel: (label: Label) => editLabels((entries) => entries.push({ ...label })),
+    updateLabel: (index: number, label: Label) =>
+      editLabels((entries) => {
+        entries[index] = { ...label };
+      }),
+    removeLabel: (index: number) =>
+      editLabels((entries) => {
+        entries.splice(index, 1);
+      }),
+
+    /** Settings + cards + wallpaper, for the manual button and the focus fallback. */
     async reload(): Promise<void> {
-      if (locked.value) return;
-      await loadConfig();
+      if (!store.value) return;
+      await loadSnapshot();
       await loadBackground();
-      await refresh();
     },
 
-    /** Scaffolds a starter board into the currently open (empty) folder. */
+    /** Scaffolds a starter board into the currently open (empty) board. */
     async initialize(): Promise<void> {
-      if (!root.value || !config.value) return;
+      if (!store.value) return;
       loading.value = true;
-      await guard(async () => initBoard(requireRoot()));
+      await guard(async () => requireStore().scaffold());
       loading.value = false;
-      await loadConfig();
-      await refresh();
+      await loadSnapshot();
     },
 
     queueSave,
@@ -525,21 +467,21 @@ export function useBoard() {
     flushCard,
 
     async addAttachments(card: Card, files: File[]): Promise<number> {
-      if (!files.length || !root.value || locked.value) return 0;
+      if (!files.length || !store.value) return 0;
+      const current = requireStore();
       const added = await guard(async () =>
-        Promise.all(files.map((file) => writeAttachment(requireRoot(), file))),
+        Promise.all(files.map((file) => current.writeAttachment(file))),
       );
       if (!added) return 0;
 
       card.attachments.push(...added);
-      card.data.attachments = card.attachments.map((attachment) => ({ ...attachment }));
       queueSave(card);
       await flushCard(card);
       return added.length;
     },
 
     async attachmentFile(attachment: CardAttachment): Promise<File | undefined> {
-      return guard(async () => readAttachment(requireRoot(), attachment));
+      return guard(async () => requireStore().readAttachment(attachment));
     },
 
     async removeAttachment(card: Card, attachment: CardAttachment): Promise<boolean> {
@@ -548,21 +490,15 @@ export function useBoard() {
 
       const previous = [...card.attachments];
       card.attachments.splice(index, 1);
-      if (card.attachments.length) {
-        card.data.attachments = card.attachments.map((entry) => ({ ...entry }));
-      } else {
-        delete card.data.attachments;
-      }
 
       queueSave(card);
       await flushCard(card);
       if (error.value) {
         card.attachments.splice(0, card.attachments.length, ...previous);
-        card.data.attachments = previous.map((entry) => ({ ...entry }));
         return false;
       }
 
-      await guard(async () => deleteAttachment(requireRoot(), attachment));
+      await guard(async () => requireStore().deleteAttachment(attachment));
       return true;
     },
 
@@ -574,12 +510,12 @@ export function useBoard() {
           throw new Error(`Column "${name}" already exists`);
         }
         columns.value = [...columns.value, { name, cards: [], virtual: false }];
-        requireConfig().columns = configuredColumnNames();
-        await saveConfig();
+        requireSettings().columns = configuredColumnNames();
+        await writeSettings();
       });
     },
 
-    /** Renaming changes config plus affected cards; filenames stay stable. */
+    /** Renaming changes settings plus affected cards; card identities stay stable. */
     async renameColumn(column: Column, label: string): Promise<void> {
       const next = label.trim();
       if (!next || next === column.name) return;
@@ -591,26 +527,42 @@ export function useBoard() {
       await flushPending();
       const previous = column.name;
       const wasVirtual = column.virtual;
+      const touched: Card[] = [];
       const done = await guard(async () => {
+        const current = requireStore();
         column.name = next;
         column.virtual = false;
         normalizeColumnOrder();
         for (const card of column.cards) {
           card.column = next;
-          card.modified = await writeCard(requireRoot(), card);
+          touched.push(card);
+          const { modified } = await current.saveCard(cardSnapshot(card));
+          card.modified = modified;
         }
-        requireConfig().columns = configuredColumnNames();
-        await saveConfig();
+        requireSettings().columns = configuredColumnNames();
+        await writeSettings();
         return true;
       });
-      if (!done) {
-        column.name = previous;
-        column.virtual = wasVirtual;
-        normalizeColumnOrder();
-      }
+      if (done) return;
+
+      // Restoring the header is not enough: every card the loop reached is already claiming
+      // the new name in memory, and a card whose write never landed has an unchanged
+      // `modified`, so the reload below would skip right over it.
+      column.name = previous;
+      column.virtual = wasVirtual;
+      for (const card of touched) card.column = previous;
+      normalizeColumnOrder();
+
+      // An unknown number of cards did reach storage before it failed, and only storage
+      // knows which. Re-read so the board shows what is actually on disk — those cards
+      // reappear under the new name as a virtual column rather than vanishing.
+      const failure = error.value;
+      await loadSnapshot();
+      // loadSnapshot clears the error on its way in; the rename failure is what to report.
+      error.value = failure;
     },
 
-    /** Live preview while a column header is dragged; config changes only on drop. */
+    /** Live preview while a column header is dragged; settings change only on drop. */
     previewColumnOrder(name: string, index: number): void {
       const current = columns.value.findIndex((column) => column.name === name);
       if (current === -1 || current === index) return;
@@ -622,19 +574,19 @@ export function useBoard() {
       columns.value = next;
     },
 
-    /** Archives every card, then removes column from config. */
+    /** Archives every card, then removes the column from settings. */
     async archiveColumn(column: Column): Promise<void> {
       await flushPending();
       const moved = column.cards.length;
       const done = await guard(async () => {
         for (const card of column.cards) await archiveOne(card);
         columns.value = columns.value.filter((entry) => entry !== column);
-        requireConfig().columns = configuredColumnNames();
-        await saveConfig();
+        requireSettings().columns = configuredColumnNames();
+        await writeSettings();
         return true;
       });
       if (done) showToast(`Archived "${column.name}" and ${moved} card${moved === 1 ? '' : 's'}`);
-      else await refresh();
+      else await loadSnapshot();
     },
 
     async commitColumnOrder(movedName: string): Promise<void> {
@@ -645,16 +597,16 @@ export function useBoard() {
       normalizeColumnOrder();
 
       const names = configuredColumnNames();
-      const configured = requireConfig().columns;
+      const configured = requireSettings().columns;
       const unchanged =
         names.length === configured.length &&
         names.every((name, index) => name === configured[index]);
       if (!promoted && unchanged) return;
-      requireConfig().columns = names;
-      await saveConfig();
+      requireSettings().columns = names;
+      await persistSettings();
     },
 
-    /** Drag cancelled (escape, or dropped outside): put preview back. */
+    /** Drag cancelled (escape, or dropped outside): put the preview back. */
     cancelColumnOrder(): void {
       const before = columnSnapshot;
       columnSnapshot = null;
@@ -668,9 +620,14 @@ export function useBoard() {
 
     async addCard(column: Column, title: string): Promise<Card | undefined> {
       return guard(async () => {
-        const card = await createCard(requireRoot(), column.name, title, 1);
+        const card = await requireStore().createCard({
+          title,
+          column: column.name,
+          order: 1,
+          body: '',
+        });
         column.cards.unshift(card);
-        await persistOrder(requireRoot(), column);
+        await renumber(column);
         return card;
       });
     },
@@ -679,14 +636,19 @@ export function useBoard() {
       return guard(async () => {
         const { title, body } = parseMarkdownImport(file.name, await file.text());
         const destination = Math.min(index, column.cards.length);
-        const card = await createCard(requireRoot(), column.name, title, destination + 1, body);
+        const card = await requireStore().createCard({
+          title,
+          column: column.name,
+          order: destination + 1,
+          body,
+        });
         column.cards.splice(destination, 0, card);
-        await persistOrder(requireRoot(), column);
+        await renumber(column);
         return card;
       });
     },
 
-    /** Drops a card at an explicit slot, then persists frontmatter and ordering. */
+    /** Drops a card at an explicit slot, then persists the affected columns' ordering. */
     async placeCard(card: Card, toColumn: Column, index: number): Promise<void> {
       await flushCard(card);
       const from = columns.value.find((column) => column.name === card.column);
@@ -706,8 +668,8 @@ export function useBoard() {
       }
 
       await guard(async () => {
-        if (from && from !== toColumn) await persistOrder(requireRoot(), from);
-        await persistOrder(requireRoot(), toColumn);
+        if (from && from !== toColumn) await renumber(from);
+        await renumber(toColumn);
       });
     },
 
@@ -715,72 +677,36 @@ export function useBoard() {
       await flushCard(card);
       const from = columns.value.find((column) => column.name === card.column);
       const index = from ? from.cards.indexOf(card) : 0;
-      const archived = await guard(async () => archiveOne(card));
-      if (archived === undefined) return;
+      const token = await guard(async () => archiveOne(card));
+      if (token === undefined) return;
       if (from) from.cards = from.cards.filter((entry) => entry.id !== card.id);
 
       showToast(`Archived "${card.title}"`, 5000, {
         label: 'Undo',
         run: async () => {
-          const name = await guard(async () => unarchiveCard(requireRoot(), archived));
-          if (name === undefined || !from) return;
-          card.name = name;
+          const restored = await guard(async () => requireStore().restoreCard(token));
+          if (restored === undefined || !from) return;
+          card.name = restored.name;
+          if (restored.modified !== undefined) card.modified = restored.modified;
           from.cards.splice(Math.min(index, from.cards.length), 0, card);
-          await guard(async () => persistOrder(requireRoot(), from));
+          await guard(async () => renumber(from));
         },
       });
     },
   };
 }
 
-/** Column order as it was before the current drag started; null when no drag is previewing. */
-let columnSnapshot: string[] | null = null;
-
-/** Drain debounced writes before board switches or bulk column changes. */
-async function flushPending(): Promise<void> {
-  for (const column of columns.value) {
-    for (const card of column.cards) await flushCard(card);
-  }
+/**
+ * Attaches a backend to the shared controller, replacing whatever was open.
+ * `useFilesystemBoards()` calls this with a `FileSystemBoardStore`; the marketing entry calls
+ * it with a `MemoryBoardStore` and mounts the same UI. Controller tests use it to skip both.
+ */
+export async function openBoardStore(next: BoardStore): Promise<void> {
+  await closeStore();
+  await openStore(next);
 }
 
-function flushCard(card: Card): Promise<void> {
-  const timer = pendingSaves.get(card.id);
-  if (timer !== undefined) clearTimeout(timer);
-
-  const previous = inFlightSaves.get(card.id);
-  if (!pendingSaves.delete(card.id)) return previous ?? Promise.resolve();
-
-  card.references = findReferences(card.body);
-  card.data.title = card.title;
-  // An empty assignee drops the key rather than writing `assignee: ''`.
-  card.assignee = card.assignee?.trim() || undefined;
-  if (card.assignee) card.data.assignee = card.assignee;
-  else delete card.data.assignee;
-  // Avoid adding an empty `tags:` key to files that never had one.
-  if (card.tags.length || 'tags' in card.data) card.data.tags = [...card.tags];
-
-  const root = requireRoot();
-  const snapshot = {
-    column: card.column,
-    name: card.name,
-    data: structuredClone(toRaw(card.data)),
-    body: card.body,
-  };
-
-  saveState.value = 'saving';
-  const operation = (previous ?? Promise.resolve()).then(async () => {
-    const modified = await guard(async () => writeCard(root, snapshot));
-    if (modified !== undefined) card.modified = modified;
-  });
-  inFlightSaves.set(card.id, operation);
-
-  void operation.finally(() => {
-    if (inFlightSaves.get(card.id) !== operation) return;
-    inFlightSaves.delete(card.id);
-    if (inFlightSaves.size > 0) saveState.value = 'saving';
-    else if (pendingSaves.size > 0) saveState.value = 'dirty';
-    else saveState.value = error.value ? 'idle' : 'saved';
-  });
-
-  return operation;
+/** Detaches the current backend, leaving the controller with no board at all. */
+export async function closeBoardStore(): Promise<void> {
+  await closeStore();
 }

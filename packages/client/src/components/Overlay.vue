@@ -1,10 +1,11 @@
 <script setup lang="ts">
 /**
  * Shared scrim for full-window layers. Teleporting keeps layers out of ancestor overflow and
- * stacking contexts.
+ * stacking contexts; the host decides which window "full" means.
  */
 import { ref } from 'vue';
 import { useLayer } from '../composables/useLayer';
+import { useOverlayHost } from '../composables/useOverlayHost';
 
 const props = withDefaults(
   defineProps<{
@@ -23,6 +24,7 @@ const emit = defineEmits<{ close: []; escape: [] }>();
 // A press that starts inside the panel and drifts onto the scrim is a sloppy drag, not a
 // click-away, so both ends of the press have to land on the scrim itself.
 const pressed = ref(false);
+const host = useOverlayHost();
 
 function onMousedown(event: MouseEvent): void {
   if (event.target === event.currentTarget) pressed.value = true;
@@ -39,7 +41,7 @@ useLayer(() => emit('escape'));
 </script>
 
 <template>
-  <Teleport to="body">
+  <Teleport :to="host">
     <div
       class="scrim"
       :class="`scrim-${place}`"

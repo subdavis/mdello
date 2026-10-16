@@ -1,0 +1,703 @@
+/*
+ * Imported after the client's style.css, which is load-bearing: that file sizes <body> for a
+ * full-viewport app shell, and a marketing page has to scroll instead.
+ *
+ * The page is a stack of full-bleed bands. Each band owns a surface and a set of ink tokens;
+ * everything inside reads `--ink`/`--ink-muted`/`--rule` rather than the page's own colours,
+ * which is what lets the agents section and the footer be dark in both themes without any
+ * component below knowing about it.
+ */
+
+:root {
+  /* Deliberately not --bg: the page has to read as a different surface from the app on it. */
+  --page-bg: #e7e9ed;
+  --band-dark-bg: #151b21;
+
+  --ink: #172b4d;
+  --ink-muted: #4a5a72;
+  --ink-faint: #6b7a8f;
+  --rule: rgb(9 30 66 / 0.12);
+  /*
+   * The page's one accent: the CTAs, the shell prompt, and the demo window's chrome. The
+   * <meta name="theme-color"> in index.html has to repeat the literal — keep the two in step.
+   */
+  --marketing-accent: #6dbde3;
+  --marketing-accent-ink: #10222e;
+  --marketing-accent-hover: #8fcfee;
+
+  --wrap: 1100px;
+  --wrap-wide: 1320px;
+  --band-pad: clamp(4rem, 9vw, 7rem);
+
+  --display: clamp(2.5rem, 6.5vw, 4.25rem);
+  --heading: clamp(1.75rem, 3.6vw, 2.75rem);
+  --lede-size: clamp(1.0625rem, 1.5vw, 1.3125rem);
+
+  /* Windows are round because OS windows are; every other surface keeps close to the app's
+     3px, so the page reads as built out of the product rather than out of a template. */
+  --window-radius: 12px;
+  --control-radius: 4px;
+  --window-shadow: 0 24px 56px rgb(9 30 66 / 0.2), 0 2px 8px rgb(9 30 66 / 0.14);
+  --frame-shadow: 0 10px 28px rgb(9 30 66 / 0.1), 0 1px 3px rgb(9 30 66 / 0.08);
+
+  /* The page accent, not var(--accent): the app's own blue lightens to #579dff in dark mode,
+     which is far too loud for window chrome. Fixed across themes, like real window chrome. */
+  --window-chrome: var(--marketing-accent);
+  --window-chrome-ink: var(--marketing-accent-ink);
+  /*
+   * The brighter of the app's two status palettes in both themes — against pale chrome these
+   * read as OS traffic lights, where the light-mode ones (#c9372c, #b38600, #1f845a) read as
+   * muted dots.
+   */
+  --window-light-close: #ff5630;
+  --window-light-minimize: #f5cd47;
+  --window-light-zoom: #4bce97;
+}
+
+:root[data-theme="dark"] {
+  --page-bg: #0b0e10;
+  --ink: #c7d1db;
+  --ink-muted: #9fadbc;
+  --ink-faint: #7d8b99;
+  --rule: rgb(255 255 255 / 0.1);
+  --window-shadow: 0 24px 64px rgb(0 0 0 / 0.66), 0 2px 8px rgb(0 0 0 / 0.5);
+  --frame-shadow: 0 10px 28px rgb(0 0 0 / 0.45), 0 1px 3px rgb(0 0 0 / 0.4);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+figure {
+  margin: 0;
+}
+
+body {
+  height: auto;
+  display: block;
+  overflow: visible;
+  margin: 0;
+  padding: 0;
+  background: var(--page-bg);
+  color: var(--ink);
+}
+
+/* ------------------------------------------------------------------ bands */
+
+.band {
+  padding: var(--band-pad) var(--space-6);
+  scroll-margin-top: 4rem;
+}
+
+.band-dark,
+.site-footer {
+  background: var(--band-dark-bg);
+  /* A fixed surface in both themes, so it carries its own ink instead of the page's. */
+  --ink: #dfe6ee;
+  --ink-muted: #9fb0c2;
+  --ink-faint: #7d8fa2;
+  --rule: rgb(255 255 255 / 0.12);
+  color: var(--ink);
+}
+
+.wrap {
+  width: 100%;
+  max-width: var(--wrap);
+  margin: 0 auto;
+}
+
+.wrap.is-wide {
+  max-width: var(--wrap-wide);
+}
+
+/* -------------------------------------------------------------------- nav */
+
+/*
+ * Borrows the app's surface and brand and nothing else. A replica of the board toolbar this
+ * close to a real one reads as a costume rather than a callback.
+ */
+.site-nav {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding: 0 var(--space-6);
+  background: color-mix(in srgb, var(--page-bg) 86%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--rule);
+}
+
+.site-nav-inner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  height: 3.5rem;
+}
+
+.site-nav-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: 600;
+  font-size: var(--font-lg);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.site-nav-link {
+  color: var(--ink-muted);
+  text-decoration: none;
+  font-size: var(--font-sm);
+}
+
+.site-nav-link:hover {
+  color: var(--ink);
+}
+
+/* ---------------------------------------------------------------- buttons */
+
+.button-cta,
+.button-ghost {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--control-radius);
+  padding: var(--space-3) var(--space-5);
+  font-size: var(--font-md);
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.button-cta {
+  background: var(--marketing-accent);
+  color: var(--marketing-accent-ink);
+  box-shadow: 0 1px 2px rgb(9 30 66 / 0.25);
+}
+
+.button-cta:hover {
+  background: var(--marketing-accent-hover);
+}
+
+.button-cta.is-small {
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--font-sm);
+}
+
+.button-ghost {
+  color: var(--ink);
+  border: 1px solid var(--rule);
+}
+
+.button-ghost:hover {
+  border-color: var(--ink-faint);
+}
+
+/* ------------------------------------------------------------------- hero */
+
+.band-hero {
+  position: relative;
+  /* Short on purpose: the top of the demo window has to land inside the first viewport. */
+  padding: clamp(3rem, 7vw, 5rem) var(--space-6) clamp(2.5rem, 5vw, 3.5rem);
+  overflow: hidden;
+}
+
+/*
+ * Column silhouettes, barely there and faded out before they reach the demo. The page's one
+ * decorative flourish, and it is drawn from the product's own geometry.
+ */
+.band-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(90deg, var(--rule) 0 1px, transparent 1px 276px);
+  mask-image: linear-gradient(to bottom, rgb(0 0 0 / 0.55), transparent 78%);
+  pointer-events: none;
+}
+
+.hero {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  gap: var(--space-5);
+}
+
+.hero-logo {
+  width: min(210px, 52vw);
+  height: auto;
+}
+
+.hero-title {
+  margin: 0;
+  max-width: 18ch;
+  font-size: var(--display);
+  font-weight: 700;
+  line-height: 1.02;
+  letter-spacing: -0.03em;
+}
+
+.hero-subtitle {
+  margin: 0;
+  max-width: 56ch;
+  font-size: var(--lede-size);
+  line-height: 1.55;
+  color: var(--ink-muted);
+}
+
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+
+.hero-note {
+  margin: 0;
+  max-width: 52ch;
+  font-size: var(--font-sm);
+  color: var(--ink-faint);
+}
+
+/* ------------------------------------------------------------------- demo */
+
+.band-demo {
+  padding-top: 0;
+}
+
+#demo {
+  height: min(78vh, 700px);
+}
+
+.demo-caption {
+  max-width: 62ch;
+  margin: var(--space-6) auto 0;
+  text-align: center;
+  font-size: var(--font-sm);
+  line-height: 1.6;
+  color: var(--ink-faint);
+}
+
+.demo-app {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--window-shadow);
+}
+
+/*
+ * Everything the app owns, and nothing the OS does. Paint containment makes this the
+ * containing block for `position: fixed`, so the modal scrim and the toast stop at the
+ * titlebar instead of covering the frame — or, before the overlay host existed, the page.
+ */
+.demo-window {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  contain: paint;
+  /*
+   * The app's wallpaper slot. In the real app this is set from the board folder's
+   * `background.*` file; there is no folder here, so it is filled statically — the rule
+   * below is the same one `style.css` puts on <body>.
+   */
+  --board-bg: url("./background.jpg");
+}
+
+.demo-board {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  background: var(--board-bg, none) center / cover no-repeat var(--bg);
+}
+
+/* A wrapper for teleported modals only; it must not take part in the window's layout. */
+.demo-layers {
+  display: contents;
+}
+
+/* style.css sizes columns against the viewport, which is right for the full-page app and
+   wrong inside a fixed-height window. */
+.demo-board .column {
+  max-height: 100%;
+}
+
+/* ----------------------------------------------------------------- frames */
+
+/* One window vocabulary for the demo, the code samples, the terminal and the card. */
+.frame {
+  display: flex;
+  flex-direction: column;
+  /* Panels never inherit the centring of the band they sit in. */
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: var(--window-radius);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.frame:not(.demo-app) {
+  box-shadow: var(--frame-shadow);
+}
+
+.frame-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--column-bg);
+  border-bottom: 1px solid var(--line);
+}
+
+/* The OS's share of the demo frame: lights only, never covered by anything the app puts up. */
+.frame-bar.is-chrome {
+  background: var(--window-chrome);
+  color: var(--window-chrome-ink);
+  border-bottom-color: rgb(0 0 0 / 0.18);
+}
+
+.frame-label {
+  font-family: var(--mono);
+  font-size: var(--font-xs);
+  color: var(--muted);
+}
+
+.frame-light {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--window-light-close);
+}
+
+.frame-light.is-minimize {
+  background: var(--window-light-minimize);
+}
+
+.frame-light.is-zoom {
+  background: var(--window-light-zoom);
+}
+
+.frame-body {
+  margin: 0;
+  padding: var(--space-4);
+  background: var(--surface);
+}
+
+pre.frame-body,
+.frame-body pre {
+  overflow-x: auto;
+}
+
+.frame-body pre {
+  margin: 0;
+}
+
+.frame code {
+  font-family: var(--mono);
+  font-size: var(--font-2sm);
+  line-height: 1.6;
+  color: var(--text);
+}
+
+/* Hand-rolled highlighting over the editor's own palette — the page shows four fragments of
+   YAML, which is not worth a tokeniser. */
+.c-key {
+  color: var(--editor-heading);
+}
+
+.c-val {
+  color: var(--editor-string);
+}
+
+.c-num {
+  color: var(--editor-literal);
+}
+
+.c-rule,
+.c-note {
+  color: var(--muted);
+}
+
+.c-note {
+  font-style: italic;
+}
+
+/* -------------------------------------------------------- section headings */
+
+.band-title {
+  margin: 0;
+  max-width: 20ch;
+  font-size: var(--heading);
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+.band-title em {
+  font-style: italic;
+}
+
+.lede {
+  max-width: 62ch;
+  margin: var(--space-5) 0 0;
+  font-size: var(--lede-size);
+  line-height: 1.6;
+  color: var(--ink-muted);
+}
+
+/* Everything under the demo is centred on the page. Panels inside it are not. */
+.wrap.is-centered {
+  text-align: center;
+}
+
+.wrap.is-centered .band-title {
+  max-width: 24ch;
+  margin-inline: auto;
+}
+
+.wrap.is-centered .lede {
+  margin-inline: auto;
+}
+
+/* A lone object under a centred heading, rather than one of a pair in `.split`. */
+.wrap.is-centered > .frame {
+  max-width: 44rem;
+  margin: clamp(2rem, 4vw, 3rem) auto 0;
+}
+
+/* ------------------------------------------------------------------ split */
+
+.split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: stretch;
+  gap: clamp(1.5rem, 3vw, 2.5rem);
+  margin-top: clamp(2.5rem, 5vw, 3.5rem);
+}
+
+/*
+ * `CardDetails` expects the overlay's `.panel` chrome; embedded, the surrounding `.frame` is
+ * that chrome, so the card brings none of its own. The chain from the grid track down to the
+ * card is all flex so the pane matches the height of the file beside it.
+ */
+.frame-body.is-card,
+#card-modal,
+.inline-card {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.frame-body.is-card {
+  padding: 0;
+  color: var(--text);
+}
+
+/*
+ * The card's children are inset a further ~7px by `.modal-title`'s padding and `.meta`'s
+ * margin, so this is `--space-4` less that — which lands the card's title on the same left
+ * edge as the first character of the file beside it.
+ */
+.inline-card .modal-drop-surface {
+  padding: var(--space-2);
+}
+
+/* --------------------------------------------------------------- terminal */
+
+/* Darker than the band it sits on, so it reads as a window rather than a panel. */
+.frame.is-terminal {
+  background: #0b0e10;
+  border-color: rgb(255 255 255 / 0.14);
+}
+
+.frame.is-terminal .frame-bar {
+  background: #171d23;
+  border-bottom-color: rgb(255 255 255 / 0.1);
+}
+
+.frame.is-terminal .frame-label {
+  color: #8b98a5;
+  margin-left: var(--space-2);
+}
+
+.frame.is-terminal .frame-body {
+  background: transparent;
+}
+
+/* The install URL is longer than the column; wrapping it is honest, scrolling it hides it. */
+.frame.is-terminal pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.frame.is-terminal code {
+  font-size: var(--font-xs);
+  color: #c7d1db;
+}
+
+.c-prompt {
+  color: var(--marketing-accent);
+}
+
+/* Lives in the title bar rather than over the first line, which the command needs all of. */
+.copy-button {
+  padding: var(--space-1) var(--space-2);
+  font-family: var(--mono);
+  font-size: var(--font-xs);
+  color: #9fb0c2;
+  background: rgb(255 255 255 / 0.07);
+  border: 1px solid rgb(255 255 255 / 0.14);
+  border-radius: var(--control-radius);
+}
+
+.copy-button:hover {
+  background: rgb(255 255 255 / 0.13);
+  color: #dfe6ee;
+}
+
+.copy-button.is-copied {
+  color: #4bce97;
+  border-color: rgb(75 206 151 / 0.4);
+}
+
+/* ----------------------------------------------------------------- footer */
+
+.site-footer {
+  padding: var(--space-12) var(--space-6) var(--space-8);
+}
+
+.footer-grid {
+  display: grid;
+  grid-template-columns: 1.6fr repeat(3, 1fr);
+  gap: var(--space-8);
+}
+
+.footer-brand p {
+  margin: 0;
+  max-width: 28ch;
+  font-size: var(--font-sm);
+  line-height: 1.6;
+  color: var(--ink-muted);
+}
+
+.footer-brand .footer-mark {
+  margin-bottom: var(--space-2);
+  font-size: var(--font-lg);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.footer-col h2 {
+  margin: 0 0 var(--space-4);
+  font-family: var(--mono);
+  font-size: var(--font-xs);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.footer-col ul {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.footer-col a {
+  font-size: var(--font-sm);
+  color: var(--ink-muted);
+  text-decoration: none;
+}
+
+.footer-col a:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}
+
+.theme-toggle {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--rule);
+  border-radius: var(--control-radius);
+}
+
+button.theme-option {
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--font-xs);
+  color: var(--ink-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 2px;
+}
+
+button.theme-option:hover {
+  background: rgb(255 255 255 / 0.08);
+  color: var(--ink);
+}
+
+button.theme-option.is-active {
+  background: rgb(255 255 255 / 0.14);
+  color: var(--ink);
+}
+
+.footer-colophon {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-top: var(--space-12);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--rule);
+}
+
+.footer-colophon p {
+  margin: 0;
+  font-size: var(--font-xs);
+  color: var(--ink-faint);
+}
+
+.footer-colophon a {
+  color: var(--ink-muted);
+}
+
+/* ------------------------------------------------------------ responsive */
+
+@media (width < 64rem) {
+  .split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .footer-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (width < 40rem) {
+  .band,
+  .site-nav,
+  .site-footer {
+    padding-left: var(--space-4);
+    padding-right: var(--space-4);
+  }
+
+  .site-nav-link {
+    display: none;
+  }
+
+  .footer-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  #demo {
+    height: min(80vh, 560px);
+  }
+}

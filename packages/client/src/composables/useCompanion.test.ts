@@ -54,10 +54,14 @@ const association: Association = {
   updatedAt: '2026-01-01T00:00:00.000Z',
 };
 
-test('builds an OpenCode resume command', () => {
+test('builds OpenCode and Codex resume commands', () => {
   assert.equal(
     resumeCommand({ ...association, harness: 'opencode', sessionId: 'ses_123' }),
     'opencode --session ses_123',
+  );
+  assert.equal(
+    resumeCommand({ ...association, harness: 'codex', sessionId: '019abc' }),
+    'codex resume 019abc',
   );
 });
 

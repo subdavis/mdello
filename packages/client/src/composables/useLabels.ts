@@ -1,7 +1,8 @@
-import { ref } from 'vue';
-import type { Label } from '../fs/config';
+import type { Label } from '../types/board';
+import { labels } from './useBoard';
 
 export type { Label };
+export { labels };
 
 /** Picker palette: five hues in three shades, laid out five per row. */
 export const PALETTE = [
@@ -21,30 +22,6 @@ export const PALETTE = [
   '#6e5dc6',
   '#0c66e4',
 ];
-
-const LEGACY_KEY = 'mdello:labels';
-
-/** Labels now live in the board's config file; useBoard loads and persists them. */
-export const labels = ref<Label[]>([]);
-
-/** One-time lift of labels out of localStorage, for boards created before the config file. */
-export function takeLegacyLabels(): Label[] {
-  let stored: unknown = null;
-  try {
-    stored = JSON.parse(localStorage.getItem(LEGACY_KEY) ?? 'null');
-  } catch {
-    // Corrupt entry: nothing to migrate.
-  }
-  localStorage.removeItem(LEGACY_KEY);
-  if (!Array.isArray(stored)) return [];
-
-  return stored
-    .filter(
-      (entry) =>
-        typeof entry?.name === 'string' && entry.name.trim() && typeof entry?.color === 'string',
-    )
-    .map(({ name, color }) => ({ name, color }));
-}
 
 function labelColor(tag: string): string | undefined {
   return labels.value.find((label) => label.name === tag)?.color;

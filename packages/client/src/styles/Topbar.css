@@ -1,0 +1,57 @@
+/*
+ * The board's own toolbar. Global rather than scoped to App.vue, because an embedded board —
+ * the marketing demo — puts up the same bar with a smaller set of controls, and a lookalike
+ * would drift away from this one the first time it changed.
+ */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  flex: none;
+}
+
+.brand {
+  font-size: calc(var(--font-lg));
+}
+
+.spacer {
+  flex: 1;
+}
+
+.board-name,
+.board-switch {
+  color: var(--muted);
+  max-width: 40vw;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.board-name {
+  padding: var(--space-1) var(--space-2);
+}
+
+/* The switchable variant: a button that has to sit flush with the plain label above. */
+.board-switch {
+  border-color: transparent;
+  background: transparent;
+}
+
+.board-switch:hover {
+  background: var(--interactive-subtle);
+}
+
+.add-column-form {
+  flex: none;
+  display: flex;
+  width: 120px;
+}
+
+.add-column-form input {
+  padding: 0 var(--space-2);
+  line-height: 22px;
+}

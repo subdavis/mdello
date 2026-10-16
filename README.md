@@ -88,7 +88,8 @@ npx mdello-companion install
 npx mdello-companion install macos
 npx mdello-companion install pi # Then run `/reload`
 npx mdello-companion install opencode # Then restart OpenCode
-npx mdello-companion install claude # then run run `/reload-plugins`
+npx mdello-companion install claude # then run `/reload-plugins`
+npx mdello-companion install codex # then start a new Codex session; enable hooks in `/hooks`
 
 # Learn more about the companion
 npx mdello-companion help
@@ -104,6 +105,7 @@ npx mdello-companion help
 | `pi`        | `packages/pi-extension/dist/index.js` symlinked into `~/.pi/agent/extensions`      |
 | `opencode`  | `packages/opencode-extension/dist/index.js` symlinked into OpenCode's plugin dir.  |
 | `claude`    | a plugin at `~/.claude/skills/mdello-companion` whose hooks post to the companion. |
+| `codex`     | managed entries in `${CODEX_HOME:-~/.codex}/hooks.json` posting to the companion. |
 
 ### Agent plugins
 
@@ -120,7 +122,7 @@ More tools should tell you how to erase them from your system. Here's how to get
 npx mdello-companion uninstall
 
 # Remove specific integrations
-npx mdello-companion {integration}
+npx mdello-companion uninstall {integration}
 ```
 
 ## Repository layout
@@ -132,6 +134,7 @@ This repository is a Yarn workspace monorepo:
 - `packages/pi-extension` — Pi lifecycle integration, loaded in-process by Pi
 - `packages/opencode-extension` — OpenCode lifecycle integration, loaded as a global plugin
 - `packages/claude-extension` — Claude Code hook adapter, imported by the companion
+- `packages/codex-extension` — Codex hook adapter and rollout backfill, imported by the companion
 - `packages/common` — shared association, harness, frontmatter, and path helpers
 
 ## Local development

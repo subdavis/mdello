@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import { after, default as test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
-import type { Card } from '../fs/board.ts';
+import type { BoardStore } from '../board/store.ts';
+import type { MemoryBoardStore as MemoryBoardStoreType } from '../board/stores/memoryBoardStore.ts';
+import type { Card } from '../types/board.ts';
 import type { useBoard as useBoardType } from './useBoard.ts';
 
 const server = await createServer({
@@ -10,10 +12,17 @@ const server = await createServer({
   server: { middlewareMode: true },
   appType: 'custom',
 });
-const { useBoard } = (await server.ssrLoadModule('/src/composables/useBoard.ts')) as {
-  useBoard: typeof useBoardType;
-};
 after(() => server.close());
+
+const { useBoard, openBoardStore } = (await server.ssrLoadModule(
+  '/src/composables/useBoard.ts',
+)) as {
+  useBoard: typeof useBoardType;
+  openBoardStore: (store: BoardStore) => Promise<void>;
+};
+const { MemoryBoardStore } = (await server.ssrLoadModule(
+  '/src/board/stores/memoryBoardStore.ts',
+)) as { MemoryBoardStore: typeof MemoryBoardStoreType };
 
 function deferred(): { promise: Promise<void>; resolve: () => void } {
   let resolve!: () => void;
@@ -23,139 +32,101 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
   return { promise, resolve };
 }
 
-function card(body: string): Card {
-  return {
-    id: 'card-id',
-    uuid: 'card-id',
-    name: 'race.md',
-    column: 'Todo',
-    title: 'Race',
-    tags: [],
-    modified: 0,
-    body,
-    attachments: [],
-    references: [],
-    data: {},
-  };
+/**
+ * Holds the first write open until released, and fails loudly if a second one starts while
+ * it is still in flight. That is exactly the guarantee the controller's per-card write chain
+ * is supposed to provide, and testing it needs nothing more than a slow store.
+ */
+function stalling(store: BoardStore, release: Promise<void>) {
+  const started = deferred();
+  let writes = 0;
+  let inFlight = false;
+
+  // A Proxy rather than Object.create: the store keeps private fields, so its methods only
+  // work when they run with the real instance as `this`.
+  const wrapper = new Proxy(store, {
+    get(target, property, receiver) {
+      const value = Reflect.get(target, property, receiver);
+      if (property !== 'saveCard') {
+        return typeof value === 'function' ? value.bind(target) : value;
+      }
+
+      return async (card: Readonly<Card>) => {
+        if (inFlight) throw new Error('two writes for one card overlapped');
+        inFlight = true;
+        writes += 1;
+        if (writes === 1) {
+          started.resolve();
+          await release;
+        }
+        try {
+          return await (value as BoardStore['saveCard']).call(target, card);
+        } finally {
+          inFlight = false;
+        }
+      };
+    },
+  });
+
+  return { store: wrapper, started: started.promise, writes: () => writes };
+}
+
+function seed(): MemoryBoardStoreType {
+  return new MemoryBoardStore({
+    settings: { columns: ['Todo'] },
+    cards: [{ title: 'Race', column: 'Todo', order: 1, body: 'first version' }],
+  });
 }
 
 test('an edit arriving during a write is persisted after the active write', async () => {
+  const backing = seed();
+  const release = deferred();
+  const slow = stalling(backing, release.promise);
+
+  await openBoardStore(slow.store);
   const board = useBoard();
-  const firstWriteStarted = deferred();
-  const releaseFirstWrite = deferred();
-  let locked = false;
-  let writeCount = 0;
-  let persisted = '';
+  const card = board.columns.value[0].cards[0];
 
-  const fileHandle = {
-    name: 'race.md',
-    kind: 'file',
-    async createWritable() {
-      if (locked) throw new DOMException('File is already locked', 'NoModificationAllowedError');
-      locked = true;
-      let content = '';
-      return {
-        async write(next: string) {
-          content = next;
-          writeCount += 1;
-          if (writeCount === 1) firstWriteStarted.resolve();
-        },
-        async close() {
-          if (writeCount === 1) await releaseFirstWrite.promise;
-          persisted = content;
-          locked = false;
-        },
-      };
-    },
-    async getFile() {
-      return { lastModified: Date.now() };
-    },
-  };
-  const root = {
-    name: 'board',
-    kind: 'directory',
-    async getFileHandle() {
-      return fileHandle;
-    },
-  };
+  card.body = 'first version';
+  board.queueSave(card);
+  const firstFlush = board.flushCard(card);
+  await slow.started;
 
-  board.access.value = {
-    state: 'ready',
-    id: 'test-board',
-    handle: root as unknown as FileSystemDirectoryHandle,
-  };
-  board.error.value = null;
+  card.body = 'second version';
+  board.queueSave(card);
+  const secondFlush = board.flushCard(card);
 
-  const current = card('first version');
-  board.queueSave(current);
-  const firstFlush = board.flushCard(current);
-  await firstWriteStarted.promise;
-
-  current.body = 'second version';
-  board.queueSave(current);
-  const secondFlush = board.flushCard(current);
-  // Keep the first stream locked beyond openWritable's retry window. A concurrent second write
-  // fails; a queued second write waits without touching the handle.
-  await new Promise((resolve) => setTimeout(resolve, 75));
-  releaseFirstWrite.resolve();
+  release.resolve();
   await Promise.all([firstFlush, secondFlush]);
 
-  assert.match(persisted, /second version/);
+  const persisted = (await backing.load()).cards[0];
+  assert.match(persisted.body, /second version/);
+  assert.equal(slow.writes(), 2);
   assert.equal(board.error.value, null);
 });
 
 test('finishing an older write does not report saved while a newer edit is pending', async () => {
+  const backing = seed();
+  const release = deferred();
+  const slow = stalling(backing, release.promise);
+
+  await openBoardStore(slow.store);
   const board = useBoard();
-  const firstWriteStarted = deferred();
-  const releaseFirstWrite = deferred();
-  let content = '';
+  const card = board.columns.value[0].cards[0];
 
-  const fileHandle = {
-    name: 'race.md',
-    kind: 'file',
-    async createWritable() {
-      return {
-        async write(next: string) {
-          content = next;
-          firstWriteStarted.resolve();
-        },
-        async close() {
-          await releaseFirstWrite.promise;
-        },
-      };
-    },
-    async getFile() {
-      return { lastModified: Date.now() };
-    },
-  };
-  const root = {
-    name: 'board',
-    kind: 'directory',
-    async getFileHandle() {
-      return fileHandle;
-    },
-  };
+  card.body = 'first version';
+  board.queueSave(card);
+  const firstFlush = board.flushCard(card);
+  await slow.started;
 
-  board.access.value = {
-    state: 'ready',
-    id: 'test-board',
-    handle: root as unknown as FileSystemDirectoryHandle,
-  };
-  board.error.value = null;
-
-  const current = card('first version');
-  board.queueSave(current);
-  const firstFlush = board.flushCard(current);
-  await firstWriteStarted.promise;
-
-  current.body = 'second version';
-  board.queueSave(current);
-  releaseFirstWrite.resolve();
+  card.body = 'second version';
+  board.queueSave(card);
+  release.resolve();
   await firstFlush;
 
   const stateAfterOlderWrite = board.saveState.value;
-  await board.flushCard(current);
+  await board.flushCard(card);
 
-  assert.match(content, /second version/);
+  assert.match((await backing.load()).cards[0].body, /second version/);
   assert.equal(stateAfterOlderWrite, 'dirty');
 });

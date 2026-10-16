@@ -2,7 +2,7 @@
 import { computed, nextTick, ref, useTemplateRef } from 'vue';
 import { useDrag } from '../composables/useDrag';
 import { useMarkdownImport } from '../composables/useMarkdownImport';
-import type { Card as CardType, Column } from '../fs/board';
+import type { Card as CardType, Column } from '../types/board';
 import ActionDropdown from './ActionDropdown.vue';
 import CardTile from './Card.vue';
 import IconGlyph from './IconGlyph.vue';

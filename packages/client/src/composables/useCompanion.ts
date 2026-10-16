@@ -4,7 +4,7 @@ import {
   associationKey,
 } from '@mdello/common/associations';
 import { computed, onScopeDispose, type Ref, reactive, readonly, ref, watch } from 'vue';
-import type { Card } from '../fs/board';
+import type { Card } from '../types/board';
 
 export type { Association, AssociationStatus };
 
@@ -329,6 +329,9 @@ export function resumeCommand(association: Association): string | undefined {
   }
   if (association.harness === 'claude') {
     return `claude --resume ${association.sessionId}`;
+  }
+  if (association.harness === 'codex') {
+    return `codex resume ${association.sessionId}`;
   }
   if (association.harness === 'opencode') {
     return `opencode --session ${association.sessionId}`;

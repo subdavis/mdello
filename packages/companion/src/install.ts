@@ -9,6 +9,7 @@ import {
   rename,
   rm,
   rmdir,
+  stat,
   symlink,
   writeFile,
 } from 'node:fs/promises';
@@ -22,12 +23,14 @@ import {
   isCompanionPlugin,
   PLUGIN_NAME,
 } from '@mdello/claude-extension';
+import { codexHookSettings, isManagedHook } from '@mdello/codex-extension';
+import { codexHome } from '@mdello/codex-extension/paths';
 import { type CompanionPaths, companionPaths } from './xdg.ts';
 
 const exec = promisify(execFile);
 const SERVICE_LABEL = 'com.mdello.companion';
 
-export const INTEGRATIONS = ['macos', 'pi', 'opencode', 'claude'] as const;
+export const INTEGRATIONS = ['macos', 'pi', 'opencode', 'claude', 'codex'] as const;
 
 export type Integration = (typeof INTEGRATIONS)[number];
 
@@ -398,6 +401,87 @@ export async function uninstallClaude(options: InstallOptions = {}): Promise<str
   return `Removed Claude plugin ${directory}`;
 }
 
+function codexHooksPath(options: InstallOptions): string {
+  const { environment, home } = defaults(options);
+  return join(codexHome(environment, home), 'hooks.json');
+}
+
+async function readCodexHooks(path: string): Promise<Record<string, unknown>> {
+  let contents: string;
+  try {
+    contents = await readFile(path, 'utf8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {};
+    throw error;
+  }
+  const settings: unknown = JSON.parse(contents);
+  if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+    throw new Error(`Expected a JSON object in ${path}.`);
+  }
+  const hooks = (settings as Record<string, unknown>).hooks;
+  if (hooks !== undefined && (!hooks || typeof hooks !== 'object' || Array.isArray(hooks))) {
+    throw new Error(`Expected a hooks object in ${path}.`);
+  }
+  return settings as Record<string, unknown>;
+}
+
+function withoutManagedHooks(settings: Record<string, unknown>): Record<string, unknown> {
+  if (!settings.hooks) return settings;
+  const hooks = settings.hooks as Record<string, unknown>;
+  for (const [event, groups] of Object.entries(hooks)) {
+    if (!Array.isArray(groups)) throw new Error(`Expected hooks.${event} to be an array.`);
+    const remaining = groups.flatMap((group) => {
+      if (!group || typeof group !== 'object' || !Array.isArray(group.hooks)) return [group];
+      const entries = group.hooks.filter((hook: unknown) => !isManagedHook(hook));
+      return entries.length ? [{ ...group, hooks: entries }] : [];
+    });
+    if (remaining.length) hooks[event] = remaining;
+    else delete hooks[event];
+  }
+  if (!Object.keys(hooks).length) delete settings.hooks;
+  return settings;
+}
+
+async function writeCodexHooks(path: string, settings: Record<string, unknown>): Promise<void> {
+  await mkdir(dirname(path), { recursive: true });
+  const temporary = `${path}.tmp-${process.pid}`;
+  const mode = await stat(path).then(
+    (info) => info.mode & 0o777,
+    (error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') return 0o600;
+      throw error;
+    },
+  );
+  try {
+    await writeFile(temporary, `${JSON.stringify(settings, null, 2)}\n`, { mode });
+    await rename(temporary, path);
+  } finally {
+    await rm(temporary, { force: true });
+  }
+}
+
+export async function installCodex(options: InstallOptions = {}): Promise<string> {
+  const path = codexHooksPath(options);
+  const settings = withoutManagedHooks(await readCodexHooks(path));
+  const hooks = (settings.hooks ?? {}) as Record<string, unknown>;
+  for (const [event, entries] of Object.entries(codexHookSettings(companionEndpoint(options)))) {
+    hooks[event] = [...((hooks[event] as unknown[]) ?? []), ...entries];
+  }
+  settings.hooks = hooks;
+  await writeCodexHooks(path, settings);
+  return `Installed Codex hooks in ${path}`;
+}
+
+export async function uninstallCodex(options: InstallOptions = {}): Promise<string> {
+  const path = codexHooksPath(options);
+  if ((await pathKind(path)) === 'missing') return `No Codex hooks at ${path}`;
+  const settings = await readCodexHooks(path);
+  const before = JSON.stringify(settings);
+  withoutManagedHooks(settings);
+  if (JSON.stringify(settings) !== before) await writeCodexHooks(path, settings);
+  return `Removed Codex hooks from ${path}`;
+}
+
 export async function installIntegrations(
   integration?: Integration,
   options: InstallOptions = {},
@@ -406,6 +490,7 @@ export async function installIntegrations(
   if (integration === 'pi') return [await installPi(options)];
   if (integration === 'opencode') return [await installOpencode(options)];
   if (integration === 'claude') return [await installClaude(options)];
+  if (integration === 'codex') return [await installCodex(options)];
 
   const messages: string[] = [];
   if ((options.platform ?? process.platform) === 'darwin')
@@ -413,6 +498,7 @@ export async function installIntegrations(
   messages.push(await installPi(options));
   messages.push(await installOpencode(options));
   messages.push(await installClaude(options));
+  messages.push(await installCodex(options));
   return messages;
 }
 
@@ -424,6 +510,7 @@ export async function uninstallIntegrations(
   if (integration === 'pi') return [await uninstallPi(options)];
   if (integration === 'opencode') return [await uninstallOpencode(options)];
   if (integration === 'claude') return [await uninstallClaude(options)];
+  if (integration === 'codex') return [await uninstallCodex(options)];
 
   const messages: string[] = [];
   if ((options.platform ?? process.platform) === 'darwin') {
@@ -432,5 +519,6 @@ export async function uninstallIntegrations(
   messages.push(await uninstallPi(options));
   messages.push(await uninstallOpencode(options));
   messages.push(await uninstallClaude(options));
+  messages.push(await uninstallCodex(options));
   return messages;
 }

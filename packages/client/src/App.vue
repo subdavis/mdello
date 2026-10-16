@@ -6,10 +6,12 @@ import CompanionStatus from './components/CompanionStatus.vue';
 import SettingsDialog from './components/SettingsDialog.vue';
 import Toast from './components/Toast.vue';
 import { useBoard } from './composables/useBoard';
+import { useFilesystemBoards } from './composables/useFilesystemBoards';
 import { isMarkdownFile, useMarkdownImport } from './composables/useMarkdownImport';
 import { showToast } from './composables/useToast';
 
 const board = useBoard();
+const fs = useFilesystemBoards();
 const markdownImport = useMarkdownImport();
 
 const addingColumn = ref(false);
@@ -43,7 +45,7 @@ watchEffect(() => {
 // Fallback when FileSystemObserver is unavailable: re-scan when the window regains focus.
 async function onFocus(): Promise<void> {
   // A locked board polls for the lock instead: the other tab may have closed.
-  if (board.locked.value) return board.retry();
+  if (fs.locked.value) return fs.retry();
   if (board.watching.value) return;
   await board.reload();
 }
@@ -88,7 +90,7 @@ function onKeydown(event: KeyboardEvent): void {
 }
 
 onMounted(async () => {
-  await board.init();
+  await fs.init();
   window.addEventListener('focus', onFocus);
   window.addEventListener('dragover', onDragover);
   window.addEventListener('dragleave', onDragleave);
@@ -109,16 +111,16 @@ onBeforeUnmount(() => {
   <header class="topbar">
     <strong class="brand">🍺</strong>
     <button
-      v-if="board.boardName.value"
+      v-if="fs.folderName.value"
       type="button"
       class="board-switch"
       title="Switch board (⌘P)"
       @click="switching = true"
     >
-      {{ board.rootPath.value || board.boardName.value }}
+      {{ board.rootPath.value || fs.folderName.value }}
     </button>
     <span class="spacer" />
-    <template v-if="board.access.value.state === 'ready' && !board.locked.value">
+    <template v-if="fs.access.value.state === 'ready' && !fs.locked.value">
       <form v-if="addingColumn" class="add-column-form" @submit.prevent="submitColumn">
         <input
           ref="columnInput"
@@ -135,17 +137,17 @@ onBeforeUnmount(() => {
       <button v-else type="button" @click="startAddingColumn">Add column</button>
     </template>
     <button
-      v-if="board.access.value.state === 'ready' && !board.locked.value"
+      v-if="fs.access.value.state === 'ready' && !fs.locked.value"
       type="button"
       @click="board.reload()"
     >
       Refresh
     </button>
-    <button v-if="board.access.value.state !== 'unsupported'" type="button" @click="board.pick()">
+    <button v-if="fs.access.value.state !== 'unsupported'" type="button" @click="fs.pick()">
       Open folder
     </button>
     <CompanionStatus />
-    <button v-if="board.access.value.state === 'ready'" type="button" @click="settingsOpen = true">
+    <button v-if="fs.access.value.state === 'ready'" type="button" @click="settingsOpen = true">
       Settings
     </button>
   </header>
@@ -153,26 +155,26 @@ onBeforeUnmount(() => {
   <p v-if="board.error.value" class="error">{{ board.error.value }}</p>
 
   <main>
-    <p v-if="board.access.value.state === 'unsupported'" class="gate">
+    <p v-if="fs.access.value.state === 'unsupported'" class="gate">
       mdello needs the File System Access API. Use Chrome.
     </p>
 
-    <div v-else-if="board.access.value.state === 'none'" class="gate">
+    <div v-else-if="fs.access.value.state === 'none'" class="gate">
       <p>Pick a board folder containing <code>mdello.yml</code> and markdown cards.</p>
-      <button type="button" class="primary" @click="board.pick()">Open folder…</button>
+      <button type="button" class="primary" @click="fs.pick()">Open folder…</button>
     </div>
 
-    <div v-else-if="board.locked.value" class="gate">
+    <div v-else-if="fs.locked.value" class="gate">
       <p>
-        <code>{{ board.boardName.value }}</code> is already open in another mdello tab.
+        <code>{{ fs.folderName.value }}</code> is already open in another mdello tab.
         Only one tab may edit a board, so this one stays closed.
       </p>
-      <button type="button" class="primary" @click="board.retry()">Try again</button>
+      <button type="button" class="primary" @click="fs.retry()">Try again</button>
     </div>
 
-    <div v-else-if="board.access.value.state === 'needs-permission'" class="gate">
-      <p>Reconnect <code>{{ board.boardName.value }}</code> to grant read/write access again.</p>
-      <button type="button" class="primary" @click="board.grant()">Reconnect</button>
+    <div v-else-if="fs.access.value.state === 'needs-permission'" class="gate">
+      <p>Reconnect <code>{{ fs.folderName.value }}</code> to grant read/write access again.</p>
+      <button type="button" class="primary" @click="fs.grant()">Reconnect</button>
     </div>
 
     <Board v-else />

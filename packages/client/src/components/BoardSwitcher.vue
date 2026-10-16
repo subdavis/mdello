@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
-import { useBoard } from '../composables/useBoard';
+import { useFilesystemBoards } from '../composables/useFilesystemBoards';
 import type { BoardRef } from '../fs/handle';
 import IconGlyph from './IconGlyph.vue';
 import Overlay from './Overlay.vue';
 
 const emit = defineEmits<{ close: [] }>();
 
-const board = useBoard();
+const fs = useFilesystemBoards();
 const query = ref('');
 const active = ref(0);
 const input = ref<HTMLInputElement | null>(null);
@@ -19,7 +19,7 @@ type Entry = { kind: 'board'; board: BoardRef } | { kind: 'pick' };
 const entries = computed<Entry[]>(() => {
   const needle = query.value.trim().toLowerCase();
 
-  const matches = board.boards.value.filter(
+  const matches = fs.boards.value.filter(
     (entry) => !needle || `${entry.name} ${entry.path ?? ''}`.toLowerCase().includes(needle),
   );
 
@@ -37,12 +37,12 @@ async function choose(index = active.value): Promise<void> {
 
   // Closed first so the file picker and any permission prompt still see the user gesture.
   emit('close');
-  if (entry.kind === 'pick') await board.pick();
-  else await board.switchBoard(entry.board.id);
+  if (entry.kind === 'pick') await fs.pick();
+  else await fs.switchBoard(entry.board.id);
 }
 
 async function forget(entry: BoardRef): Promise<void> {
-  await board.forgetBoard(entry.id);
+  await fs.forgetBoard(entry.id);
   active.value = 0;
 }
 
@@ -88,7 +88,7 @@ onMounted(() => input.value?.focus());
         <template v-if="entry.kind === 'board'">
           <span class="switcher-name">{{ entry.board.name }}</span>
           <span class="switcher-path">{{ entry.board.path }}</span>
-          <span v-if="entry.board.id === board.activeId.value" class="switcher-tag">current</span>
+          <span v-if="entry.board.id === fs.activeId.value" class="switcher-tag">current</span>
           <button
             type="button"
             class="switcher-forget"

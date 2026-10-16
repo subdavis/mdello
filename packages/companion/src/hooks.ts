@@ -1,9 +1,10 @@
 import { claudeAdapter } from '@mdello/claude-extension';
+import { codexAdapter } from '@mdello/codex-extension';
 import type { Association } from '@mdello/common/associations';
 import type { HarnessAdapter, HarnessHookEvent } from '@mdello/common/harness';
 
 /** Every harness that publishes through `POST /hooks/<harness>`. Adapters own their own payloads. */
-export const HARNESS_ADAPTERS: HarnessAdapter[] = [claudeAdapter];
+export const HARNESS_ADAPTERS: HarnessAdapter[] = [claudeAdapter, codexAdapter];
 
 export function findAdapter(harness: string): HarnessAdapter | undefined {
   return HARNESS_ADAPTERS.find((adapter) => adapter.harness === harness);

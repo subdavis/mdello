@@ -4,16 +4,15 @@ import { openWritable } from './writable';
 const BACKGROUND = /^background\./i;
 
 /**
- * Returns a blob URL for the board wallpaper, or null when there is no such file.
- * Callers own the URL and must revoke it once a newer one replaces it.
+ * Returns the board wallpaper, or null when there is no such file. Deliberately a Blob and
+ * not an object URL: the controller owns URL creation and revocation for every backend.
  */
-export async function readBackground(root: FileSystemDirectoryHandle): Promise<string | null> {
+export async function readBackground(root: FileSystemDirectoryHandle): Promise<Blob | null> {
   for await (const entry of root.values()) {
     if (entry.kind !== 'file' || !BACKGROUND.test(entry.name)) continue;
 
     try {
-      const file = await (entry as FileSystemFileHandle).getFile();
-      return URL.createObjectURL(file);
+      return await (entry as FileSystemFileHandle).getFile();
     } catch {
       return null; // Vanished between listing and reading.
     }
@@ -28,8 +27,14 @@ function extensionOf(file: File): string {
   return (fromName ?? file.type.split('/')[1] ?? 'png').toLowerCase();
 }
 
-/** Writes the board wallpaper, replacing any previous `background.*`. */
-export async function writeBackground(root: FileSystemDirectoryHandle, file: File): Promise<void> {
+/**
+ * Writes the board wallpaper, replacing any previous `background.*`. Returns every filename
+ * it created or deleted, so a caller watching the folder can recognise its own handiwork.
+ */
+export async function writeBackground(
+  root: FileSystemDirectoryHandle,
+  file: File,
+): Promise<string[]> {
   const name = `background.${extensionOf(file)}`;
 
   const stale: string[] = [];
@@ -46,4 +51,5 @@ export async function writeBackground(root: FileSystemDirectoryHandle, file: Fil
 
   // Removed after the write so a failed write leaves the old wallpaper in place.
   for (const entry of stale) await root.removeEntry(entry);
+  return [name, ...stale];
 }

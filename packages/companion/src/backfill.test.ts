@@ -4,12 +4,111 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
+import { codexBackfill } from '@mdello/codex-extension/backfill';
 import { backfillAssociations } from './backfill.ts';
 import type { Association } from './server.ts';
 
 function jsonl(entries: unknown[]): string {
   return `${entries.map((entry) => JSON.stringify(entry)).join('\n')}\n`;
 }
+
+test('Codex backfill uses CODEX_HOME and preserves valid associations for code-mode sessions', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mdello-codex-backfill-'));
+  const previousHome = process.env.CODEX_HOME;
+  const previousSessions = process.env.CODEX_SESSIONS_DIR;
+  try {
+    process.env.CODEX_HOME = join(root, 'codex');
+    delete process.env.CODEX_SESSIONS_DIR;
+    const sessionsRoot = join(root, 'codex', 'sessions');
+    assert.equal(codexBackfill.sessionsRoot, sessionsRoot);
+    const board = join(root, 'board');
+    await mkdir(sessionsRoot, { recursive: true });
+    await mkdir(board);
+    const cardPath = join(board, 'card.md');
+    const newCardPath = join(board, 'new.md');
+    await writeCard(cardPath, 'card-a');
+    await writeCard(newCardPath, 'card-b');
+    const configFile = join(root, 'config.json');
+    const dataFile = join(root, 'data.jsonl');
+    await writeFile(
+      configFile,
+      JSON.stringify({
+        boards: [{ uuid: 'board-a', path: board, updatedAt: '2026-10-08T12:00:00Z' }],
+      }),
+    );
+    const existing: Association = {
+      boardUuid: 'board-a',
+      cardUuid: 'card-a',
+      cardPath,
+      harness: 'codex',
+      sessionId: 'code-session',
+      status: 'ready_for_review',
+      updatedAt: '2026-10-08T12:00:00Z',
+    };
+    const missing = { ...existing, cardUuid: 'missing', cardPath: join(board, 'missing.md') };
+    const replaced = { ...existing, cardUuid: 'wrong-uuid', cardPath: newCardPath };
+    const stale = { ...existing, sessionId: 'absent-session' };
+    await writeFile(dataFile, jsonl([existing, missing, replaced, stale]));
+    await writeFile(
+      join(sessionsRoot, 'code.jsonl'),
+      jsonl([
+        { type: 'session_meta', payload: { id: 'code-session', cwd: board } },
+        {
+          type: 'response_item',
+          payload: {
+            type: 'custom_tool_call',
+            name: 'exec',
+            call_id: 'nested',
+            input: 'text(await tools.apply_patch(patch));',
+          },
+        },
+        {
+          type: 'response_item',
+          payload: {
+            type: 'custom_tool_call',
+            name: 'apply_patch',
+            call_id: 'direct',
+            input: '*** Update File: new.md',
+          },
+        },
+        {
+          type: 'response_item',
+          payload: {
+            type: 'custom_tool_call_output',
+            call_id: 'direct',
+            output: 'Success. Updated the following files:\nM new.md',
+          },
+        },
+      ]),
+    );
+    const result = await backfillAssociations({ harness: 'codex', configFile, dataFile });
+    assert.deepEqual(result, {
+      scannedSessions: 1,
+      matchedSessions: 1,
+      foundAssociations: 2,
+      addedAssociations: 1,
+      existingAssociations: 1,
+      purgedAssociations: 3,
+    });
+    const recovered = (await readFile(dataFile, 'utf8'))
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line));
+    assert.equal(recovered[0].cardUuid, existing.cardUuid);
+    assert.equal(recovered[0].status, existing.status);
+    assert.equal(recovered[0].updatedAt, existing.updatedAt);
+    assert.equal(recovered[1].cardUuid, 'card-b');
+    const repeated = await backfillAssociations({ harness: 'codex', configFile, dataFile });
+    assert.equal(repeated.purgedAssociations, 0);
+    assert.equal(repeated.existingAssociations, 2);
+  } finally {
+    if (previousHome === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = previousHome;
+    if (previousSessions === undefined) delete process.env.CODEX_SESSIONS_DIR;
+    else process.env.CODEX_SESSIONS_DIR = previousSessions;
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 async function writeCard(path: string, uuid: string): Promise<void> {
   await writeFile(path, `---\nuuid: ${uuid}\n---\n`);

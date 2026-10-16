@@ -1,5 +1,5 @@
 import { ref } from 'vue';
-import type { Card } from '../fs/board';
+import type { Card } from '../types/board';
 
 const dragging = ref<{ id: string; column: string } | null>(null);
 // Driven only by dragover, so it never flickers the way dragenter/dragleave pairs do.
