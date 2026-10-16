@@ -1,0 +1,4 @@
+{
+  "extends": "../claude-extension/tsconfig.json",
+  "include": ["*.ts"]
+}

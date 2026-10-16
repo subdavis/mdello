@@ -1,0 +1,21 @@
+{
+  "name": "@mdello/codex-extension",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./index.ts",
+    "./backfill": "./backfill.ts",
+    "./paths": "./paths.ts"
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types --test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mdello/common": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "^5"
+  }
+}
