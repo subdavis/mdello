@@ -67,7 +67,94 @@
 }
 
 .meta dd {
+  min-width: 0;
   margin: 0;
+}
+
+.modal-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 200px;
+  flex: 1;
+  min-height: 0;
+  gap: var(--space-3);
+}
+
+.card-sidebar {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+  overscroll-behavior: contain;
+  border-left: 1px solid var(--line);
+  padding-left: var(--space-3);
+  color: var(--muted);
+  font-size: var(--font-2sm);
+}
+
+.sidebar-meta {
+  margin: 0;
+}
+
+.sidebar-meta dt,
+.card-outline h2 {
+  margin: 0 0 var(--space-1);
+  color: var(--text);
+  font-size: var(--font-xs);
+  font-weight: 600;
+}
+
+.sidebar-meta dt:not(:first-child) {
+  margin-top: var(--space-4);
+}
+
+.sidebar-meta dd {
+  margin: 0;
+}
+
+.card-sidebar hr {
+  margin: var(--space-4) 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
+.outline-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.outline-heading {
+  display: block;
+  width: 100%;
+  padding: var(--space-1);
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.outline-heading:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.outline-empty {
+  margin: 0;
+}
+
+@container (max-width: 560px) {
+  .modal-workspace {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(120px, 1fr) auto;
+  }
+
+  .card-sidebar {
+    max-height: 200px;
+    border-left: 0;
+    border-top: 1px solid var(--line);
+    padding: var(--space-3) var(--space-2) 0;
+  }
 }
 
 .meta-input {
@@ -283,6 +370,12 @@
   max-width: 100%;
 }
 
+.card-sidebar .ref-icon,
+.card-sidebar .session-action-button,
+.card-sidebar .session-forget-dropdown {
+  flex-shrink: 0;
+}
+
 :root[data-theme="dark"] .github-ref .ref-icon {
   filter: invert(1);
 }
@@ -387,9 +480,34 @@
   color: var(--text);
 }
 
+.card-sidebar .history-item {
+  display: block;
+  margin: 0 0 var(--space-1);
+}
+
+.card-sidebar .history-item-date {
+  display: block;
+}
+
+.card-sidebar .ref-row {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.card-sidebar .ref {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.card-sidebar .session-status-details {
+  min-width: 0;
+  flex: 1;
+}
+
 .modal {
   position: relative;
-  width: 680px;
+  width: 900px;
+  container-type: inline-size;
 }
 
 .image-viewer {

@@ -13,13 +13,14 @@ import { showToast } from '../composables/useToast';
 import { formatStamp } from '../format';
 import type { CardAttachment } from '../fs/attachments';
 import type { Card } from '../fs/board';
-import { renderMarkdown, setTaskChecked } from '../markdown';
+import { markdownOutline, renderMarkdown, setTaskChecked } from '../markdown';
 import type { GitHubLinkDetails, JiraLinkDetails } from '../references';
 import Agents from './Agents.vue';
 import GitHubReferenceBadge from './GitHubReferenceBadge.vue';
 import JiraReferenceBadge from './JiraReferenceBadge.vue';
 import IconGlyph from './IconGlyph.vue';
 import MarkdownEditor from './MarkdownEditor.vue';
+import MarkdownOutline from './MarkdownOutline.vue';
 import Overlay from './Overlay.vue';
 import TagEditor from './TagEditor.vue';
 import { useBoardExtras } from '../composables/useCardExtras.ts';
@@ -28,7 +29,7 @@ const props = defineProps<{ card: Card }>();
 const emit = defineEmits<{ close: [] }>();
 
 const MODAL_WIDTH_KEY = 'mdello.cardModalWidth';
-const DEFAULT_MODAL_WIDTH = 680;
+const DEFAULT_MODAL_WIDTH = 900;
 const MIN_MODAL_WIDTH = 360;
 
 function storedModalWidth(): number {
@@ -49,6 +50,8 @@ const githubLinks = ref<GitHubLinkDetails[]>([]);
 const jiraLinks = ref<JiraLinkDetails[]>([]);
 const githubLinksByUrl = computed(() => new Map(githubLinks.value.map((link) => [link.url, link])));
 const jiraLinksByUrl = computed(() => new Map(jiraLinks.value.map((link) => [link.url, link])));
+const preview = ref<HTMLElement | null>(null);
+const outline = computed(() => markdownOutline(props.card.body));
 const rendered = computed(() => renderMarkdown(props.card.body || '_No description_'));
 const enrichedReferences = computed(() =>
   props.card.references.map((reference) => ({
@@ -224,6 +227,17 @@ async function startEditing(event?: MouseEvent): Promise<void> {
   await editor.value?.focus(event ? lineFromEvent(event) : 0);
 }
 
+function navigateToHeading(line: number): void {
+  if (editing.value) {
+    editor.value?.focus(line);
+    return;
+  }
+  const heading = preview.value?.querySelector<HTMLElement>(
+    `:is(h1, h2, h3, h4, h5, h6)[data-line="${line}"]`,
+  );
+  heading?.scrollIntoView({ block: 'start' });
+}
+
 function setTaskFromPreview(event: Event): void {
   const checkbox = event.target;
   if (!(checkbox instanceof HTMLInputElement) || !checkbox.matches('.task-list-item-checkbox')) {
@@ -315,34 +329,6 @@ function onEscape(): void {
     </header>
 
     <dl class="meta">
-      <dt>History</dt>
-      <dd>
-          <span class="history-item">Created <span class="history-item-date">{{ formatStamp(card.created) }}</span></span>
-          <span class="history-item">Modified <span class="history-item-date">{{ formatStamp(card.modified) }}</span></span>
-      </dd>
-      <Agents :card="card" />
-      <template v-if="card.references.length">
-        <dt>References</dt>
-        <dd>
-          <div class="ref-row">
-            <template v-for="reference in enrichedReferences" :key="reference.url">
-              <GitHubReferenceBadge v-if="reference.github" :details="reference.github" />
-              <JiraReferenceBadge v-else-if="reference.jira" :details="reference.jira" />
-              <a
-                v-else
-                class="ref"
-                :href="reference.url"
-                target="_blank"
-                rel="noreferrer"
-                :title="reference.url"
-              >
-                <img class="ref-icon" :src="reference.icon" alt="" />
-                {{ reference.label }}
-              </a>
-            </template>
-          </div>
-        </dd>
-      </template>
       <dt>File</dt>
       <dd>
         <button type="button" class="path copyable-details" title="Click to copy path" @click="copyPath">
@@ -353,74 +339,120 @@ function onEscape(): void {
       <dd><TagEditor :card="card" /></dd>
     </dl>
 
-    <section class="card-content">
-      <div v-if="draggingFiles" class="attachment-dropzone">
-        <strong>Drop files to attach</strong>
-      </div>
-      <template v-else>
-        <div v-if="loadedAttachments.length" class="attachments" aria-label="Attachments">
-          <article
-            v-for="attachment in loadedAttachments"
-            :key="attachment.file"
-            class="attachment"
-          >
-            <button
-              type="button"
-              class="icon-button icon-button--small attachment-remove"
-              :title="`Remove ${attachment.name}`"
-              aria-label="Remove attachment"
-              draggable="false"
-              @pointerdown.stop
-              @dragstart.stop.prevent
-              @click.stop="removeAttachment(attachment)"
-            >
-              <IconGlyph name="close" aria-hidden="true" />
-            </button>
-            <button
-              v-if="attachment.image"
-              type="button"
-              class="attachment-image"
-              :title="`Open ${attachment.name}`"
-              @click="openImage = attachment"
-            >
-              <img :src="attachment.url" :alt="attachment.name" />
-            </button>
-            <a
-              v-else
-              class="attachment-file"
-              :href="attachment.url"
-              target="_blank"
-              rel="noopener noreferrer"
-              :title="`Open ${attachment.name}`"
-            >
-              <IconGlyph name="paperclip" class="attachment-file-icon" aria-hidden="true" />
-              <strong>{{ attachment.name }}</strong>
-              <small>{{ formatSize(attachment.size) }}</small>
-            </a>
-            <span class="attachment-caption" :title="attachment.name">{{ attachment.name }}</span>
-          </article>
+    <div class="modal-workspace">
+      <section class="card-content">
+        <div v-if="draggingFiles" class="attachment-dropzone">
+          <strong>Drop files to attach</strong>
         </div>
+        <template v-else>
+          <div v-if="loadedAttachments.length" class="attachments" aria-label="Attachments">
+            <article
+              v-for="attachment in loadedAttachments"
+              :key="attachment.file"
+              class="attachment"
+            >
+              <button
+                type="button"
+                class="icon-button icon-button--small attachment-remove"
+                :title="`Remove ${attachment.name}`"
+                aria-label="Remove attachment"
+                draggable="false"
+                @pointerdown.stop
+                @dragstart.stop.prevent
+                @click.stop="removeAttachment(attachment)"
+              >
+                <IconGlyph name="close" aria-hidden="true" />
+              </button>
+              <button
+                v-if="attachment.image"
+                type="button"
+                class="attachment-image"
+                :title="`Open ${attachment.name}`"
+                @click="openImage = attachment"
+              >
+                <img :src="attachment.url" :alt="attachment.name" />
+              </button>
+              <a
+                v-else
+                class="attachment-file"
+                :href="attachment.url"
+                target="_blank"
+                rel="noopener noreferrer"
+                :title="`Open ${attachment.name}`"
+              >
+                <IconGlyph name="paperclip" class="attachment-file-icon" aria-hidden="true" />
+                <strong>{{ attachment.name }}</strong>
+                <small>{{ formatSize(attachment.size) }}</small>
+              </a>
+              <span class="attachment-caption" :title="attachment.name">{{ attachment.name }}</span>
+            </article>
+          </div>
 
-        <MarkdownEditor
-          v-if="editing"
-          ref="editor"
-          :model-value="card.body"
-          @update:model-value="
-            card.body = $event;
-            board.queueSave(card);
-          "
-        />
-        <!-- eslint-disable-next-line vue/no-v-html -- markdown-it runs with html: false -->
-        <div
-          v-else
-          class="body markdown"
-          title="Double-click to edit"
-          @change="setTaskFromPreview"
-          @dblclick="startEditing"
-          v-html="rendered"
-        />
-      </template>
-    </section>
+          <MarkdownEditor
+            v-if="editing"
+            ref="editor"
+            :model-value="card.body"
+            @update:model-value="
+              card.body = $event;
+              board.queueSave(card);
+            "
+          />
+          <!-- eslint-disable-next-line vue/no-v-html -- markdown-it runs with html: false -->
+          <div
+            v-else
+            ref="preview"
+            class="body markdown"
+            title="Double-click to edit"
+            @change="setTaskFromPreview"
+            @dblclick="startEditing"
+            v-html="rendered"
+          />
+        </template>
+      </section>
+
+      <aside class="card-sidebar" aria-label="Card details">
+        <dl class="sidebar-meta">
+          <dt>History</dt>
+          <dd>
+            <span class="history-item">
+              Created <span class="history-item-date">{{ formatStamp(card.created) }}</span>
+            </span>
+            <span class="history-item">
+              Modified <span class="history-item-date">{{ formatStamp(card.modified) }}</span>
+            </span>
+          </dd>
+          <template v-if="card.references.length">
+            <dt>References</dt>
+            <dd>
+              <div class="ref-row">
+                <template v-for="reference in enrichedReferences" :key="reference.url">
+                  <GitHubReferenceBadge v-if="reference.github" :details="reference.github" />
+                  <JiraReferenceBadge v-else-if="reference.jira" :details="reference.jira" />
+                  <a
+                    v-else
+                    class="ref"
+                    :href="reference.url"
+                    target="_blank"
+                    rel="noreferrer"
+                    :title="reference.url"
+                  >
+                    <img class="ref-icon" :src="reference.icon" alt="" />
+                    {{ reference.label }}
+                  </a>
+                </template>
+              </div>
+            </dd>
+          </template>
+          <Agents :card="card" />
+        </dl>
+        <hr />
+        <nav class="card-outline" aria-label="Document outline">
+          <h2>Outline</h2>
+          <MarkdownOutline v-if="outline.length" :headings="outline" @navigate="navigateToHeading" />
+          <p v-else class="outline-empty">No headings</p>
+        </nav>
+      </aside>
+    </div>
 
     <footer class="modal-foot">
       <span class="save-state">{{ board.saveState.value }}</span>

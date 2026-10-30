@@ -230,7 +230,7 @@ export default class Agents extends View {
   // compact: a ! for blocked where a header already says "Needs you".
   status(t, a, compact = false) {
     const color = t[a.status] ?? t.dim;
-    if (a.status === "working") return svg("mods/workspace-chrome/spinner.svg").size(12).mx(1).flex_none().text_color(t.working).spin(900);
+    if (a.status === "working") return svg("mods/my-agents/working.svg").size(12).mx(1).flex_none().text_color(t.working);
     if (a.status === "blocked" && compact) return div().size(14).flex_none().rounded(4).bg(t.blocked + "26").text_size(10.5).font_bold().text_color(t.blocked).flex().items_center().justify_center().child("!");
     if (a.status === "blocked") return div().flex_none().px(6).h(18).rounded(5).bg(t.blocked + "26").text_size(10.5).font_semibold().text_color(t.blocked).flex().items_center().child("Needs you");
     // Idle: a ring; done: a dot.
@@ -381,11 +381,12 @@ export default class Agents extends View {
         .when(this.hovered === a.address, el => el.child(pin))
         .when(this.hovered !== a.address && Boolean(when), el => el.child(div().flex_none().text_size(11).text_color(t.dim).child(duration(now - when))))
         .child(this.status(t, a, byPriority && !isPinned)))
-        .when(Boolean(cards), el => el.child(h_flex().w_full().min_w(0).overflow_x_hidden().pl(pic ? 25 : 0).flex_wrap().gap(4).items_center().text_size(11.5)
-          .children(cards.flatMap((c) => [
-            div().min_w(0).max_w_full().truncate().text_color(t.dim).child(c.title),
-            ...c.tags.map((tag) => div().flex_none().whitespace_nowrap().px(4).rounded(3).text_size(10.5)
+        // Tags then title on one line; if the title doesn't fit, wrap-reverse puts it above the tags.
+        .when(Boolean(cards), el => el.children(cards.map((c) => h_flex().w_full().min_w(0).overflow_x_hidden().pl(pic ? 25 : 0).flex_wrap_reverse().gap(4).items_center().text_size(11.5)
+          .children([
+            ...c.tags.map((tag) => div().flex_none().whitespace_nowrap().px(2).rounded(3).text_size(10.5).line_height("13px")
               .bg(tag.color ?? t.raised).text_color(tag.color ? textOn(tag.color) : t.muted).child(tag.name)),
+            div().flex_none().max_w_full().truncate().text_color(t.dim).child(c.title),
           ]))));
     };
 

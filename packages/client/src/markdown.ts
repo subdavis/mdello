@@ -100,3 +100,43 @@ md.renderer.renderToken = (tokens, idx, options) => {
 export function renderMarkdown(source: string): string {
   return md.render(source);
 }
+
+export interface MarkdownHeading {
+  text: string;
+  level: number;
+  line: number;
+  children: MarkdownHeading[];
+}
+
+/** Use the preview's parser so code fences and Setext headings follow Markdown rules. */
+export function markdownOutline(source: string): MarkdownHeading[] {
+  const tokens = md.parse(source, {});
+  const outline: MarkdownHeading[] = [];
+  const parents: MarkdownHeading[] = [];
+
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (token.type !== 'heading_open' || !token.map) continue;
+
+    const inline = tokens[index + 1];
+    const text = (inline.children ?? [])
+      .map((child) => {
+        if (child.type === 'softbreak' || child.type === 'hardbreak') return ' ';
+        if (['text', 'code_inline', 'image'].includes(child.type)) return child.content;
+        return '';
+      })
+      .join('');
+    const heading: MarkdownHeading = {
+      text,
+      level: Number(token.tag.slice(1)),
+      line: token.map[0],
+      children: [],
+    };
+
+    while (parents.length && parents[parents.length - 1].level >= heading.level) parents.pop();
+    (parents.at(-1)?.children ?? outline).push(heading);
+    parents.push(heading);
+  }
+
+  return outline;
+}
