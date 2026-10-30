@@ -3,6 +3,9 @@ import test from 'node:test';
 import type { CompanionClient } from './index.ts';
 import { createCompanionHooks } from './index.ts';
 
+// Tests often run inside herdr-core terminals.
+delete process.env.HC_TERMINAL_ID;
+
 interface AssociationBody {
   markdownPath: string;
   harness: string;

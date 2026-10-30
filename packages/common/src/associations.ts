@@ -24,6 +24,8 @@ export interface Association {
   harness: string;
   sessionId: string;
   sessionFile?: string;
+  /** herdr-core terminal address (`$HC_TERMINAL_ID`) the session runs in. */
+  hcTerminal?: string;
   herdrWorkspace?: string;
   herdrTab?: string;
   status: AssociationStatus;

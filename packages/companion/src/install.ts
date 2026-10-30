@@ -181,6 +181,8 @@ async function terminalPrompt(): Promise<{ prompt: Prompt; close: () => void }> 
 interface MacOSServiceOptions extends ReturnType<typeof defaults> {
   nodePath: string;
   herdrPath?: string;
+  herdrCorePath?: string;
+  herdrAppPath?: string;
   ghPath?: string;
   jiraPath?: string;
 }
@@ -191,9 +193,17 @@ export async function installMacOSService(config: MacOSServiceOptions): Promise<
   const temporary = `${destination}.tmp-${process.pid}`;
   const paths = companionPaths(config.environment, config.home);
   const template = await readFile(templatePath, 'utf8');
-  const herdrEnvironment = config.herdrPath
-    ? `    <key>HERDR_PATH</key>\n    <string>${xmlEscape(config.herdrPath)}</string>`
-    : '';
+  const herdrEnvironment = (
+    [
+      ['HERDR_PATH', config.herdrPath],
+      ['HERDR_CORE_PATH', config.herdrCorePath],
+      ['HERDR_APP_PATH', config.herdrAppPath],
+    ] as const
+  )
+    .flatMap(([key, path]) =>
+      path ? [`    <key>${key}</key>\n    <string>${xmlEscape(path)}</string>`] : [],
+    )
+    .join('\n');
   const ghEnvironment = config.ghPath
     ? `    <key>GH_PATH</key>\n    <string>${xmlEscape(config.ghPath)}</string>`
     : '';
@@ -239,11 +249,33 @@ export async function installMacOS(options: InstallOptions = {}): Promise<string
     const nodePath = await resolveExecutable('NODE_PATH', config.nodePath, true, prompt);
     const discoveredHerdr = await discoverExecutable('herdr', config.run);
     const herdrPath = await resolveExecutable('HERDR_PATH', discoveredHerdr, false, prompt);
+    const discoveredHerdrCore = await discoverExecutable('herdr-core', config.run);
+    const herdrCorePath = await resolveExecutable(
+      'HERDR_CORE_PATH',
+      discoveredHerdrCore,
+      false,
+      prompt,
+    );
+    const discoveredHerdrApp = await discoverExecutable('herdr-app', config.run);
+    const herdrAppPath = await resolveExecutable(
+      'HERDR_APP_PATH',
+      discoveredHerdrApp,
+      false,
+      prompt,
+    );
     const discoveredGh = await discoverExecutable('gh', config.run);
     const ghPath = await resolveExecutable('GH_PATH', discoveredGh, false, prompt);
     const discoveredJira = await discoverExecutable('jira', config.run);
     const jiraPath = await resolveExecutable('JIRA_PATH', discoveredJira, false, prompt);
-    return await installMacOSService({ ...config, nodePath, herdrPath, ghPath, jiraPath });
+    return await installMacOSService({
+      ...config,
+      nodePath,
+      herdrPath,
+      herdrCorePath,
+      herdrAppPath,
+      ghPath,
+      jiraPath,
+    });
   } finally {
     terminal?.close();
   }

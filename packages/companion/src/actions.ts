@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import type { Terminal } from './boards.ts';
 import { createDebugLogger } from './debug.ts';
 
 const exec = promisify(execFile);
@@ -12,6 +13,7 @@ export interface FocusRequest {
   harness: string;
   sessionId: string;
   sessionFile?: string;
+  hcTerminal?: string;
 }
 
 export type ActionRequest = FocusRequest;
@@ -23,8 +25,14 @@ interface CommandResult {
 }
 
 export interface ActionContext {
+  /** The configured terminal that focuses sessions; absent when none is usable. */
+  focusTerminal?: Terminal;
   /** Herdr executable path from configuration or active PATH discovery. */
   herdrPath?: string;
+  /** herdr-core (`hc`) executable; enrichment reads terminal placement from it. */
+  herdrCorePath?: string;
+  /** Herdr Desktop CLI (`herdr-app`); focuses herdr-core terminals in the window. */
+  herdrAppPath?: string;
   /** Injectable for tests; defaults to actually spawning the process. */
   run?: (command: string, args: string[]) => Promise<CommandResult>;
 }
@@ -44,7 +52,8 @@ function isActionRequest(value: unknown): value is ActionRequest {
       candidate.harness.length > 0 &&
       typeof candidate.sessionId === 'string' &&
       candidate.sessionId.length > 0 &&
-      (candidate.sessionFile === undefined || typeof candidate.sessionFile === 'string')
+      (candidate.sessionFile === undefined || typeof candidate.sessionFile === 'string') &&
+      (candidate.hcTerminal === undefined || typeof candidate.hcTerminal === 'string')
     );
   }
   return false;
@@ -64,12 +73,11 @@ function matchesSession(
   return value === (session.harness === 'pi' ? session.sessionFile : session.sessionId);
 }
 
-async function focus(request: ActionRequest, context: ActionContext): Promise<ActionOutcome> {
-  if (request.action !== 'focus') return { ok: false, error: 'invalid_action' };
-  const { herdrPath } = context;
-  if (!herdrPath) return { ok: false, error: 'herdr_not_configured' };
-
-  const run = resolveRun(context);
+async function focusHerdr(
+  request: FocusRequest,
+  herdrPath: string,
+  run: NonNullable<ActionContext['run']>,
+): Promise<ActionOutcome> {
   const { stdout } = await run(herdrPath, ['agent', 'list']);
   const agents = (JSON.parse(stdout).result?.agents ?? []) as HerdrAgent[];
   const agent = agents.find((candidate) => matchesSession(candidate, request));
@@ -80,6 +88,22 @@ async function focus(request: ActionRequest, context: ActionContext): Promise<Ac
   // Focusing the resolved tab does, while the preceding command selects the exact split pane.
   if (agent.tab_id) await run(herdrPath, ['tab', 'focus', agent.tab_id]);
   return { ok: true };
+}
+
+/** Only the configured terminal: falling back could focus a stale pane in another app. */
+async function focus(request: ActionRequest, context: ActionContext): Promise<ActionOutcome> {
+  if (request.action !== 'focus') return { ok: false, error: 'invalid_action' };
+  const { focusTerminal, herdrPath, herdrAppPath } = context;
+  const run = resolveRun(context);
+
+  if (focusTerminal === 'herdr' && herdrPath) return focusHerdr(request, herdrPath, run);
+  if (focusTerminal === 'herdr-core' && herdrAppPath) {
+    if (!request.hcTerminal) return { ok: false, error: 'session_not_found' };
+    // herdr-app exits non-zero with `{ "error": ... }`, which surfaces as herdr_command_failed.
+    await run(herdrAppPath, ['do', 'agent.focus', '--terminal', request.hcTerminal]);
+    return { ok: true };
+  }
+  return { ok: false, error: 'herdr_not_configured' };
 }
 
 const ACTIONS: Record<

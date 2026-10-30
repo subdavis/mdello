@@ -11,11 +11,26 @@ export interface BoardRegistration {
   updatedAt: string;
 }
 
+export const TERMINALS = ['herdr', 'herdr-core'] as const;
+
+export type Terminal = (typeof TERMINALS)[number];
+
 export interface CompanionConfig {
   autofocus?: boolean;
   linkEnrichment?: boolean;
   boards: BoardRegistration[];
+  /** Terminal integrations to use, highest priority first. Absent means none. */
+  terminals?: unknown;
   webOrigin?: string;
+}
+
+/** Known terminals in configured order; unknown and repeated entries are dropped. */
+export function readTerminals(config: Pick<CompanionConfig, 'terminals'>): Terminal[] {
+  if (!Array.isArray(config.terminals)) return [];
+  const known = config.terminals.filter((value): value is Terminal =>
+    TERMINALS.includes(value as Terminal),
+  );
+  return [...new Set(known)];
 }
 
 export const DEFAULT_WEB_ORIGIN = 'https://subdavis.github.io';

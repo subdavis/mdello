@@ -19,6 +19,7 @@ interface Association {
   harness: string;
   sessionId: string;
   sessionFile?: string;
+  hcTerminal?: string; // herdr-core terminal ($HC_TERMINAL_ID), reported by pi/opencode
   herdrWorkspace?: string; // transient; present when current Herdr pane resolves
   herdrTab?: string; // transient; present when current Herdr pane resolves
   status: AssociationStatus;
@@ -35,17 +36,17 @@ Default endpoint: `http://127.0.0.1:51618`. JSON request bodies are limited to 6
 | Request | Contract |
 | --- | --- |
 | `POST /associations` | Body contains `markdownPath` (or `cardPath`), `harness`, `sessionId`, optional `sessionFile`, and `status`. Resolves board/card UUIDs and returns recorded association (`202`). New sessions resolve against cached Herdr state; an unknown session triggers one state sync and is negatively cached if still unresolved. Unknown cards are ignored (`202`, `{ ignored: true, reason: "unknown_card" }`). |
-| `GET /associations[?boardUuid=…&cardUuid=…]` | Returns latest associations, optionally filtered by board and card. When Herdr is available and a session resolves to a current pane, its association includes transient `herdrWorkspace` and `herdrTab` labels. |
+| `GET /associations[?boardUuid=…&cardUuid=…]` | Returns latest associations, optionally filtered by board and card. When a configured [terminal](#terminals) resolves a session to a current pane, its association includes transient `herdrWorkspace` and `herdrTab` labels. |
 | `DELETE /associations?cardUuid=…` | Permanently removes all persisted events for that global card and broadcasts fresh snapshots. |
 | `DELETE /associations?harness=…&sessionId=…` | Forgets that harness session across every card by removing all its persisted events, then broadcasts fresh snapshots. |
 | `DELETE /associations?cardUuid=…&harness=…&sessionId=…` | Forgets that harness session from only the selected card, preserving its associations with other cards. |
 | `GET /events?boardUuid=…&boardPath=…` | Validates and registers board, reconciles stored paths/UUIDs, then opens SSE stream. One Herdr state sync runs when the frontend connects. Sends `snapshot` first and `association` after each update for that board, enriched from the companion's cached Herdr state when resolvable. |
 | `POST /hooks/<harness>` | Body is that harness's raw lifecycle payload. A registered [harness adapter](agent-extension.md) translates it; the companion publishes to the event's cards plus every card already held for that `(harness, sessionId)`. Sessions resolve against cached Herdr state; an unknown session triggers one state sync, and a still-unresolved session is negatively cached. Always answers `{}`. Browser requests carrying `Origin`, `Referer`, or `Sec-Fetch-Site` are rejected with `403`; hooks are for local agent clients only. Unknown harness returns `404`. |
-| `GET /settings` | Returns `{ autofocus, githubEnabled, herdrEnabled, jiraEnabled, linkEnrichment }`; CLI controls are enabled when their executable is configured through `GH_PATH`/`HERDR_PATH`/`JIRA_PATH` or discovered on the companion's active `PATH`. |
+| `GET /settings` | Returns `{ autofocus, githubEnabled, herdrEnabled, jiraEnabled, linkEnrichment }`. `herdrEnabled` means a configured [terminal](#terminals) can focus sessions. GitHub and Jira are enabled when their executable is configured through `GH_PATH`/`JIRA_PATH` or discovered on the companion's active `PATH`. |
 | `POST /settings` | Persists either `{ autofocus: boolean }` or `{ linkEnrichment: boolean }` in the companion config. The single link setting controls every available enrichment provider. |
 | `GET /enrichments?url=…` | Opens the provider-neutral SSE subscription for up to 50 repeated `url` parameters. Emits cached `{ items, errors }` first, immediately refreshes URLs through their registered providers, streams results as each lookup settles, and polls every 30 seconds until the client disconnects. Every item includes a `provider` discriminator. GitHub active PRs include `ciStatus` as `passing`, `failing`, `pending`, or `none`; closed and merged PRs omit it. Jira issues include their key, status, and title. Successful results are cached in companion memory. Returns `409` when no enrichment providers are available and `400` for unsupported URLs. |
 | `POST /actions` | Body is `{ action, ... }`. Actions live in their own module ([`actions.ts`](../packages/companion/src/actions.ts)), isolated from the association/board logic above, as a small `ACTIONS` registry keyed by action name. Returns `200 { ok: true }` on success, `400` for a body that isn't a recognized action, `500` if the herdr CLI itself fails. |
-| ↳ `focus` | `{ action: "focus", harness, sessionId, sessionFile? }` — the session to focus. Joins `herdr agent list` against `sessionId` (or `sessionFile` for `harness: pi`), runs `herdr agent focus <pane_id>`, then projects its `tab_id` to attached Herdr clients with `herdr tab focus <tab_id>`. `404` if no pane matches, `409` if `herdr` is unavailable through both `HERDR_PATH` and `PATH`. |
+| ↳ `focus` | `{ action: "focus", harness, sessionId, sessionFile? }`: the session to focus. Clients never send `hcTerminal`; the companion takes it from that session's stored association. Only the focus [terminal](#terminals) is used, with no fallback. `herdr` joins `herdr agent list` against `sessionId` (or `sessionFile` for `harness: pi`), runs `herdr agent focus <pane_id>`, then projects its `tab_id` to attached Herdr clients with `herdr tab focus <tab_id>`. `herdr-core` runs `herdr-app do agent.focus --terminal <hcTerminal>`. `404` if the session has no pane (or no `hcTerminal`), `409` if no configured terminal can focus. |
 
 Errors use `{ error: string }`. Invalid requests return `400`, internal delete failures `500`, and unknown routes `404`. Backfill is deliberately absent: it rewrites the whole log, so it is a CLI command only.
 
@@ -72,19 +73,39 @@ the XDG base-directory specification. Backfill reads `CLAUDE_SESSIONS_DIR` (defa
 `~/.claude/projects`), `OPENCODE_SESSIONS_DB` (default
 `${XDG_DATA_HOME:-~/.local/share}/opencode/opencode.db`), and `PI_SESSIONS_DIR` (default
 `~/.pi/agent/sessions`). Set `DEBUG=1` for
-structured stderr logs. When `HERDR_PATH` is unset, an interactively started companion discovers
-`herdr` from its active `PATH`. Link enrichment similarly discovers `gh` and `jira` when `GH_PATH`
+structured stderr logs. Executables for the configured [terminals](#terminals) come from
+`HERDR_PATH` (`herdr`) and `HERDR_CORE_PATH`/`HERDR_APP_PATH` (`herdr-core`); when unset, an
+interactively started companion discovers them on its active `PATH`. Terminals that aren't configured
+are never discovered or run. Link enrichment similarly discovers `gh` and `jira` when `GH_PATH`
 and `JIRA_PATH` are unset.
 
+### Terminals
+
+`terminals` in `companion.json` lists the terminal integrations the companion uses, highest priority
+first. Absent or empty means none: no session labels, no focus. Unknown and repeated values are
+ignored.
+
+| Value | Labels | Focus | Needs |
+| --- | --- | --- | --- |
+| `herdr` | `herdr agent/tab/workspace list`, matched on session id (pi: session file) | `herdr agent focus` + `herdr tab focus` | `herdr` |
+| `herdr-core` | `hc ls`, matched on `hcTerminal` (`$HC_TERMINAL_ID`, reported by pi/OpenCode) | `herdr-app do agent.focus --terminal` | `herdr-core` for labels, `herdr-app` for focus |
+
+A session is labeled by the first listed terminal that knows it. Focus uses only the first listed
+terminal whose focus executable exists, and never falls back to another one. A session resumed in
+Herdr Desktop can leave a stale pane for the same session in a still-running Herdr, and a fallback
+would focus that pane. Features such as `autofocus` are toggled separately and use whichever terminal
+focus resolves to.
+
 The macOS installer interactively confirms the current Node executable and any discovered `herdr`,
-`gh`, or `jira` executable. Their absolute paths are stored as `HERDR_PATH`, `GH_PATH`, and
+`herdr-core`, `herdr-app`, `gh`, or `jira` executable. Their absolute paths are stored as
+`HERDR_PATH`, `HERDR_CORE_PATH`, `HERDR_APP_PATH`, `GH_PATH`, and
 `JIRA_PATH` in the launchd service because launchd does not inherit the shell `PATH`. Jira
 credentials are not copied into the plist: `HOME` lets jira-cli use its normal config plus a
 matching `~/.netrc` entry or login-keychain credential. It stops the launch agent before moving legacy files from `~/.mdello`. Each file is moved
 only when its XDG destination is absent: config goes to the config directory; event history and
 stdout/stderr logs go to the state directory. It then writes absolute executable and XDG paths into
 the launchd plist without copying the shell `PATH`, restarts the service, and removes `~/.mdello`
-when empty. Missing `herdr` is allowed and disables herdr actions.
+when empty. Missing executables are allowed; a configured terminal without them is unavailable.
 
 `companion.json` holds `boards`, `autofocus`, link-enrichment settings, and user-edited settings. `webOrigin` is the HTTP(S) origin allowed to call browser-facing routes and defaults to `https://subdavis.github.io`; configure an origin only, without an application path. Loopback browser origins remain allowed for local development. Saving board registrations or autofocus preserves every other setting.
 
@@ -92,6 +113,7 @@ when empty. Missing `herdr` is allowed and disables herdr actions.
 {
   "autofocus": true,
   "linkEnrichment": true,
+  "terminals": ["herdr-core"],
   "webOrigin": "https://example.com"
 }
 ```

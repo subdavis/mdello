@@ -18,3 +18,7 @@ node_modules
 
 dist
 scratch
+
+# Herdr writes these into mod folders; sync state is per machine.
+herdr/.sync-state.json
+herdr/**/gpui-kit.d.ts

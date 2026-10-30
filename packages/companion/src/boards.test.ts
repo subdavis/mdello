@@ -9,9 +9,19 @@ import {
   loadBoards,
   loadConfig,
   loadWebOrigin,
+  readTerminals,
   registerBoard,
   resolveCard,
 } from './boards.ts';
+
+test('reads configured terminals in order, ignoring unknown and repeated values', () => {
+  assert.deepEqual(readTerminals({}), []);
+  assert.deepEqual(readTerminals({ terminals: 'herdr' }), []);
+  assert.deepEqual(readTerminals({ terminals: ['herdr-core', 'tmux', 7, 'herdr', 'herdr-core'] }), [
+    'herdr-core',
+    'herdr',
+  ]);
+});
 
 test('registers multiple boards and updates a moved board by uuid', async () => {
   const root = await mkdtemp(join(tmpdir(), 'mdello-boards-'));

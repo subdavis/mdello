@@ -192,6 +192,50 @@ test('resolves subscribed live associations and defaults a missing harness', asy
   }
 });
 
+async function writeTerminals(root: string, terminals: string[]): Promise<string> {
+  const configFile = join(root, 'companion.json');
+  await writeFile(configFile, JSON.stringify({ terminals }));
+  return configFile;
+}
+
+test('uses no terminal when none is configured, even one found on PATH', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mdello-server-'));
+  const binDirectory = join(root, 'bin');
+  await mkdir(binDirectory);
+  for (const name of ['herdr', 'herdr-core', 'herdr-app']) {
+    await writeFile(join(binDirectory, name), '#!/bin/sh\n');
+    await chmod(join(binDirectory, name), 0o755);
+  }
+  const calls: string[] = [];
+  const companion = await createCompanionServer({
+    port: 0,
+    dataFile: join(root, 'companion.jsonl'),
+    configFile: join(root, 'companion.json'),
+    environment: { PATH: binDirectory },
+    herdrRun: async (command) => {
+      calls.push(command);
+      return { stdout: '{}' };
+    },
+  });
+  try {
+    const settings = (await (await fetch(`${companion.url}/settings`)).json()) as Record<
+      string,
+      unknown
+    >;
+    assert.equal(settings.herdrEnabled, false);
+    const focus = await fetch(`${companion.url}/actions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'focus', harness: 'pi', sessionId: 's' }),
+    });
+    assert.equal(focus.status, 409);
+    assert.deepEqual(calls, []);
+  } finally {
+    await companion.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('discovers herdr from the active PATH when no path is configured', async () => {
   const root = await mkdtemp(join(tmpdir(), 'mdello-server-'));
   const binDirectory = join(root, 'bin');
@@ -199,11 +243,12 @@ test('discovers herdr from the active PATH when no path is configured', async ()
   await mkdir(binDirectory);
   await writeFile(herdrPath, '#!/bin/sh\n');
   await chmod(herdrPath, 0o755);
+  const configFile = await writeTerminals(root, ['herdr']);
   const calls: [string, string[]][] = [];
   const companion = await createCompanionServer({
     port: 0,
     dataFile: join(root, 'companion.jsonl'),
-    configFile: join(root, 'companion.json'),
+    configFile,
     environment: { PATH: binDirectory },
     herdrRun: async (command, args) => {
       calls.push([command, args]);
@@ -264,8 +309,9 @@ test('returns transient Herdr labels for a resolvable session', async () => {
   const companion = await createCompanionServer({
     port: 0,
     dataFile: join(root, 'companion.jsonl'),
-    configFile: join(root, 'companion.json'),
+    configFile: await writeTerminals(root, ['herdr']),
     herdrPath: '/usr/local/bin/herdr',
+    environment: {},
     herdrRun: async (_command, args) => {
       herdrCalls.push(args);
       if (args[0] === 'agent') {
@@ -331,6 +377,129 @@ test('returns transient Herdr labels for a resolvable session', async () => {
     assert.equal(herdrCalls.length, 6, 'unresolved ingress is synced and negatively cached once');
   } finally {
     await companion.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('labels and focuses herdr-core sessions without calling an unlisted Herdr', async () => {
+  const appCalls: string[][] = [];
+  const herdrCalls: string[][] = [];
+  const root = await mkdtemp(join(tmpdir(), 'mdello-server-'));
+  const boardPath = join(root, 'board');
+  const cardPath = join(boardPath, 'card.md');
+  await mkdir(boardPath);
+  await writeFile(cardPath, '---\nuuid: card-a\n---\n');
+  const companion = await createCompanionServer({
+    port: 0,
+    dataFile: join(root, 'companion.jsonl'),
+    configFile: await writeTerminals(root, ['herdr-core']),
+    environment: {},
+    herdrPath: '/bin/herdr',
+    herdrCorePath: '/bin/herdr-core',
+    herdrAppPath: '/bin/herdr-app',
+    herdrRun: async (command, args) => {
+      if (command === '/bin/herdr-app') {
+        appCalls.push(args);
+        return { stdout: '{}' };
+      }
+      if (command === '/bin/herdr') herdrCalls.push(args);
+      if (command === '/bin/herdr-core') {
+        return {
+          stdout: JSON.stringify({ terminals: [{ address: 't15', where: 'Frontend / Main' }] }),
+        };
+      }
+      return { stdout: JSON.stringify({ result: {} }) };
+    },
+  });
+  try {
+    await registerBoard(companion.url, 'board-a', boardPath);
+    await fetch(`${companion.url}/associations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        cardPath,
+        harness: 'pi',
+        sessionId: 'session-a',
+        hcTerminal: 't15',
+        status: 'running',
+      }),
+    });
+    const [association] = (await (
+      await fetch(`${companion.url}/associations?boardUuid=board-a`)
+    ).json()) as Record<string, unknown>[];
+    assert.equal(association.hcTerminal, 't15');
+    assert.equal(association.herdrWorkspace, 'Frontend');
+    assert.equal(association.herdrTab, 'Main');
+
+    // Deployed clients may not send hcTerminal; the companion resolves it from its own records.
+    const focus = await fetch(`${companion.url}/actions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'focus', harness: 'pi', sessionId: 'session-a' }),
+    });
+    assert.equal(focus.status, 200);
+    assert.deepEqual(appCalls, [['do', 'agent.focus', '--terminal', 't15']]);
+    assert.deepEqual(herdrCalls, []);
+  } finally {
+    await companion.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('labels a session from the first listed terminal that knows it', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mdello-server-'));
+  const boardPath = join(root, 'board');
+  const cardPath = join(boardPath, 'card.md');
+  await mkdir(boardPath);
+  await writeFile(cardPath, '---\nuuid: card-a\n---\n');
+  const herdrRun = async (command: string, args: string[]) => {
+    if (command === '/bin/herdr-core') {
+      return { stdout: JSON.stringify({ terminals: [{ address: 't15', where: 'Core / Tab' }] }) };
+    }
+    const result =
+      args[0] === 'agent'
+        ? { agents: [{ agent_session: { value: 'session-a' }, tab_id: 't', workspace_id: 'w' }] }
+        : args[0] === 'tab'
+          ? { tabs: [{ tab_id: 't', label: 'Old Tab' }] }
+          : { workspaces: [{ workspace_id: 'w', label: 'Old' }] };
+    return { stdout: JSON.stringify({ result }) };
+  };
+  const labelsWith = async (terminals: string[]) => {
+    const companion = await createCompanionServer({
+      port: 0,
+      dataFile: join(root, `${terminals.join('-')}.jsonl`),
+      configFile: await writeTerminals(root, terminals),
+      environment: {},
+      herdrPath: '/bin/herdr',
+      herdrCorePath: '/bin/herdr-core',
+      herdrAppPath: '/bin/herdr-app',
+      herdrRun,
+    });
+    try {
+      await registerBoard(companion.url, 'board-a', boardPath);
+      await fetch(`${companion.url}/associations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cardPath,
+          harness: 'claude',
+          sessionId: 'session-a',
+          hcTerminal: 't15',
+          status: 'running',
+        }),
+      });
+      const [association] = (await (
+        await fetch(`${companion.url}/associations?boardUuid=board-a`)
+      ).json()) as Record<string, unknown>[];
+      return association.herdrWorkspace;
+    } finally {
+      await companion.close();
+    }
+  };
+  try {
+    assert.equal(await labelsWith(['herdr', 'herdr-core']), 'Old');
+    assert.equal(await labelsWith(['herdr-core', 'herdr']), 'Core');
+  } finally {
     await rm(root, { recursive: true, force: true });
   }
 });

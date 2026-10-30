@@ -70,12 +70,13 @@ export class HerdrSessionCache {
     this.checkedSessions.add(key);
   }
 
+  /** Labels only associations an earlier terminal did not already label. */
   present(associations: Association[]): Association[] {
     return associations.map((association) => {
-      const { herdrWorkspace: _workspace, herdrTab: _tab, ...plain } = association;
+      if (association.herdrWorkspace) return association;
       const value = sessionValue(association);
       const labels = value ? this.labelsBySession.get(value) : undefined;
-      return labels ? { ...plain, ...labels } : plain;
+      return labels ? { ...association, ...labels } : association;
     });
   }
 

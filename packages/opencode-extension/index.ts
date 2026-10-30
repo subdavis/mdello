@@ -118,6 +118,7 @@ export function createCompanionHooks(options: CompanionHooksOptions): Hooks {
           markdownPath: path,
           harness: 'opencode',
           sessionId: id,
+          hcTerminal: process.env.HC_TERMINAL_ID || undefined,
           status,
         }),
         signal: AbortSignal.timeout(1000),

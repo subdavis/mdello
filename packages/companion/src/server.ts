@@ -18,6 +18,7 @@ import {
   loadBoards,
   loadConfig,
   loadWebOrigin,
+  readTerminals,
   registerBoard,
   resolveCard,
   saveAutofocus,
@@ -28,6 +29,7 @@ import { enrichmentUrls, handleEnrichmentStream, type UrlEnrichment } from './en
 import { discoverExecutable } from './executables.ts';
 import { createGitHubEnrichmentProvider, type GitHubCommandRunner } from './github-links.ts';
 import { HerdrSessionCache } from './herdr.ts';
+import { HerdrCoreSessionCache } from './herdr-core.ts';
 import { findAdapter, harnessFromPath, hookAssociationInputs } from './hooks.ts';
 import { createJiraEnrichmentProvider, type JiraCommandRunner } from './jira-links.ts';
 import { companionPaths } from './xdg.ts';
@@ -41,6 +43,8 @@ export interface CompanionOptions {
   dataFile?: string;
   configFile?: string;
   herdrPath?: string;
+  herdrCorePath?: string;
+  herdrAppPath?: string;
   herdrRun?: ActionContext['run'];
   githubPath?: string;
   githubRun?: GitHubCommandRunner;
@@ -199,6 +203,7 @@ function normalizeAssociation(value: unknown, legacyHarness?: string): Associati
     typeof candidate.sessionId !== 'string' ||
     !candidate.sessionId ||
     (candidate.sessionFile !== undefined && typeof candidate.sessionFile !== 'string') ||
+    (candidate.hcTerminal !== undefined && typeof candidate.hcTerminal !== 'string') ||
     !isAssociationStatus(status) ||
     typeof candidate.updatedAt !== 'string'
   ) {
@@ -212,6 +217,7 @@ function normalizeAssociation(value: unknown, legacyHarness?: string): Associati
     harness,
     sessionId: candidate.sessionId,
     ...(candidate.sessionFile !== undefined && { sessionFile: candidate.sessionFile }),
+    ...(candidate.hcTerminal && { hcTerminal: candidate.hcTerminal }),
     status,
     updatedAt: candidate.updatedAt,
   };
@@ -338,9 +344,21 @@ async function handleActionsPost(
   request: IncomingMessage,
   response: ServerResponse,
   actionContext: ActionContext,
+  associations: Iterable<Association>,
 ): Promise<void> {
   try {
     const input = await readBody(request);
+    // Clients name only the session; its herdr-core terminal is a companion detail.
+    if (input && typeof input === 'object') {
+      const session = input as Partial<Association>;
+      const known = [...associations].find(
+        (entry) =>
+          entry.harness === session.harness &&
+          entry.sessionId === session.sessionId &&
+          entry.hcTerminal,
+      );
+      if (known) session.hcTerminal = known.hcTerminal;
+    }
     const result = await performAction(input, actionContext);
     if (result === 'invalid') {
       sendJson(response, 400, { error: 'Invalid action' });
@@ -608,9 +626,11 @@ async function handleEventsGet(
     clients: Map<ServerResponse, string>;
     presentAssociations: PresentAssociations;
     herdrCache: HerdrSessionCache;
+    herdrCoreCache: HerdrCoreSessionCache;
   },
 ): Promise<Map<string, Association>> {
-  const { configFile, dataFile, boards, clients, presentAssociations, herdrCache } = context;
+  const { configFile, dataFile, boards, clients, presentAssociations, herdrCache, herdrCoreCache } =
+    context;
   const boardUuid = url.searchParams.get('boardUuid');
   const boardPath = url.searchParams.get('boardPath');
   if (!boardUuid || !boardPath) {
@@ -625,7 +645,7 @@ async function handleEventsGet(
     });
     const reconciled = await reconcileAssociations(dataFile, associations, boards);
     associations = reconciled.associations;
-    await herdrCache.refresh([...associations.values()]);
+    await Promise.all([herdrCache.refresh([...associations.values()]), herdrCoreCache.refresh()]);
     await writeBoardSnapshots(clients, associations, presentAssociations);
     debug('board registered', {
       boardUuid: registration.uuid,
@@ -694,18 +714,49 @@ export async function createCompanionServer(options: CompanionOptions = {}): Pro
   let associations = await loadAssociations(dataFile);
   const [config, boards] = await Promise.all([loadConfig(configFile), loadBoards(configFile)]);
   const webOrigin = await loadWebOrigin(configFile);
-  const [herdrPath, githubPath, jiraPath] = await Promise.all([
-    options.herdrPath || environment.HERDR_PATH || discoverExecutable('herdr', environment),
+  const terminals = readTerminals(config);
+  const useHerdr = terminals.includes('herdr');
+  const useHerdrCore = terminals.includes('herdr-core');
+  const [herdrPath, herdrCorePath, herdrAppPath, githubPath, jiraPath] = await Promise.all([
+    useHerdr
+      ? options.herdrPath || environment.HERDR_PATH || discoverExecutable('herdr', environment)
+      : undefined,
+    useHerdrCore
+      ? options.herdrCorePath ||
+        environment.HERDR_CORE_PATH ||
+        discoverExecutable('herdr-core', environment)
+      : undefined,
+    useHerdrCore
+      ? options.herdrAppPath ||
+        environment.HERDR_APP_PATH ||
+        discoverExecutable('herdr-app', environment)
+      : undefined,
     options.githubPath || environment.GH_PATH || discoverExecutable('gh', environment),
     options.jiraPath || environment.JIRA_PATH || discoverExecutable('jira', environment),
   ]);
-  const actionContext: ActionContext = { herdrPath, run: options.herdrRun };
-  const herdrCache = new HerdrSessionCache(actionContext);
-  const presentAssociations: PresentAssociations = async (entries, ensureSessions = false) => {
-    if (ensureSessions) await Promise.all(entries.map((entry) => herdrCache.ensure(entry)));
-    return herdrCache.present(entries);
+  // The first listed terminal whose focus executable exists; never a fallback chain.
+  const focusTerminal = terminals.find((terminal) =>
+    terminal === 'herdr' ? herdrPath : herdrAppPath,
+  );
+  const actionContext: ActionContext = {
+    focusTerminal,
+    herdrPath,
+    herdrCorePath,
+    herdrAppPath,
+    run: options.herdrRun,
   };
-  const herdrEnabled = Boolean(herdrPath);
+  const herdrCache = new HerdrSessionCache(actionContext);
+  const herdrCoreCache = new HerdrCoreSessionCache(actionContext);
+  const caches = terminals.map((terminal) => (terminal === 'herdr' ? herdrCache : herdrCoreCache));
+  // Labels are transient: strip stored ones, then the first listed terminal that knows a session wins.
+  const presentAssociations: PresentAssociations = async (entries, ensureSessions = false) => {
+    if (ensureSessions) {
+      await Promise.all(entries.flatMap((entry) => caches.map((cache) => cache.ensure(entry))));
+    }
+    const plain = entries.map(({ herdrWorkspace: _workspace, herdrTab: _tab, ...entry }) => entry);
+    return caches.reduce((labeled, cache) => cache.present(labeled), plain);
+  };
+  const herdrEnabled = Boolean(focusTerminal);
   const githubEnabled = Boolean(githubPath);
   const jiraEnabled = Boolean(jiraPath);
   let autofocus = config.autofocus === true;
@@ -783,6 +834,7 @@ export async function createCompanionServer(options: CompanionOptions = {}): Pro
         clients,
         presentAssociations,
         herdrCache,
+        herdrCoreCache,
       });
       return;
     }
@@ -883,7 +935,7 @@ export async function createCompanionServer(options: CompanionOptions = {}): Pro
     }
 
     if (request.method === 'POST' && url.pathname === '/actions') {
-      await handleActionsPost(request, response, actionContext);
+      await handleActionsPost(request, response, actionContext, associations.values());
       return;
     }
 

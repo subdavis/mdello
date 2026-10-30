@@ -109,7 +109,13 @@ npx mdello-companion help
 
 Agent extensions discover associations from absolute Markdown paths in user input and from successful Markdown edit or write tool calls. See [`docs/agent-extension.md`](docs/agent-extension.md) for the lifecycle event mapping and the contract a new harness must satisfy.
 
-Herdr session enhancements require that herdr's own integrations are configured properly.
+Herdr session enhancements (labels, focus, autofocus) are off until you list the terminals you use in `companion.json`, highest priority first, then restart the companion:
+
+```json
+{ "terminals": ["herdr-core"] }
+```
+
+Supported values are `herdr` and `herdr-core` (Herdr Desktop). Herdr Desktop sessions are matched by the `$HC_TERMINAL_ID` that the pi and OpenCode extensions report. See [`docs/companion.md`](docs/companion.md#terminals).
 
 ### Uninstall
 

@@ -79,7 +79,8 @@ test('macOS install updates plist and reloads launchd idempotently', async () =>
     if (command === 'launchctl' && args[0] === 'bootout') throw new Error('not loaded');
     return {
       stdout:
-        command === 'which' && ['herdr', 'gh', 'jira'].includes(args[0] ?? '')
+        command === 'which' &&
+        ['herdr', 'herdr-core', 'herdr-app', 'gh', 'jira'].includes(args[0] ?? '')
           ? process.execPath
           : '',
     };
@@ -112,6 +113,8 @@ test('macOS install updates plist and reloads launchd idempotently', async () =>
     assert.match(plist, /xdg &amp; config/);
     assert.match(plist, /xdg &amp; state/);
     assert.match(plist, /<key>HERDR_PATH<\/key>\s*<string>.*node<\/string>/);
+    assert.match(plist, /<key>HERDR_CORE_PATH<\/key>\s*<string>.*node<\/string>/);
+    assert.match(plist, /<key>HERDR_APP_PATH<\/key>\s*<string>.*node<\/string>/);
     assert.match(plist, /<key>GH_PATH<\/key>\s*<string>.*node<\/string>/);
     assert.match(plist, /<key>JIRA_PATH<\/key>\s*<string>.*node<\/string>/);
     assert.doesNotMatch(plist, /<key>JIRA_API_TOKEN<\/key>/);
@@ -119,10 +122,14 @@ test('macOS install updates plist and reloads launchd idempotently', async () =>
     assert.deepEqual(questions, [
       `NODE_PATH=${process.execPath} Y/n? `,
       `HERDR_PATH=${process.execPath} Y/n? `,
+      `HERDR_CORE_PATH=${process.execPath} Y/n? `,
+      `HERDR_APP_PATH=${process.execPath} Y/n? `,
       `GH_PATH=${process.execPath} Y/n? `,
       `JIRA_PATH=${process.execPath} Y/n? `,
       `NODE_PATH=${process.execPath} Y/n? `,
       `HERDR_PATH=${process.execPath} Y/n? `,
+      `HERDR_CORE_PATH=${process.execPath} Y/n? `,
+      `HERDR_APP_PATH=${process.execPath} Y/n? `,
       `GH_PATH=${process.execPath} Y/n? `,
       `JIRA_PATH=${process.execPath} Y/n? `,
     ]);

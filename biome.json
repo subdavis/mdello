@@ -6,7 +6,7 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!!**/dist"]
+    "includes": ["**", "!!**/dist", "!herdr/mods", "!herdr/layouts", "!herdr/upstream"]
   },
   "formatter": {
     "enabled": true,

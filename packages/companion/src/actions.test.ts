@@ -26,6 +26,7 @@ const AGENT_LIST = JSON.stringify({
 function recordingContext(): ActionContext & { calls: [string, string[]][] } {
   const calls: [string, string[]][] = [];
   return {
+    focusTerminal: 'herdr',
     herdrPath: '/usr/local/bin/herdr',
     calls,
     run: async (command, args) => {
@@ -64,9 +65,9 @@ test('rejects a request that is not a recognized action', async () => {
   assert.equal(await performAction(null, context), 'invalid');
 });
 
-test('refuses to focus when no herdr path is configured', async () => {
+test('refuses to focus when no terminal is configured', async () => {
   const context = recordingContext();
-  context.herdrPath = undefined;
+  context.focusTerminal = undefined;
   const result = await performAction(
     { action: 'focus', harness: 'claude', sessionId: 'claude-session-a' },
     context,
@@ -118,6 +119,7 @@ test('matches a pi session on sessionFile rather than sessionId', async () => {
 
 test('reports herdr_command_failed when the herdr CLI errors', async () => {
   const context: ActionContext = {
+    focusTerminal: 'herdr',
     herdrPath: '/usr/local/bin/herdr',
     run: async () => {
       throw new Error('herdr: no server running');
@@ -128,4 +130,67 @@ test('reports herdr_command_failed when the herdr CLI errors', async () => {
     context,
   );
   assert.deepEqual(result, { ok: false, error: 'herdr_command_failed' });
+});
+
+test('herdr-core focuses the terminal through herdr-app and never asks Herdr', async () => {
+  const context = recordingContext();
+  context.focusTerminal = 'herdr-core';
+  context.herdrAppPath = '/bin/herdr-app';
+  const result = await performAction(
+    {
+      action: 'focus',
+      harness: 'pi',
+      sessionId: 's',
+      sessionFile: '/home/.pi/agent/sessions/pi-session-a.jsonl',
+      hcTerminal: 't11',
+    },
+    context,
+  );
+  assert.deepEqual(result, { ok: true });
+  assert.deepEqual(context.calls, [['/bin/herdr-app', ['do', 'agent.focus', '--terminal', 't11']]]);
+});
+
+test('herdr-core cannot focus a session without a known terminal', async () => {
+  const context = recordingContext();
+  context.focusTerminal = 'herdr-core';
+  context.herdrAppPath = '/bin/herdr-app';
+  const result = await performAction(
+    { action: 'focus', harness: 'claude', sessionId: 'claude-session-a' },
+    context,
+  );
+  assert.deepEqual(result, { ok: false, error: 'session_not_found' });
+  assert.deepEqual(context.calls, []);
+});
+
+test('a failing herdr-app is reported, not retried through Herdr', async () => {
+  const calls: string[] = [];
+  const context: ActionContext = {
+    focusTerminal: 'herdr-core',
+    herdrPath: '/usr/local/bin/herdr',
+    herdrAppPath: '/bin/herdr-app',
+    run: async (command) => {
+      calls.push(command);
+      throw new Error('{ "error": "unknown terminal" }');
+    },
+  };
+  const result = await performAction(
+    { action: 'focus', harness: 'pi', sessionId: 's', hcTerminal: 't11' },
+    context,
+  );
+  assert.deepEqual(result, { ok: false, error: 'herdr_command_failed' });
+  assert.deepEqual(calls, ['/bin/herdr-app']);
+});
+
+test('herdr focuses through Herdr even when a terminal is known', async () => {
+  const context = recordingContext();
+  context.herdrAppPath = '/bin/herdr-app';
+  const result = await performAction(
+    { action: 'focus', harness: 'pi', sessionId: 'unknown-session', hcTerminal: 't15' },
+    context,
+  );
+  assert.deepEqual(result, { ok: false, error: 'session_not_found' });
+  assert.equal(
+    context.calls.some(([command]) => command === '/bin/herdr-app'),
+    false,
+  );
 });

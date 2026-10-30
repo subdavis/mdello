@@ -37,6 +37,7 @@ async function sendAssociation(
         harness: 'pi',
         sessionId: ctx.sessionManager.getSessionId(),
         sessionFile: ctx.sessionManager.getSessionFile(),
+        hcTerminal: process.env.HC_TERMINAL_ID || undefined,
         status,
       }),
       signal: AbortSignal.timeout(1000),
