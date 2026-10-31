@@ -468,8 +468,8 @@ function onEscape(): void {
           </dd>
         </dl>
         <template v-if="outline.length">
+          <hr class="card-outline-divider" />
           <nav class="card-outline" aria-label="Document outline">
-            <h2>Outline</h2>
             <MarkdownOutline :headings="outline" @navigate="navigateToHeading" />
           </nav>
         </template>

@@ -125,6 +125,12 @@
   margin-top: var(--space-4);
 }
 
+.card-outline-divider {
+  margin: var(--space-4) 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
 .outline-list {
   list-style: none;
   margin: 0;
@@ -141,6 +147,7 @@
   font: inherit;
   text-align: left;
   overflow-wrap: break-word;
+  margin-left: calc(-1 * var(--space-1));
 }
 
 .card-outline > .outline-list > li > .outline-heading {

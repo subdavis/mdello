@@ -111,10 +111,6 @@
   gap: var(--space-2);
 }
 
-.agent-session-heading:only-child {
-  padding-right: 52px;
-}
-
 .agent-session-indicator {
   width: var(--font-md);
   height: var(--font-md);
@@ -157,7 +153,7 @@
 .agent-session-actions {
   position: absolute;
   right: var(--space-1);
-  bottom: var(--space-1);
+  top: var(--space-1);
   display: flex;
   align-items: center;
   gap: var(--space-1);

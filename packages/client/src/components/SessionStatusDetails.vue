@@ -22,29 +22,21 @@ const lastActive = computed(() => {
 </script>
 
 <template>
-  <button
-    type="button"
-    class="agent-session-copy"
-    :disabled="!resumeCommand"
+  <button type="button" class="agent-session-copy" :disabled="!resumeCommand"
     :aria-label="`Copy resume command for ${displayedSessionLabel}, ${statusLabel}`"
     :title="resumeCommand ? 'Copy resume command' : `Resume unsupported for ${association.harness}`"
-    @click="emit('copy')"
-  >
+    @click="emit('copy')">
     <span class="agent-session-heading">
-      <IconGlyph
-        :name="`status-${association.status}`"
-        class="agent-session-indicator"
-        aria-hidden="true"
-      />
-      <strong class="agent-session-harness">{{ association.harness }}</strong>
-      <span class="agent-session-status">{{ statusLabel }}</span>
+      <IconGlyph :name="`status-${association.status}`" class="agent-session-indicator" aria-hidden="true" />
+      <span><strong class="agent-session-harness">{{ association.harness }}</strong></span>
+      <span class="enriched-ref-status">{{ statusLabel }}</span>
+      <span v-if="lastActive" class="agent-session-last-active">
+        <time :datetime="association.updatedAt">{{ lastActive }}</time>
+      </span>
     </span>
     <template v-if="association.herdrWorkspace && association.herdrTab">
       <span class="agent-session-name">{{ association.herdrTab }}</span>
-      <span class="agent-session-context">{{ association.herdrWorkspace }}</span>
     </template>
-    <span v-if="lastActive" class="agent-session-last-active">
-      Last active <time :datetime="association.updatedAt">{{ lastActive }}</time>
-    </span>
+
   </button>
 </template>
