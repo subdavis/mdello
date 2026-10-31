@@ -422,8 +422,11 @@ async function handleHookPost(
       return;
     }
 
+    // Hook payloads carry no env; the hook config forwards `$HC_TERMINAL_ID` as a header.
+    const terminal = request.headers['x-hc-terminal'];
+    const hcTerminal = typeof terminal === 'string' ? terminal : undefined;
     let recorded = 0;
-    for (const input of hookAssociationInputs(event, harness, associations.values())) {
+    for (const input of hookAssociationInputs(event, harness, associations.values(), hcTerminal)) {
       const result = await recordAssociation(
         input,
         dataFile,

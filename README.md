@@ -115,7 +115,7 @@ Herdr session enhancements (labels, focus, autofocus) are off until you list the
 { "terminals": ["herdr-core"] }
 ```
 
-Supported values are `herdr` and `herdr-core` (Herdr Desktop). Herdr Desktop sessions are matched by the `$HC_TERMINAL_ID` that the pi and OpenCode extensions report. See [`docs/companion.md`](docs/companion.md#terminals).
+Supported values are `herdr` and `herdr-core` (Herdr Desktop). Herdr Desktop sessions are matched by the `$HC_TERMINAL_ID` that the pi, OpenCode, and Claude Code integrations report. See [`docs/companion.md`](docs/companion.md#terminals).
 
 ### Uninstall
 

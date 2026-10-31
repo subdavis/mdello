@@ -19,7 +19,7 @@ interface Association {
   harness: string;
   sessionId: string;
   sessionFile?: string;
-  hcTerminal?: string; // herdr-core terminal ($HC_TERMINAL_ID), reported by pi/opencode
+  hcTerminal?: string; // herdr-core terminal ($HC_TERMINAL_ID), reported by pi/OpenCode/Claude Code
   herdrWorkspace?: string; // transient; present when current Herdr pane resolves
   herdrTab?: string; // transient; present when current Herdr pane resolves
   status: AssociationStatus;
@@ -88,7 +88,7 @@ ignored.
 | Value | Labels | Focus | Needs |
 | --- | --- | --- | --- |
 | `herdr` | `herdr agent/tab/workspace list`, matched on session id (pi: session file) | `herdr agent focus` + `herdr tab focus` | `herdr` |
-| `herdr-core` | `hc ls`, matched on `hcTerminal` (`$HC_TERMINAL_ID`, reported by pi/OpenCode) | `herdr-app do agent.focus --terminal` | `herdr-core` for labels, `herdr-app` for focus |
+| `herdr-core` | `hc ls`, matched on `hcTerminal` (`$HC_TERMINAL_ID`, reported by pi/OpenCode/Claude Code) | `herdr-app do agent.focus --terminal` | `herdr-core` for labels, `herdr-app` for focus |
 
 A session is labeled by the first listed terminal that knows it. Focus uses only the first listed
 terminal whose focus executable exists, and never falls back to another one. A session resumed in

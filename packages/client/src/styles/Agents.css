@@ -137,7 +137,6 @@
 .agent-session-context,
 .agent-session-last-active {
   min-width: 0;
-  padding-right: 52px;
   overflow: hidden;
   color: var(--muted);
   font-size: var(--font-2xs);

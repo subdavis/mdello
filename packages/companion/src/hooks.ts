@@ -33,6 +33,7 @@ export interface HookAssociationInput {
   harness: string;
   sessionId: string;
   sessionFile?: string;
+  hcTerminal?: string;
   status: HarnessHookEvent['status'];
 }
 
@@ -40,6 +41,7 @@ export function hookAssociationInputs(
   event: HarnessHookEvent,
   harness: string,
   associations: Iterable<Association>,
+  hcTerminal?: string,
 ): HookAssociationInput[] {
   const cardPaths = new Set([
     ...event.cardPaths,
@@ -50,6 +52,7 @@ export function hookAssociationInputs(
     harness,
     sessionId: event.sessionId,
     ...(event.sessionFile ? { sessionFile: event.sessionFile } : {}),
+    ...(hcTerminal ? { hcTerminal } : {}),
     status: event.status,
   }));
 }

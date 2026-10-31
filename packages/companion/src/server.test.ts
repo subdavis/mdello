@@ -550,6 +550,48 @@ test('appends nothing when a republished status only moves the timestamp', async
   }
 });
 
+test('records the herdr-core terminal a harness hook reports', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mdello-server-'));
+  const boardPath = join(root, 'board');
+  const cardPath = join(boardPath, 'card.md');
+  await mkdir(boardPath);
+  await writeFile(cardPath, '---\nuuid: card-a\n---\n');
+  const companion = await createCompanionServer({
+    port: 0,
+    dataFile: join(root, 'companion.jsonl'),
+    configFile: join(root, 'companion.json'),
+  });
+  const hook = (payload: unknown, terminal: string) =>
+    fetch(`${companion.url}/hooks/claude`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-HC-Terminal': terminal },
+      body: JSON.stringify(payload),
+    });
+  const terminals = async () =>
+    (
+      (await (await fetch(`${companion.url}/associations`)).json()) as { hcTerminal?: string }[]
+    ).map((association) => association.hcTerminal);
+
+  try {
+    await registerBoard(companion.url, 'board-a', boardPath);
+    await hook(
+      { hook_event_name: 'UserPromptSubmit', session_id: 'session-a', prompt: `see ${cardPath}` },
+      't1b',
+    );
+    assert.deepEqual(await terminals(), ['t1b']);
+
+    // Outside Herdr Desktop the header interpolates to an empty string.
+    await hook(
+      { hook_event_name: 'UserPromptSubmit', session_id: 'session-b', prompt: `see ${cardPath}` },
+      '',
+    );
+    assert.deepEqual((await terminals()).sort(), ['t1b', undefined].sort());
+  } finally {
+    await companion.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('publishes a harness hook payload to the whole session', async () => {
   const root = await mkdtemp(join(tmpdir(), 'mdello-server-'));
   const boardPath = join(root, 'board');

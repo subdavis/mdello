@@ -334,6 +334,20 @@ test('keeps per-turn events off the process spawn path', () => {
   }
 });
 
+test('forwards the herdr-core terminal on every hook', () => {
+  const settings = claudeHookSettings('http://127.0.0.1:51618');
+
+  for (const [event, entries] of Object.entries(settings)) {
+    const hook = entries[0]?.hooks[0];
+    if (hook?.type === 'http') {
+      assert.deepEqual(hook.headers, { 'X-HC-Terminal': '$HC_TERMINAL_ID' }, event);
+      assert.deepEqual(hook.allowedEnvVars, ['HC_TERMINAL_ID'], event);
+    } else {
+      assert.match(hook?.command ?? '', /-H "X-HC-Terminal: \$HC_TERMINAL_ID"/, event);
+    }
+  }
+});
+
 test('subscribes to question starts and all tool results', () => {
   const settings = claudeHookSettings('http://127.0.0.1:51618');
 

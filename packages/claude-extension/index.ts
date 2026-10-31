@@ -382,8 +382,14 @@ export interface ClaudeHook {
   type: 'http' | 'command';
   url?: string;
   command?: string;
+  headers?: Record<string, string>;
+  allowedEnvVars?: string[];
   timeout: number;
 }
+
+/** Hook payloads carry no env, so the herdr-core terminal travels as a header. */
+const TERMINAL_HEADER = 'X-HC-Terminal';
+const TERMINAL_ENV = 'HC_TERMINAL_ID';
 
 export interface ClaudeHookEntry {
   matcher?: string;
@@ -406,10 +412,16 @@ export function claudeHookSettings(
 
     const hook: ClaudeHook =
       policy.transport === 'http'
-        ? { type: 'http', url, timeout: 2 }
+        ? {
+            type: 'http',
+            url,
+            headers: { [TERMINAL_HEADER]: `$${TERMINAL_ENV}` },
+            allowedEnvVars: [TERMINAL_ENV],
+            timeout: 2,
+          }
         : {
             type: 'command',
-            command: `curl -s -m 2 -X POST -H 'Content-Type: application/json' --data-binary @- ${url} > /dev/null 2>&1 || true`,
+            command: `curl -s -m 2 -X POST -H 'Content-Type: application/json' -H "${TERMINAL_HEADER}: $${TERMINAL_ENV}" --data-binary @- ${url} > /dev/null 2>&1 || true`,
             timeout: 5,
           };
     entries[event] = [{ ...(policy.matcher ? { matcher: policy.matcher } : {}), hooks: [hook] }];
