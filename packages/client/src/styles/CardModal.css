@@ -73,18 +73,29 @@
 
 .modal-workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 200px;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  grid-template-areas: "content sidebar";
   flex: 1;
   min-height: 0;
   gap: var(--space-3);
 }
 
+.card-main {
+  grid-area: content;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
 .card-sidebar {
+  grid-area: sidebar;
   min-height: 0;
   overflow-y: auto;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+  line-height: 1.45;
   overscroll-behavior: contain;
-  border-left: 1px solid var(--line);
   padding-left: var(--space-3);
   color: var(--muted);
   font-size: var(--font-2sm);
@@ -110,10 +121,8 @@
   margin: 0;
 }
 
-.card-sidebar hr {
-  margin: var(--space-4) 0;
-  border: 0;
-  border-top: 1px solid var(--line);
+.card-outline {
+  margin-top: var(--space-4);
 }
 
 .outline-list {
@@ -131,7 +140,12 @@
   color: inherit;
   font: inherit;
   text-align: left;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+}
+
+.card-outline > .outline-list > li > .outline-heading {
+  color: var(--text);
+  font-weight: 500;
 }
 
 .outline-heading:hover {
@@ -139,19 +153,17 @@
   color: var(--text);
 }
 
-.outline-empty {
-  margin: 0;
-}
-
-@container (max-width: 560px) {
+@container (max-width: 660px) {
   .modal-workspace {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(120px, 1fr) auto;
+    grid-template-areas:
+      "content"
+      "sidebar";
   }
 
   .card-sidebar {
     max-height: 200px;
-    border-left: 0;
     border-top: 1px solid var(--line);
     padding: var(--space-3) var(--space-2) 0;
   }
@@ -181,6 +193,8 @@
 }
 
 .path {
+  max-width: 100%;
+  overflow-wrap: anywhere;
   font-family: var(--mono);
 }
 
@@ -206,7 +220,7 @@
   min-height: 120px;
   padding: var(--space-2);
   font-size: var(--font-sm);
-  line-height: 1.5;
+  line-height: 1.6;
 }
 
 .attachments {
@@ -345,20 +359,27 @@
 
 .ref-row {
   display: flex;
-  align-items: center;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: var(--space-2);
 }
 
 .ref {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  background: var(--column-bg);
+  display: grid;
+  grid-template-columns: var(--font-lg) minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-1) var(--space-2);
+  min-width: 0;
+  padding: var(--space-2);
+  background: var(--surface-subtle);
+  border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: 0 var(--space-1) 0 0;
-  color: var(--muted);
+  color: var(--text);
   text-decoration: none;
+}
+
+.ref-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .ref:hover {
@@ -367,12 +388,15 @@
 
 .enriched-ref {
   --enriched-status-text: var(--muted);
+  grid-template-columns: var(--font-lg) minmax(0, max-content) minmax(0, 1fr) auto;
+  grid-template-areas:
+    "icon key status ci"
+    "title title title title";
+  align-items: center;
   max-width: 100%;
 }
 
-.card-sidebar .ref-icon,
-.card-sidebar .session-action-button,
-.card-sidebar .session-forget-dropdown {
+.card-sidebar .ref-icon {
   flex-shrink: 0;
 }
 
@@ -396,13 +420,39 @@
   --enriched-status-text: var(--github-merged-text);
 }
 
+.enriched-ref .ref-icon {
+  grid-area: icon;
+}
+
+.enriched-ref-key {
+  grid-area: key;
+  overflow: hidden;
+  color: var(--text);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .enriched-ref-label {
+  grid-area: title;
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+.enriched-ref-status,
+.github-ci {
+  color: var(--enriched-status-text);
+  font-size: var(--font-2xs);
+  font-weight: 600;
+}
+
+.enriched-ref-status {
+  grid-area: status;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.enriched-ref-status,
 .github-ci {
   flex: none;
   padding: 0 var(--space-1);
@@ -414,6 +464,8 @@
 
 .github-ci {
   --github-ci-text: var(--muted);
+  grid-area: ci;
+  align-self: center;
   color: var(--github-ci-text);
 }
 
@@ -466,47 +518,34 @@
   }
 }
 
-.history-item {
-  margin-right: var(--space-2);
-  padding: calc(var(--space-1) / 2);
-  background: var(--column-bg);
-  border-color: var(--accent);
-  border-radius: var(--radius);
-  color: var(--muted);
+.history-table {
+  width: 100%;
+  border-collapse: collapse;
+  font: inherit;
 }
 
-.history-item-date {
-  font-weight: bold;
+.history-table th,
+.history-table td {
+  padding: calc(var(--space-1) / 2) 0;
+  text-align: left;
+  vertical-align: baseline;
+}
+
+.history-table th {
+  padding-right: var(--space-3);
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.history-table td {
   color: var(--text);
-}
-
-.card-sidebar .history-item {
-  display: block;
-  margin: 0 0 var(--space-1);
-}
-
-.card-sidebar .history-item-date {
-  display: block;
-}
-
-.card-sidebar .ref-row {
-  flex-direction: column;
-  align-items: stretch;
-}
-
-.card-sidebar .ref {
-  min-width: 0;
-  max-width: 100%;
-}
-
-.card-sidebar .session-status-details {
-  min-width: 0;
-  flex: 1;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
 }
 
 .modal {
   position: relative;
-  width: 900px;
+  width: 1000px;
   container-type: inline-size;
 }
 
@@ -524,11 +563,31 @@
   margin-bottom: 0;
 }
 
-.markdown h1,
-.markdown h2,
-.markdown h3 {
+.markdown :is(h1, h2, h3, h4, h5, h6) {
+  margin: var(--space-6) 0 var(--space-2);
+  line-height: 1.3;
+  scroll-margin-top: var(--space-2);
+}
+
+.markdown h1 {
+  font-size: 1.5rem;
+}
+
+.markdown h2 {
   font-size: var(--font-lg);
-  margin: var(--space-2) 0 var(--space-1);
+}
+
+.markdown h3 {
+  font-size: var(--font-md);
+}
+
+.markdown h4 {
+  font-size: var(--font-sm);
+}
+
+.markdown h5,
+.markdown h6 {
+  font-size: var(--font-2sm);
 }
 
 .markdown p,
@@ -566,6 +625,7 @@
   background: var(--code-bg);
   padding: 0 var(--space-1);
   border-radius: var(--radius);
+  overflow-wrap: anywhere;
 }
 
 .markdown pre {
@@ -573,6 +633,12 @@
   padding: var(--space-2);
   border-radius: var(--radius);
   overflow-x: auto;
+}
+
+.markdown pre code {
+  padding: 0;
+  background: none;
+  overflow-wrap: normal;
 }
 
 .markdown img {

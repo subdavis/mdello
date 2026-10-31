@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { MarkdownHeading } from '../markdown';
 
-defineProps<{ headings: MarkdownHeading[] }>();
+withDefaults(defineProps<{ headings: MarkdownHeading[]; depth?: number }>(), { depth: 0 });
 defineEmits<{ navigate: [line: number] }>();
 </script>
 
@@ -11,7 +11,7 @@ defineEmits<{ navigate: [line: number] }>();
       <button
         type="button"
         class="outline-heading"
-        :style="{ paddingInlineStart: `${(heading.level - 1) * 12 + 4}px` }"
+        :style="{ paddingInlineStart: `${depth * 12 + 4}px` }"
         :title="heading.text || 'Untitled heading'"
         @click="$emit('navigate', heading.line)"
       >
@@ -20,6 +20,7 @@ defineEmits<{ navigate: [line: number] }>();
       <MarkdownOutline
         v-if="heading.children.length"
         :headings="heading.children"
+        :depth="depth + 1"
         @navigate="$emit('navigate', $event)"
       />
     </li>

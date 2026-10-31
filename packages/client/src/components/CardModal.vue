@@ -29,7 +29,7 @@ const props = defineProps<{ card: Card }>();
 const emit = defineEmits<{ close: [] }>();
 
 const MODAL_WIDTH_KEY = 'mdello.cardModalWidth';
-const DEFAULT_MODAL_WIDTH = 900;
+const DEFAULT_MODAL_WIDTH = 1000;
 const MIN_MODAL_WIDTH = 360;
 
 function storedModalWidth(): number {
@@ -328,99 +328,107 @@ function onEscape(): void {
       </button>
     </header>
 
-    <dl class="meta">
-      <dt>File</dt>
-      <dd>
-        <button type="button" class="path copyable-details" title="Click to copy path" @click="copyPath">
-          {{ fullPath }}
-        </button>
-      </dd>
-      <dt>Labels</dt>
-      <dd><TagEditor :card="card" /></dd>
-    </dl>
-
     <div class="modal-workspace">
-      <section class="card-content">
-        <div v-if="draggingFiles" class="attachment-dropzone">
-          <strong>Drop files to attach</strong>
-        </div>
-        <template v-else>
-          <div v-if="loadedAttachments.length" class="attachments" aria-label="Attachments">
-            <article
-              v-for="attachment in loadedAttachments"
-              :key="attachment.file"
-              class="attachment"
-            >
-              <button
-                type="button"
-                class="icon-button icon-button--small attachment-remove"
-                :title="`Remove ${attachment.name}`"
-                aria-label="Remove attachment"
-                draggable="false"
-                @pointerdown.stop
-                @dragstart.stop.prevent
-                @click.stop="removeAttachment(attachment)"
-              >
-                <IconGlyph name="close" aria-hidden="true" />
-              </button>
-              <button
-                v-if="attachment.image"
-                type="button"
-                class="attachment-image"
-                :title="`Open ${attachment.name}`"
-                @click="openImage = attachment"
-              >
-                <img :src="attachment.url" :alt="attachment.name" />
-              </button>
-              <a
-                v-else
-                class="attachment-file"
-                :href="attachment.url"
-                target="_blank"
-                rel="noopener noreferrer"
-                :title="`Open ${attachment.name}`"
-              >
-                <IconGlyph name="paperclip" class="attachment-file-icon" aria-hidden="true" />
-                <strong>{{ attachment.name }}</strong>
-                <small>{{ formatSize(attachment.size) }}</small>
-              </a>
-              <span class="attachment-caption" :title="attachment.name">{{ attachment.name }}</span>
-            </article>
-          </div>
+      <div class="card-main">
+        <dl class="meta">
+          <dt>File</dt>
+          <dd>
+            <button type="button" class="path copyable-details" title="Click to copy path" @click="copyPath">
+              {{ fullPath }}
+            </button>
+          </dd>
+          <dt>Labels</dt>
+          <dd><TagEditor :card="card" /></dd>
+        </dl>
 
-          <MarkdownEditor
-            v-if="editing"
-            ref="editor"
-            :model-value="card.body"
-            @update:model-value="
-              card.body = $event;
-              board.queueSave(card);
-            "
-          />
-          <!-- eslint-disable-next-line vue/no-v-html -- markdown-it runs with html: false -->
-          <div
-            v-else
-            ref="preview"
-            class="body markdown"
-            title="Double-click to edit"
-            @change="setTaskFromPreview"
-            @dblclick="startEditing"
-            v-html="rendered"
-          />
-        </template>
-      </section>
+        <section class="card-content">
+          <div v-if="draggingFiles" class="attachment-dropzone">
+            <strong>Drop files to attach</strong>
+          </div>
+          <template v-else>
+            <div v-if="loadedAttachments.length" class="attachments" aria-label="Attachments">
+              <article
+                v-for="attachment in loadedAttachments"
+                :key="attachment.file"
+                class="attachment"
+              >
+                <button
+                  type="button"
+                  class="icon-button icon-button--small attachment-remove"
+                  :title="`Remove ${attachment.name}`"
+                  aria-label="Remove attachment"
+                  draggable="false"
+                  @pointerdown.stop
+                  @dragstart.stop.prevent
+                  @click.stop="removeAttachment(attachment)"
+                >
+                  <IconGlyph name="close" aria-hidden="true" />
+                </button>
+                <button
+                  v-if="attachment.image"
+                  type="button"
+                  class="attachment-image"
+                  :title="`Open ${attachment.name}`"
+                  @click="openImage = attachment"
+                >
+                  <img :src="attachment.url" :alt="attachment.name" />
+                </button>
+                <a
+                  v-else
+                  class="attachment-file"
+                  :href="attachment.url"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  :title="`Open ${attachment.name}`"
+                >
+                  <IconGlyph name="paperclip" class="attachment-file-icon" aria-hidden="true" />
+                  <strong>{{ attachment.name }}</strong>
+                  <small>{{ formatSize(attachment.size) }}</small>
+                </a>
+                <span class="attachment-caption" :title="attachment.name">{{ attachment.name }}</span>
+              </article>
+            </div>
+
+            <MarkdownEditor
+              v-if="editing"
+              ref="editor"
+              :model-value="card.body"
+              @update:model-value="
+                card.body = $event;
+                board.queueSave(card);
+              "
+            />
+            <!-- eslint-disable-next-line vue/no-v-html -- markdown-it runs with html: false -->
+            <div
+              v-else
+              ref="preview"
+              class="body markdown"
+              title="Double-click to edit"
+              @change="setTaskFromPreview"
+              @dblclick="startEditing"
+              v-html="rendered"
+            />
+          </template>
+        </section>
+
+        <footer class="modal-foot">
+          <span class="save-state">{{ board.saveState.value }}</span>
+          <a
+            v-if="editorLink"
+            class="editor-link"
+            :href="editorLink"
+            :title="editorLink"
+          >
+            Open in {{ board.editorName.value }}
+          </a>
+          <button v-if="editing" type="button" class="primary" @click="save">Save</button>
+          <button v-else type="button" @click="startEditing">Edit</button>
+        </footer>
+      </div>
 
       <aside class="card-sidebar" aria-label="Card details">
         <dl class="sidebar-meta">
-          <dt>History</dt>
-          <dd>
-            <span class="history-item">
-              Created <span class="history-item-date">{{ formatStamp(card.created) }}</span>
-            </span>
-            <span class="history-item">
-              Modified <span class="history-item-date">{{ formatStamp(card.modified) }}</span>
-            </span>
-          </dd>
+          <Agents :card="card" />
           <template v-if="card.references.length">
             <dt>References</dt>
             <dd>
@@ -437,36 +445,36 @@ function onEscape(): void {
                     :title="reference.url"
                   >
                     <img class="ref-icon" :src="reference.icon" alt="" />
-                    {{ reference.label }}
+                    <span class="ref-label">{{ reference.label }}</span>
                   </a>
                 </template>
               </div>
             </dd>
           </template>
-          <Agents :card="card" />
+          <dt>History</dt>
+          <dd>
+            <table class="history-table">
+              <tbody>
+                <tr>
+                  <th scope="row">Created</th>
+                  <td>{{ formatStamp(card.created) }}</td>
+                </tr>
+                <tr>
+                  <th scope="row">Updated</th>
+                  <td>{{ formatStamp(card.modified) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </dd>
         </dl>
-        <hr />
-        <nav class="card-outline" aria-label="Document outline">
-          <h2>Outline</h2>
-          <MarkdownOutline v-if="outline.length" :headings="outline" @navigate="navigateToHeading" />
-          <p v-else class="outline-empty">No headings</p>
-        </nav>
+        <template v-if="outline.length">
+          <nav class="card-outline" aria-label="Document outline">
+            <h2>Outline</h2>
+            <MarkdownOutline :headings="outline" @navigate="navigateToHeading" />
+          </nav>
+        </template>
       </aside>
     </div>
-
-    <footer class="modal-foot">
-      <span class="save-state">{{ board.saveState.value }}</span>
-      <a
-        v-if="editorLink"
-        class="editor-link"
-        :href="editorLink"
-        :title="editorLink"
-      >
-        Open in {{ board.editorName.value }}
-      </a>
-      <button v-if="editing" type="button" class="primary" @click="save">Save</button>
-      <button v-else type="button" @click="startEditing">Edit</button>
-    </footer>
     </div>
   </Overlay>
 

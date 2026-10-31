@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * Owns the companion/herdr business logic for one card: the session list.
- * SessionStatusDetails stays a presentation-only row underneath.
+ * SessionStatusDetails presents the item's default copy action.
  */
 import { watch } from 'vue';
 import { useBoard } from '../composables/useBoard';
@@ -66,39 +66,41 @@ async function forget(association: Association, scope: string): Promise<void> {
 <template>
   <template v-if="board.companionEnabled.value && associations.length">
     <dt>Agents</dt>
-    <dd class="session-list">
-      <div
-        v-for="association in associations"
-        :key="`${association.harness}:${association.sessionId}`"
-        class="session-row"
-        :class="`status-${association.status}`"
-      >
-        <SessionStatusDetails
-          :association="association"
-          :resume-command="resumeCommand(association)"
-          @copy="copyResumeCommand(association)"
-        />
-        <button
-          v-if="herdrEnabled && association.status !== 'closed'"
-          type="button"
-          class="icon-button icon-button--small session-action-button session-focus-button"
-          :class="`is-${association.status}`"
-          style="padding: 0"
-          title="Focus this session's pane"
-          @click="focus(association)"
+    <dd>
+      <ul class="agent-session-list">
+        <li
+          v-for="association in associations"
+          :key="`${association.harness}:${association.sessionId}`"
+          class="agent-session"
+          :class="`status-${association.status}`"
         >
-          <IconGlyph name="focus" aria-hidden="true" />
-        </button>
-        <ActionDropdown
-          class="session-forget-dropdown"
-          title="Forget this session"
-          :actions="forgetActions"
-          :button-class="`icon-button icon-button--small session-action-button is-${association.status}`"
-          @select="forget(association, $event)"
-        >
-          <IconGlyph name="close" aria-hidden="true" />
-        </ActionDropdown>
-      </div>
+          <SessionStatusDetails
+            :association="association"
+            :resume-command="resumeCommand(association)"
+            @copy="copyResumeCommand(association)"
+          />
+          <div class="agent-session-actions">
+            <button
+              v-if="herdrEnabled && association.status !== 'closed'"
+              type="button"
+              class="icon-button icon-button--small agent-session-action agent-session-focus"
+              title="Focus this session's pane"
+              @click="focus(association)"
+            >
+              <IconGlyph name="focus" aria-hidden="true" />
+            </button>
+            <ActionDropdown
+              class="agent-session-dismiss"
+              title="Dismiss session"
+              :actions="forgetActions"
+              button-class="icon-button icon-button--small agent-session-action"
+              @select="forget(association, $event)"
+            >
+              <IconGlyph name="close" aria-hidden="true" />
+            </ActionDropdown>
+          </div>
+        </li>
+      </ul>
     </dd>
   </template>
 </template>

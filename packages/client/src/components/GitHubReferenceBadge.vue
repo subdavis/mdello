@@ -15,8 +15,8 @@ defineProps<{ details: GitHubLinkDetails }>();
     :title="details.url"
   >
     <img class="ref-icon" :src="REFERENCE_ICONS.git" alt="" />
-    <span>#{{ details.number }}</span>
-    <span class="enriched-ref-status">{{ details.status }}</span>
+    <span class="enriched-ref-key">#{{ details.number }}</span>
+    <span class="enriched-ref-status" :title="details.status">{{ details.status }}</span>
     <span class="enriched-ref-label">{{ details.title }}</span>
     <span
       v-if="details.ciStatus && details.ciStatus !== 'none'"

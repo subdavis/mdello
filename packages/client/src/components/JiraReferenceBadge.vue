@@ -14,8 +14,8 @@ defineProps<{ details: JiraLinkDetails }>();
     :title="details.url"
   >
     <img class="ref-icon" :src="REFERENCE_ICONS.jira" alt="" />
-    <span>{{ details.key }}</span>
-    <span class="enriched-ref-status">{{ details.status }}</span>
+    <span class="enriched-ref-key">{{ details.key }}</span>
+    <span class="enriched-ref-status" :title="details.status">{{ details.status }}</span>
     <span class="enriched-ref-label">{{ details.title }}</span>
   </a>
 </template>
