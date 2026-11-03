@@ -692,6 +692,20 @@
   height: auto;
 }
 
+.markdown .svg-block {
+  margin: var(--space-3) 0;
+}
+
+.markdown .svg-block img {
+  display: block;
+  width: 100%;
+}
+
+.markdown .svg-block summary {
+  cursor: pointer;
+  font-size: var(--font-2sm);
+}
+
 .markdown table {
   border-collapse: collapse;
   margin: var(--space-3) 0;

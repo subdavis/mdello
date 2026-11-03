@@ -111,3 +111,22 @@ test('leaves source unchanged for invalid lines and non-task text', () => {
   assert.equal(setTaskChecked(source, 0, true), source);
   assert.equal(setTaskChecked(source, 1, true), source);
 });
+
+test('renders svg fences as a sandboxed image with collapsible source', () => {
+  const html = renderMarkdown(
+    '```svg\n<svg viewBox="0 0 10 10"><script>alert(1)</script></svg>\n```',
+  );
+  assert.match(
+    html,
+    /<div class="svg-block" data-line="0"><img src="data:image\/svg\+xml;charset=utf-8,/,
+  );
+  assert.match(html, /xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22/);
+  assert.match(html, /<details><summary>SVG source<\/summary><pre><code>&lt;svg/);
+  assert.doesNotMatch(html, /<script/);
+});
+
+test('treats xml fences holding a lone svg as svg, leaves others as code', () => {
+  assert.match(renderMarkdown('```xml\n<svg></svg>\n```'), /class="svg-block"/);
+  assert.doesNotMatch(renderMarkdown('```xml\n<a/>\n```'), /svg-block/);
+  assert.doesNotMatch(renderMarkdown('```svg\n\n```'), /svg-block/);
+});

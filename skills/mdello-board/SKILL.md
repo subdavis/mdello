@@ -51,6 +51,26 @@ This is the body of the card.
 - Modified time comes from filesystem. Never write `modified`.
 - Extra frontmatter keys survive app round-trips.
 
+## Card body rendering
+
+Bodies render as Markdown (raw HTML is disabled). Task lists (`- [ ]`) are clickable.
+
+Use `svg` fenced blocks for diagrams, charts, or sketches. The app renders them as images with a
+collapsible source view:
+
+````markdown
+```svg
+<svg viewBox="0 0 200 120" xmlns="http://www.w3.org/2000/svg">
+  <rect width="200" height="120" fill="#2563eb"/>
+  <text x="100" y="66" text-anchor="middle" font-size="18" fill="#fff">SVG</text>
+</svg>
+```
+````
+
+- Always set `viewBox`; the image scales to card width.
+- Self-contained only: scripts, external images, fonts, and links do not load. SMIL/CSS animations work.
+- Fill a background rect; cards may use a dark theme.
+
 ## Operations
 
 **Read board**

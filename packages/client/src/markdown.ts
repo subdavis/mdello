@@ -89,6 +89,26 @@ md.renderer.rules.link_open = (tokens, idx, options, _env, self) => {
   return self.renderToken(tokens, idx, options);
 };
 
+// ```svg fences (Simon Willison's markdown-svg-renderer syntax) render as an <img>: browsers never run
+// scripts or load external resources inside SVG images, so html: false still holds.
+const renderFence = md.renderer.rules.fence;
+md.renderer.rules.fence = (tokens, idx, options, env, self) => {
+  const token = tokens[idx];
+  const lang = token.info.trim().split(/\s+/)[0].toLowerCase();
+  const svg = token.content.trim();
+  const isSvg =
+    lang === 'svg' || (lang === 'xml' && svg.startsWith('<svg') && svg.endsWith('</svg>'));
+  if (!isSvg || !svg) return renderFence?.(tokens, idx, options, env, self) ?? '';
+
+  // Images need the namespace; agents often omit it.
+  const src = /<svg[^>]*\sxmlns=/.test(svg)
+    ? svg
+    : svg.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
+  const url = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(src)}`;
+  const code = md.utils.escapeHtml(token.content);
+  return `<div class="svg-block" data-line="${token.map?.[0] ?? ''}"><img src="${url}" alt="SVG image"><details><summary>SVG source</summary><pre><code>${code}</code></pre></details></div>\n`;
+};
+
 // Tag block elements with their source line so the editor can jump there on double-click.
 const renderToken = md.renderer.renderToken.bind(md.renderer);
 md.renderer.renderToken = (tokens, idx, options) => {
