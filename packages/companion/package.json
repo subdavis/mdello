@@ -13,6 +13,7 @@
     "@mdello/common": "workspace:*",
     "@mdello/opencode-extension": "workspace:*",
     "@mdello/pi-extension": "workspace:*",
+    "croner": "^11.0.0",
     "js-yaml": "^5.3.0"
   },
   "devDependencies": {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, nextTick, onMounted, ref } from 'vue';
 import { useBoard } from '../composables/useBoard';
 import {
   setAutofocus,
@@ -14,6 +14,7 @@ import { useTheme } from '../composables/useTheme';
 import { CONFIG_FILE, DEFAULT_CONFIG } from '../fs/config';
 import IconGlyph from './IconGlyph.vue';
 import Overlay from './Overlay.vue';
+import DesignSystem from './DesignSystem.vue';
 
 const emit = defineEmits<{ close: [] }>();
 
@@ -44,6 +45,14 @@ const saving = ref(false);
 const failed = ref(false);
 const autofocusFailed = ref(false);
 const pathInput = ref<HTMLInputElement | null>(null);
+const designSystemOpen = ref(false);
+const designSystemButton = ref<HTMLButtonElement | null>(null);
+
+async function closeDesignSystem(): Promise<void> {
+  designSystemOpen.value = false;
+  await nextTick();
+  designSystemButton.value?.focus();
+}
 
 const editable = computed(
   () => board.access.value.state === 'ready' && board.configReady.value && !board.locked.value,
@@ -237,6 +246,14 @@ onMounted(() => pathInput.value?.focus());
         </label>
       </section>
 
+      <section class="settings-note settings-design-system">
+        <div>
+          <h3>Design system</h3>
+          <p>Browse live theme tokens, spacing, typography, and component samples.</p>
+        </div>
+        <button ref="designSystemButton" type="button" @click="designSystemOpen = true">Open reference</button>
+      </section>
+
       <footer class="settings-foot">
         <span class="settings-state" :class="{ 'is-error': failed || autofocusFailed }">{{
           status
@@ -252,6 +269,7 @@ onMounted(() => pathInput.value?.focus());
       </footer>
     </form>
   </Overlay>
+  <DesignSystem v-if="designSystemOpen" @close="closeDesignSystem" />
 </template>
 
 <style src="../styles/SettingsDialog.css"></style>

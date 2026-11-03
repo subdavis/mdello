@@ -276,6 +276,7 @@ export async function setLinkEnrichment(enabled: boolean): Promise<boolean> {
 export interface UrlEnrichment {
   provider: string;
   url: string;
+  fetchedAt?: string;
 }
 
 export function subscribeUrlEnrichments(

@@ -4,13 +4,15 @@ import { aggregateStatus, useCompanion } from '../composables/useCompanion';
 import { useDrag } from '../composables/useDrag';
 import { tagStyle } from '../composables/useLabels';
 import { useBoard } from '../composables/useBoard';
-import { formatStamp } from '../format';
+import { formatRelativeStamp, formatStamp } from '../format';
+import { useNow } from '../composables/useNow';
 import type { Card } from '../fs/board';
 import IconGlyph from './IconGlyph.vue';
 import { useBoardExtras } from '../composables/useCardExtras.ts';
 
 const props = defineProps<{ card: Card }>();
 const emit = defineEmits<{ open: [Card] }>();
+const now = useNow();
 
 const drag = useDrag();
 const board = useBoard();
@@ -56,28 +58,30 @@ const referenceRepresentations = computed(() =>
       :title="statusLabel"
     />
     <h3 class="card-title">{{ card.title }}</h3>
-    <ul v-if="card.tags.length" class="tags">
-      <li v-for="tag in card.tags" :key="tag" class="tag" :style="tagStyle(tag)">{{ tag }}</li>
-    </ul>
     <footer class="card-meta">
-      <span class="stamp">{{ formatStamp(card.modified) }}</span>
-      <span
-        v-if="card.attachments.length"
-        class="card-attachments"
-        :title="`${card.attachments.length} attachment${card.attachments.length === 1 ? '' : 's'}`"
-        aria-label="Attachments"
-      >
-        <IconGlyph name="paperclip" class="attachment-icon" aria-hidden="true" />
-      </span>
-      <span v-if="referenceRepresentations" class="card-refs">
-        <img
-          v-for="reference in referenceRepresentations"
-          :key="reference.url"
-          class="ref-icon"
-          :src="reference.icon"
-          :alt="reference.label"
-          :title="reference.label"
-        />
+      <ul v-if="card.tags.length" class="tags">
+        <li v-for="tag in card.tags" :key="tag" class="tag" :style="tagStyle(tag)">{{ tag }}</li>
+      </ul>
+      <span class="card-meta-end">
+        <span
+          v-if="card.attachments.length"
+          class="card-attachments"
+          :title="`${card.attachments.length} attachment${card.attachments.length === 1 ? '' : 's'}`"
+          aria-label="Attachments"
+        >
+          <IconGlyph name="paperclip" class="attachment-icon" aria-hidden="true" />
+        </span>
+        <span v-if="referenceRepresentations.length" class="card-refs">
+          <img
+            v-for="reference in referenceRepresentations"
+            :key="reference.url"
+            class="ref-icon"
+            :src="reference.icon"
+            :alt="reference.label"
+            :title="reference.label"
+          />
+        </span>
+        <span class="stamp" :title="formatStamp(card.modified)">{{ formatRelativeStamp(card.modified, now) }}</span>
       </span>
     </footer>
   </article>

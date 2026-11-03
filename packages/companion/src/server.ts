@@ -27,6 +27,7 @@ import {
 import { createDebugLogger } from './debug.ts';
 import { enrichmentUrls, handleEnrichmentStream, type UrlEnrichment } from './enrichment-stream.ts';
 import { discoverExecutable } from './executables.ts';
+import { startExtensions } from './extensions.ts';
 import { createGitHubEnrichmentProvider, type GitHubCommandRunner } from './github-links.ts';
 import { HerdrSessionCache } from './herdr.ts';
 import { HerdrCoreSessionCache } from './herdr-core.ts';
@@ -204,6 +205,8 @@ function normalizeAssociation(value: unknown, legacyHarness?: string): Associati
     !candidate.sessionId ||
     (candidate.sessionFile !== undefined && typeof candidate.sessionFile !== 'string') ||
     (candidate.hcTerminal !== undefined && typeof candidate.hcTerminal !== 'string') ||
+    (candidate.herdrWorkspace !== undefined && typeof candidate.herdrWorkspace !== 'string') ||
+    (candidate.herdrTab !== undefined && typeof candidate.herdrTab !== 'string') ||
     !isAssociationStatus(status) ||
     typeof candidate.updatedAt !== 'string'
   ) {
@@ -218,6 +221,11 @@ function normalizeAssociation(value: unknown, legacyHarness?: string): Associati
     sessionId: candidate.sessionId,
     ...(candidate.sessionFile !== undefined && { sessionFile: candidate.sessionFile }),
     ...(candidate.hcTerminal && { hcTerminal: candidate.hcTerminal }),
+    ...(candidate.herdrWorkspace &&
+      candidate.herdrTab && {
+        herdrWorkspace: candidate.herdrWorkspace,
+        herdrTab: candidate.herdrTab,
+      }),
     status,
     updatedAt: candidate.updatedAt,
   };
@@ -257,8 +265,10 @@ async function recordAssociation(
     return 'unknown_card';
   }
 
+  // Stored labels are the companion's own record of where a session last ran; never trust input.
+  const { herdrWorkspace: _workspace, herdrTab: _tab, ...unlabeled } = input;
   const association = normalizeAssociation(
-    { ...input, ...card, updatedAt: new Date().toISOString() },
+    { ...unlabeled, ...card, updatedAt: new Date().toISOString() },
     'unknown',
   );
   if (!association) return 'invalid';
@@ -269,6 +279,12 @@ async function recordAssociation(
   const previous = associations.get(key);
   if (!association.sessionFile && previous?.sessionFile) {
     association.sessionFile = previous.sessionFile;
+  }
+  const [live] = await presentAssociations([association], true);
+  const labels = live.herdrWorkspace ? live : previous;
+  if (labels?.herdrWorkspace && labels.herdrTab) {
+    association.herdrWorkspace = labels.herdrWorkspace;
+    association.herdrTab = labels.herdrTab;
   }
 
   // Both harnesses republish the current status on every prompt and every Markdown edit, and the
@@ -293,7 +309,7 @@ async function recordAssociation(
     sessionId: association.sessionId,
     status: association.status,
   });
-  const [presented] = await presentAssociations([association], true);
+  const [presented] = await presentAssociations([association]);
   for (const [client, boardUuid] of clients) {
     if (boardUuid === association.boardUuid) writeSse(client, 'association', presented);
   }
@@ -756,8 +772,17 @@ export async function createCompanionServer(options: CompanionOptions = {}): Pro
     if (ensureSessions) {
       await Promise.all(entries.flatMap((entry) => caches.map((cache) => cache.ensure(entry))));
     }
-    const plain = entries.map(({ herdrWorkspace: _workspace, herdrTab: _tab, ...entry }) => entry);
-    return caches.reduce((labeled, cache) => cache.present(labeled), plain);
+    const plain: Association[] = entries.map(
+      ({ herdrWorkspace: _workspace, herdrTab: _tab, ...entry }) => entry,
+    );
+    const labeled = caches.reduce((current, cache) => cache.present(current), plain);
+    // Closed sessions are gone from the terminal; fall back to where they last ran.
+    return labeled.map((entry, index) => {
+      const { herdrWorkspace, herdrTab } = entries[index];
+      return entry.herdrWorkspace || entry.status !== 'closed' || !herdrWorkspace || !herdrTab
+        ? entry
+        : { ...entry, herdrWorkspace, herdrTab };
+    });
   };
   const herdrEnabled = Boolean(focusTerminal);
   const githubEnabled = Boolean(githubPath);
@@ -956,10 +981,20 @@ export async function createCompanionServer(options: CompanionOptions = {}): Pro
   const address = server.address();
   const actualPort = typeof address === 'object' && address ? address.port : port;
   debug('server listening', { host, port: actualPort, boards: boards.length });
+  const stopExtensions = startExtensions(config.extensions, {
+    boards,
+    githubPath,
+    githubRun: options.githubRun,
+    jiraPath,
+    jiraRun: options.jiraRun,
+    environment,
+    debug,
+  });
   return {
     server,
     url: `http://${host}:${actualPort}`,
     close: () => {
+      stopExtensions();
       return new Promise<void>((resolveClose, reject) => {
         for (const client of clients.keys()) client.end();
         for (const client of enrichmentClients) client.end();

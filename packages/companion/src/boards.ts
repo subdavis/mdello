@@ -22,6 +22,8 @@ export interface CompanionConfig {
   /** Terminal integrations to use, highest priority first. Absent means none. */
   terminals?: unknown;
   webOrigin?: string;
+  /** Scheduled triage sources keyed by name, e.g. `github-assignment`. */
+  extensions?: unknown;
 }
 
 /** Known terminals in configured order; unknown and repeated entries are dropped. */

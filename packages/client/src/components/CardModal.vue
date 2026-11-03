@@ -4,13 +4,15 @@ import { useBoard } from '../composables/useBoard';
 import {
   subscribeUrlEnrichments,
   type UrlEnrichment,
+  useCompanion,
   useGitHubEnabled,
   useLinkEnrichment,
   useJiraEnabled,
 } from '../composables/useCompanion';
 import { useMarkdownImport } from '../composables/useMarkdownImport';
 import { showToast } from '../composables/useToast';
-import { formatStamp } from '../format';
+import { formatRelativeStamp, formatStamp } from '../format';
+import { useNow } from '../composables/useNow';
 import type { CardAttachment } from '../fs/attachments';
 import type { Card } from '../fs/board';
 import { markdownOutline, renderMarkdown, setTaskChecked } from '../markdown';
@@ -27,22 +29,40 @@ import { useBoardExtras } from '../composables/useCardExtras.ts';
 
 const props = defineProps<{ card: Card }>();
 const emit = defineEmits<{ close: [] }>();
+const now = useNow();
 
 const MODAL_WIDTH_KEY = 'mdello.cardModalWidth';
 const DEFAULT_MODAL_WIDTH = 1000;
 const MIN_MODAL_WIDTH = 360;
+const SIDEBAR_WIDTH_KEY = 'mdello.cardSidebarWidth';
+const MIN_SIDEBAR_WIDTH = 140;
+const DEFAULT_SIDEBAR_WIDTH = 300;
+const MIN_BODY_WIDTH = 200;
 
 function storedModalWidth(): number {
   const stored = Number(localStorage.getItem(MODAL_WIDTH_KEY));
   return Number.isFinite(stored) && stored >= MIN_MODAL_WIDTH ? stored : DEFAULT_MODAL_WIDTH;
 }
 
+function storedSidebarWidth(): number {
+  const stored = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
+  return Number.isFinite(stored) && stored >= MIN_SIDEBAR_WIDTH ? stored : DEFAULT_SIDEBAR_WIDTH;
+}
+
 const board = useBoard();
 const markdownImport = useMarkdownImport();
 const editing = ref(false);
 const editor = ref<InstanceType<typeof MarkdownEditor> | null>(null);
+/** Width with the sidebar; an empty card drops the sidebar's share so its body width holds. */
 const modalWidth = ref(storedModalWidth());
-const modalStyle = computed(() => ({ width: `${modalWidth.value}px` }));
+const sidebarWidth = ref(storedSidebarWidth());
+const hiddenSidebarWidth = computed(() =>
+  hasSidebar.value
+    ? 0
+    : Math.min(sidebarWidth.value, Math.max(MIN_SIDEBAR_WIDTH, modalWidth.value - MIN_BODY_WIDTH)),
+);
+const modalStyle = computed(() => ({ width: `${modalWidth.value - hiddenSidebarWidth.value}px` }));
+const workspaceStyle = computed(() => ({ '--card-sidebar-width': `${sidebarWidth.value}px` }));
 const githubEnabled = useGitHubEnabled();
 const linkEnrichment = useLinkEnrichment();
 const jiraEnabled = useJiraEnabled();
@@ -50,8 +70,17 @@ const githubLinks = ref<GitHubLinkDetails[]>([]);
 const jiraLinks = ref<JiraLinkDetails[]>([]);
 const githubLinksByUrl = computed(() => new Map(githubLinks.value.map((link) => [link.url, link])));
 const jiraLinksByUrl = computed(() => new Map(jiraLinks.value.map((link) => [link.url, link])));
+/** Oldest provider answer across enriched references, i.e. worst-case staleness. */
+const enrichedAt = ref<string>();
 const preview = ref<HTMLElement | null>(null);
 const outline = computed(() => markdownOutline(props.card.body));
+const associations = useCompanion(board.rootPath, props.card);
+const hasSidebar = computed(
+  () =>
+    (board.companionEnabled.value && associations.value.length > 0) ||
+    props.card.references.length > 0 ||
+    outline.value.length > 0,
+);
 const rendered = computed(() => renderMarkdown(props.card.body || '_No description_'));
 const enrichedReferences = computed(() =>
   props.card.references.map((reference) => ({
@@ -99,6 +128,7 @@ watch(
     closeLinkStream();
     githubLinks.value = [];
     jiraLinks.value = [];
+    enrichedAt.value = undefined;
     const urls = props.card.references
       .filter(
         (reference) =>
@@ -112,6 +142,10 @@ watch(
     closeLinkStream = subscribeUrlEnrichments(urls, (enrichments) => {
       githubLinks.value = enrichments.filter(isGitHubEnrichment);
       jiraLinks.value = enrichments.filter(isJiraEnrichment);
+      enrichedAt.value = enrichments
+        .map((enrichment) => enrichment.fetchedAt)
+        .filter((stamp): stamp is string => Boolean(stamp))
+        .sort()[0];
     });
   },
   { immediate: true },
@@ -278,9 +312,8 @@ function startResizing(event: PointerEvent, side: 'left' | 'right'): void {
   const onPointerMove = (moveEvent: PointerEvent): void => {
     const requestedWidth = startWidth + (moveEvent.clientX - startX) * direction * 2;
     const viewportWidth = Math.max(MIN_MODAL_WIDTH, window.innerWidth - 24);
-    modalWidth.value = Math.round(
-      Math.min(viewportWidth, Math.max(MIN_MODAL_WIDTH, requestedWidth)),
-    );
+    const width = Math.round(Math.min(viewportWidth, Math.max(MIN_MODAL_WIDTH, requestedWidth)));
+    modalWidth.value = hasSidebar.value ? width : width + sidebarWidth.value;
   };
 
   const finish = (): void => {
@@ -293,6 +326,50 @@ function startResizing(event: PointerEvent, side: 'left' | 'right'): void {
   handle.addEventListener('pointermove', onPointerMove);
   handle.addEventListener('pointerup', finish);
   handle.addEventListener('pointercancel', finish);
+}
+
+function resizeSidebar(handle: HTMLElement, requestedWidth: number): void {
+  const workspace = handle.closest<HTMLElement>('.modal-workspace');
+  if (!workspace) return;
+  const maxWidth = Math.max(MIN_SIDEBAR_WIDTH, workspace.clientWidth - MIN_BODY_WIDTH);
+  sidebarWidth.value = Math.round(Math.min(maxWidth, Math.max(MIN_SIDEBAR_WIDTH, requestedWidth)));
+}
+
+function persistSidebarWidth(): void {
+  localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth.value));
+}
+
+function startSidebarResizing(event: PointerEvent): void {
+  if (event.button !== 0) return;
+  const handle = event.currentTarget as HTMLElement;
+  const sidebar = handle.closest<HTMLElement>('.card-sidebar');
+  if (!sidebar) return;
+
+  event.preventDefault();
+  handle.focus();
+  handle.setPointerCapture(event.pointerId);
+  const startX = event.clientX;
+  const startWidth = sidebar.getBoundingClientRect().width;
+
+  const onPointerMove = (moveEvent: PointerEvent): void => {
+    resizeSidebar(handle, startWidth + (moveEvent.clientX - startX));
+  };
+  const finish = (): void => {
+    handle.removeEventListener('pointermove', onPointerMove);
+    handle.removeEventListener('lostpointercapture', finish);
+    persistSidebarWidth();
+  };
+
+  handle.addEventListener('pointermove', onPointerMove);
+  handle.addEventListener('lostpointercapture', finish);
+}
+
+function resizeSidebarWithKeyboard(event: KeyboardEvent, delta: number): void {
+  const handle = event.currentTarget as HTMLElement;
+  const sidebar = handle.closest<HTMLElement>('.card-sidebar');
+  if (!sidebar) return;
+  resizeSidebar(handle, sidebar.getBoundingClientRect().width + delta);
+  persistSidebarWidth();
 }
 
 /** Escape leaves the editor first, so it takes two presses to close a modal mid-edit. */
@@ -313,23 +390,23 @@ function onEscape(): void {
     <div class="modal-resize-handle modal-resize-handle-left" @pointerdown="startResizing($event, 'left')" />
     <div class="modal-resize-handle modal-resize-handle-right" @pointerdown="startResizing($event, 'right')" />
 
-    <header class="modal-head">
-      <input
-        class="modal-title"
-        aria-label="Card title"
-        :value="card.title"
-        @input="
-          card.title = ($event.target as HTMLInputElement).value;
-          board.queueSave(card);
-        "
-      />
-      <button type="button" class="icon-button" title="Close" @click="close">
-        <IconGlyph name="close" aria-hidden="true" />
-      </button>
-    </header>
-
-    <div class="modal-workspace">
+    <div class="modal-workspace" :class="{ 'no-sidebar': !hasSidebar }" :style="workspaceStyle">
       <div class="card-main">
+        <header class="modal-head">
+          <input
+            class="modal-title"
+            aria-label="Card title"
+            :value="card.title"
+            @input="
+              card.title = ($event.target as HTMLInputElement).value;
+              board.queueSave(card);
+            "
+          />
+          <button type="button" class="icon-button" title="Close" aria-label="Close card" @click="close">
+            <IconGlyph name="close" aria-hidden="true" />
+          </button>
+        </header>
+
         <dl class="meta">
           <dt>File</dt>
           <dd>
@@ -426,53 +503,72 @@ function onEscape(): void {
         </footer>
       </div>
 
-      <aside class="card-sidebar" aria-label="Card details">
-        <dl class="sidebar-meta">
-          <Agents :card="card" />
-          <template v-if="card.references.length">
-            <dt>References</dt>
+      <aside v-if="hasSidebar" class="card-sidebar" aria-label="Card details">
+        <button
+          type="button"
+          class="card-sidebar-resize-handle"
+          aria-label="Resize sidebar"
+          title="Drag to resize sidebar, or use the left and right arrow keys"
+          @pointerdown="startSidebarResizing"
+          @keydown.left.prevent="resizeSidebarWithKeyboard($event, -16)"
+          @keydown.right.prevent="resizeSidebarWithKeyboard($event, 16)"
+        />
+        <div class="card-sidebar-content">
+          <dl class="sidebar-meta">
+            <Agents :card="card" />
+            <template v-if="card.references.length">
+              <dt class="sidebar-heading">
+                References
+                <time
+                  v-if="enrichedAt"
+                  class="sidebar-heading-note"
+                  :datetime="enrichedAt"
+                  :title="`Last updated ${formatStamp(enrichedAt)}`"
+                >updated {{ formatRelativeStamp(enrichedAt, now) }}</time>
+              </dt>
+              <dd>
+                <div class="ref-row">
+                  <template v-for="reference in enrichedReferences" :key="reference.url">
+                    <GitHubReferenceBadge v-if="reference.github" :details="reference.github" />
+                    <JiraReferenceBadge v-else-if="reference.jira" :details="reference.jira" />
+                    <a
+                      v-else
+                      class="ref"
+                      :href="reference.url"
+                      target="_blank"
+                      rel="noreferrer"
+                      :title="reference.url"
+                    >
+                      <img class="ref-icon" :src="reference.icon" alt="" />
+                      <span class="ref-label">{{ reference.label }}</span>
+                    </a>
+                  </template>
+                </div>
+              </dd>
+            </template>
+            <dt>History</dt>
             <dd>
-              <div class="ref-row">
-                <template v-for="reference in enrichedReferences" :key="reference.url">
-                  <GitHubReferenceBadge v-if="reference.github" :details="reference.github" />
-                  <JiraReferenceBadge v-else-if="reference.jira" :details="reference.jira" />
-                  <a
-                    v-else
-                    class="ref"
-                    :href="reference.url"
-                    target="_blank"
-                    rel="noreferrer"
-                    :title="reference.url"
-                  >
-                    <img class="ref-icon" :src="reference.icon" alt="" />
-                    <span class="ref-label">{{ reference.label }}</span>
-                  </a>
-                </template>
-              </div>
+              <table class="history-table">
+                <tbody>
+                  <tr>
+                    <th scope="row">Created</th>
+                    <td>{{ formatStamp(card.created) }}</td>
+                  </tr>
+                  <tr>
+                    <th scope="row">Updated</th>
+                    <td :title="formatStamp(card.modified)">{{ formatRelativeStamp(card.modified, now) }}</td>
+                  </tr>
+                </tbody>
+              </table>
             </dd>
+          </dl>
+          <template v-if="outline.length">
+            <hr class="card-outline-divider" />
+            <nav class="card-outline" aria-label="Document outline">
+              <MarkdownOutline :headings="outline" @navigate="navigateToHeading" />
+            </nav>
           </template>
-          <dt>History</dt>
-          <dd>
-            <table class="history-table">
-              <tbody>
-                <tr>
-                  <th scope="row">Created</th>
-                  <td>{{ formatStamp(card.created) }}</td>
-                </tr>
-                <tr>
-                  <th scope="row">Updated</th>
-                  <td>{{ formatStamp(card.modified) }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </dd>
-        </dl>
-        <template v-if="outline.length">
-          <hr class="card-outline-divider" />
-          <nav class="card-outline" aria-label="Document outline">
-            <MarkdownOutline :headings="outline" @navigate="navigateToHeading" />
-          </nav>
-        </template>
+        </div>
       </aside>
     </div>
     </div>

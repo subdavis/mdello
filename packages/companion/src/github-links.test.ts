@@ -97,3 +97,21 @@ test('reports aggregate CI state only for active pull requests', async () => {
     ['passing', 'failing', 'pending', 'none', undefined],
   );
 });
+
+test('counts finished checks while CI is pending', async () => {
+  const [item] = (
+    await fetchGitHubLinks(['https://github.com/owner/repo/pull/1'], 'gh', async () => ({
+      stdout: JSON.stringify({
+        number: 1,
+        title: 'PR',
+        state: 'OPEN',
+        statusCheckRollup: [
+          { status: 'COMPLETED', conclusion: 'SUCCESS' },
+          { status: 'COMPLETED', conclusion: 'SKIPPED' },
+          { status: 'IN_PROGRESS', conclusion: null },
+        ],
+      }),
+    }))
+  ).items;
+  assert.deepEqual(item.ciChecks, { completed: 2, total: 3 });
+});

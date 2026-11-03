@@ -1,8 +1,15 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import type { GitHubLinkDetails } from '../references';
 import { REFERENCE_ICONS } from '../references';
 
-defineProps<{ details: GitHubLinkDetails }>();
+const props = defineProps<{ details: GitHubLinkDetails }>();
+const ciLabel = computed(() => {
+  const { ciStatus, ciChecks } = props.details;
+  return ciChecks
+    ? `CI ${ciStatus}: ${ciChecks.completed} of ${ciChecks.total} checks finished`
+    : `CI ${ciStatus}`;
+});
 </script>
 
 <template>
@@ -22,10 +29,13 @@ defineProps<{ details: GitHubLinkDetails }>();
       v-if="details.ciStatus && details.ciStatus !== 'none'"
       class="github-ref-ci github-ci"
       :data-status="details.ciStatus"
-      :aria-label="`CI ${details.ciStatus}`"
-      :title="`CI ${details.ciStatus}`"
+      :aria-label="ciLabel"
+      :title="ciLabel"
     >
       <span class="github-ci-icon" aria-hidden="true"></span>
+      <span v-if="details.ciChecks" class="github-ci-count" aria-hidden="true"
+        >{{ details.ciChecks.completed }}/{{ details.ciChecks.total }}</span
+      >
     </span>
   </a>
 </template>

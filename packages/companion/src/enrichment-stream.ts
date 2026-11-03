@@ -1,11 +1,13 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
-export const ENRICHMENT_POLL_INTERVAL_MS = 30_000;
+export const ENRICHMENT_POLL_INTERVAL_MS = 10_000;
 export const MAX_ENRICHMENT_URLS = 50;
 
 export interface UrlEnrichment {
   provider: string;
   url: string;
+  /** When the provider last answered; replayed cache entries keep their original time. */
+  fetchedAt?: string;
 }
 
 export interface UrlEnrichmentResult {
@@ -77,8 +79,10 @@ export function handleEnrichmentStream(
   let closed = false;
   let refreshing = false;
   const publish = (result: UrlEnrichmentResult): void => {
-    for (const item of result.items) cache.set(item.url, item);
-    if (!closed) writeEvent(response, result);
+    const fetchedAt = new Date().toISOString();
+    const items = result.items.map((item) => ({ ...item, fetchedAt }));
+    for (const item of items) cache.set(item.url, item);
+    if (!closed) writeEvent(response, { ...result, items });
   };
   const refresh = async (): Promise<void> => {
     if (closed || refreshing) return;

@@ -381,6 +381,58 @@ test('returns transient Herdr labels for a resolvable session', async () => {
   }
 });
 
+test('keeps the last known herdr-core labels for closed sessions', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mdello-server-'));
+  const boardPath = join(root, 'board');
+  const cardPath = join(boardPath, 'card.md');
+  const dataFile = join(root, 'companion.jsonl');
+  await mkdir(boardPath);
+  await writeFile(cardPath, '---\nuuid: card-a\n---\n');
+  const companion = await createCompanionServer({
+    port: 0,
+    dataFile,
+    configFile: await writeTerminals(root, ['herdr-core']),
+    environment: {},
+    herdrCorePath: '/bin/herdr-core',
+    herdrAppPath: '/bin/herdr-app',
+    herdrRun: async () => ({
+      stdout: JSON.stringify({ terminals: [{ address: 't15', where: 'Frontend / Main' }] }),
+    }),
+  });
+  const publish = (status: string) =>
+    fetch(`${companion.url}/associations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        cardPath,
+        harness: 'pi',
+        sessionId: 'session-a',
+        hcTerminal: 't15',
+        herdrWorkspace: 'Spoofed',
+        herdrTab: 'Spoofed',
+        status,
+      }),
+    });
+  try {
+    await registerBoard(companion.url, 'board-a', boardPath);
+    await publish('running');
+    await publish('closed');
+    const [association] = (await (
+      await fetch(`${companion.url}/associations?boardUuid=board-a`)
+    ).json()) as Record<string, unknown>[];
+    assert.equal(association.status, 'closed');
+    assert.equal(association.herdrWorkspace, 'Frontend');
+    assert.equal(association.herdrTab, 'Main');
+    assert.match(
+      await readFile(dataFile, 'utf8'),
+      /"status":"closed".*"herdrTab":"Main"|"herdrTab":"Main".*"status":"closed"/,
+    );
+  } finally {
+    await companion.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('labels and focuses herdr-core sessions without calling an unlisted Herdr', async () => {
   const appCalls: string[][] = [];
   const herdrCalls: string[][] = [];

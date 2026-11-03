@@ -120,6 +120,26 @@ when empty. Missing executables are allowed; a configured terminal without them 
 
 Restart the companion after changing these settings.
 
+### Extensions
+
+`extensions` in `companion.json` schedules triage sources. Each one runs once when `serve` starts, then on its cron `schedule` (5-part, via `croner`). It creates a card with `column: Triage` on its `boardUuid` board for every item that no active root card mentions. The client shows `Triage` as a virtual column. Extensions only create cards. They never edit, move, or archive existing ones, and new files are written exclusive-create so a filename collision gets a `-1`, `-2` suffix. Archived cards don't count as references, so an archived item that is still assigned comes back. Overlapping runs of one extension are skipped. A failed CLI or unexpected output skips that run, writes nothing, and logs to stderr. Unknown names, unregistered boards, invalid schedules, and missing executables are skipped.
+
+| Name | Source | Bound when a card contains |
+| --- | --- | --- |
+| `github-assignment` | `gh search prs user-review-requested:@me --state=open` (direct requests only, not via teams; drafts included), one `--owner` per entry in optional `organizations` | the PR URL (case-insensitive) |
+| `jira-assignment` | `jira issue list -q 'project IS NOT EMPTY AND assignee = currentUser() AND statusCategory != Done' --raw`, 100 per page | the exact issue key |
+
+Jira browse links use optional `server`, or else the `server` from jira-cli's config (`JIRA_CONFIG_FILE`, default `${XDG_CONFIG_HOME:-~/.config}/.jira/.config.yml`).
+
+```json
+{
+  "extensions": {
+    "github-assignment": { "schedule": "* * * * *", "organizations": ["SonarSource"], "boardUuid": "…" },
+    "jira-assignment": { "schedule": "* * * * *", "boardUuid": "…" }
+  }
+}
+```
+
 ## Behavior
 
 - **Persistence:** updates append to JSONL; loading folds events by association identity. Card deletion and session forgetting expunge history instead of appending a tombstone.

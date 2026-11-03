@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * Owns the companion/herdr business logic for one card: the session list.
- * SessionStatusDetails presents the item's default copy action.
+ * SessionStatusDetails presents the item's default action: copy resume command, focus if live.
  */
 import { watch } from 'vue';
 import { useBoard } from '../composables/useBoard';
@@ -46,15 +46,17 @@ watch(
   { immediate: true },
 );
 
-async function copyResumeCommand(association: Association): Promise<void> {
-  const command = resumeCommand(association);
-  if (!command) return;
-  await navigator.clipboard.writeText(command);
-  showToast('Copied session resume command');
+function canFocus(association: Association): boolean {
+  return herdrEnabled.value && association.status !== 'closed';
 }
 
-async function focus(association: Association): Promise<void> {
-  showToast((await focusSession(association)) ? 'Focused session' : 'Focus failed');
+async function activate(association: Association): Promise<void> {
+  const command = resumeCommand(association);
+  if (command) await navigator.clipboard.writeText(command);
+  const focused = canFocus(association) && (await focusSession(association));
+  if (command)
+    showToast(focused ? 'Copied resume command, focused session' : 'Copied session resume command');
+  else if (canFocus(association)) showToast(focused ? 'Focused session' : 'Focus failed');
 }
 
 async function forget(association: Association, scope: string): Promise<void> {
@@ -77,18 +79,10 @@ async function forget(association: Association, scope: string): Promise<void> {
           <SessionStatusDetails
             :association="association"
             :resume-command="resumeCommand(association)"
-            @copy="copyResumeCommand(association)"
+            :can-focus="canFocus(association)"
+            @activate="activate(association)"
           />
           <div class="agent-session-actions">
-            <button
-              v-if="herdrEnabled && association.status !== 'closed'"
-              type="button"
-              class="icon-button icon-button--small agent-session-action agent-session-focus"
-              title="Focus this session's pane"
-              @click="focus(association)"
-            >
-              <IconGlyph name="focus" aria-hidden="true" />
-            </button>
             <ActionDropdown
               class="agent-session-dismiss"
               title="Dismiss session"

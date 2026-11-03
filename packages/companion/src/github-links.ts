@@ -16,6 +16,8 @@ export interface GitHubLink {
   title: string;
   status: GitHubLinkStatus;
   ciStatus?: GitHubCiStatus;
+  /** Finished vs. total checks; only while CI is pending. */
+  ciChecks?: { completed: number; total: number };
 }
 
 export interface GitHubLinkLookupResult {
@@ -87,13 +89,16 @@ function checkState(check: unknown): GitHubCiStatus {
   return 'passing';
 }
 
-function ciStatusOf(value: GitHubView): GitHubCiStatus {
+function ciOf(value: GitHubView): Pick<GitHubLink, 'ciStatus' | 'ciChecks'> {
   if (!Array.isArray(value.statusCheckRollup) || value.statusCheckRollup.length === 0)
-    return 'none';
+    return { ciStatus: 'none' };
   const states = value.statusCheckRollup.map(checkState);
-  if (states.includes('failing')) return 'failing';
-  if (states.includes('pending')) return 'pending';
-  return 'passing';
+  if (states.includes('failing')) return { ciStatus: 'failing' };
+  if (states.includes('pending')) {
+    const completed = states.filter((state) => state !== 'pending').length;
+    return { ciStatus: 'pending', ciChecks: { completed, total: states.length } };
+  }
+  return { ciStatus: 'passing' };
 }
 
 function parseView(stdout: string, requestedUrl: string): GitHubLink {
@@ -110,7 +115,7 @@ function parseView(stdout: string, requestedUrl: string): GitHubLink {
     number: view.number,
     title: view.title,
     status,
-    ...(activePullRequest && { ciStatus: ciStatusOf(view) }),
+    ...(activePullRequest && ciOf(view)),
   };
 }
 

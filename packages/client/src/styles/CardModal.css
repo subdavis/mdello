@@ -3,8 +3,6 @@
   flex: 1;
   min-height: 0;
   flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-3);
 }
 
 .modal-resize-handle {
@@ -40,10 +38,12 @@
 }
 
 .modal-title {
+  flex: 1;
+  min-width: 0;
   font-size: var(--font-lg);
   font-weight: 600;
   border-color: transparent;
-  padding: calc(var(--space-1) * 1.5);
+  padding: var(--space-1-2);
 }
 
 .modal-title:is(:hover, :focus) {
@@ -54,7 +54,7 @@
   display: grid;
   grid-template-columns: max-content 1fr;
   align-items: start;
-  gap: calc(var(--space-1) * 1.5) var(--space-4);
+  gap: var(--space-1-2) var(--space-4);
   margin: 0 0 0 var(--space-2);
   font-size: var(--font-2sm);
   color: var(--muted);
@@ -73,11 +73,17 @@
 
 .modal-workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
-  grid-template-areas: "content sidebar";
+  grid-template-columns:
+    clamp(140px, var(--card-sidebar-width, 30%), max(140px, calc(100% - 200px)))
+    minmax(0, 1fr);
+  grid-template-areas: "sidebar content";
   flex: 1;
   min-height: 0;
-  gap: var(--space-3);
+}
+
+.modal-workspace.no-sidebar {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "content";
 }
 
 .card-main {
@@ -87,18 +93,55 @@
   min-height: 0;
   flex-direction: column;
   gap: var(--space-2);
+  padding: var(--space-3);
 }
 
 .card-sidebar {
+  position: relative;
   grid-area: sidebar;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  border-right: 1px solid var(--line);
+  border-radius: var(--radius) 0 0 var(--radius);
+  background: color-mix(in srgb, var(--surface) 75%, var(--bg));
+  color: var(--muted);
+  font-size: var(--font-2sm);
+}
+
+.card-sidebar-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  z-index: 1;
+  width: 10px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  transform: translateX(50%);
+  cursor: ew-resize;
+  touch-action: none;
+  user-select: none;
+}
+
+.card-sidebar-resize-handle:hover {
+  background: var(--interactive-subtle);
+}
+
+.card-sidebar-resize-handle:focus {
+  outline: none;
+}
+
+.card-sidebar-content {
   min-height: 0;
   overflow-y: auto;
   overflow-wrap: break-word;
   line-height: 1.45;
   overscroll-behavior: contain;
-  padding-left: var(--space-3);
-  color: var(--muted);
-  font-size: var(--font-2sm);
+  padding: var(--space-3);
 }
 
 .sidebar-meta {
@@ -119,6 +162,13 @@
 
 .sidebar-meta dd {
   margin: 0;
+}
+
+.sidebar-heading-note {
+  margin-left: var(--space-1);
+  color: var(--muted);
+  font-size: var(--font-2xs);
+  font-weight: 400;
 }
 
 .card-outline {
@@ -158,22 +208,6 @@
 .outline-heading:hover {
   background: var(--surface-hover);
   color: var(--text);
-}
-
-@container (max-width: 660px) {
-  .modal-workspace {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(120px, 1fr) auto;
-    grid-template-areas:
-      "content"
-      "sidebar";
-  }
-
-  .card-sidebar {
-    max-height: 200px;
-    border-top: 1px solid var(--line);
-    padding: var(--space-3) var(--space-2) 0;
-  }
 }
 
 .meta-input {
@@ -367,7 +401,7 @@
 .ref-row {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-1);
 }
 
 .ref {
@@ -376,7 +410,7 @@
   align-items: start;
   gap: var(--space-1) var(--space-2);
   min-width: 0;
-  padding: var(--space-2);
+  padding: var(--space-1-2) var(--space-2);
   background: var(--surface-subtle);
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -390,7 +424,8 @@
 }
 
 .ref:hover {
-  filter: brightness(0.92);
+  border-color: var(--line-strong);
+  background: var(--surface-hover);
 }
 
 .enriched-ref {
@@ -444,6 +479,7 @@
   grid-area: title;
   min-width: 0;
   overflow-wrap: break-word;
+  font-size: var(--font-xs);
 }
 
 .enriched-ref-status,
@@ -471,6 +507,9 @@
 
 .github-ci {
   --github-ci-text: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
   grid-area: ci;
   align-self: center;
   color: var(--github-ci-text);

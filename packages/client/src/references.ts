@@ -22,6 +22,7 @@ export interface GitHubLinkDetails {
   title: string;
   status: GitHubLinkStatus;
   ciStatus?: GitHubCiStatus;
+  ciChecks?: { completed: number; total: number };
 }
 
 export interface JiraLinkDetails {

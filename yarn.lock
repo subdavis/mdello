@@ -1769,6 +1769,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"croner@npm:^11.0.0":
+  version: 11.0.0
+  resolution: "croner@npm:11.0.0"
+  checksum: 10c0/0017d58231ef879dcd23969222d85e39c97c2e0125e26e5e4723db735c5e4ac8b0732e9a33aea6f5428bdb35f522e8119a15e29f71b836324a05c3c7b7fceab8
+  languageName: node
+  linkType: hard
+
 "cross-spawn@npm:7.0.6":
   version: 7.0.6
   resolution: "cross-spawn@npm:7.0.6"
@@ -2460,6 +2467,7 @@ __metadata:
     "@mdello/opencode-extension": "workspace:*"
     "@mdello/pi-extension": "workspace:*"
     "@types/node": "npm:^26.2.0"
+    croner: "npm:^11.0.0"
     js-yaml: "npm:^5.3.0"
     typescript: "npm:^5"
   bin:

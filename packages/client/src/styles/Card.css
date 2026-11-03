@@ -3,7 +3,8 @@
   background: var(--card-bg);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: var(--space-1) var(--space-2);
+  /* Extra bottom padding offsets the title's line-height so the card looks balanced. */
+  padding: var(--space-1) var(--space-2) var(--space-1-2);
   cursor: pointer;
   box-shadow: 0 1px 0 rgb(9 30 66 / 0.1);
 }
@@ -27,17 +28,22 @@
   font-weight: 500;
 }
 
+/* Tags take their natural width; once they collide with the end group, the group wraps right. */
 .card-meta {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-1) var(--space-2);
   color: var(--muted);
   font-size: var(--font-2xs);
   margin-top: var(--space-1);
 }
 
-.card-meta .stamp {
-  margin-right: auto;
+.card-meta-end {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
 }
 
 .card-attachments,
@@ -67,11 +73,20 @@
   opacity: 0.4;
 }
 
+.card-meta .stamp {
+  opacity: 0.4;
+}
+
+.card:hover :is(.card-refs .ref-icon, .card-meta .stamp) {
+  opacity: 1;
+}
+
 .tags {
   display: flex;
+  min-width: 0;
   flex-wrap: wrap;
   gap: var(--space-1);
-  margin: var(--space-1) 0;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
