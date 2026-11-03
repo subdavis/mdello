@@ -15,6 +15,7 @@ export interface Reference {
 
 export type GitHubLinkStatus = 'open' | 'closed' | 'merged' | 'draft';
 export type GitHubCiStatus = 'passing' | 'failing' | 'pending' | 'none';
+export type GitHubReviewStatus = 'approved' | 'required';
 
 export interface GitHubLinkDetails {
   url: string;
@@ -23,6 +24,7 @@ export interface GitHubLinkDetails {
   status: GitHubLinkStatus;
   ciStatus?: GitHubCiStatus;
   ciChecks?: { completed: number; total: number };
+  reviewStatus?: GitHubReviewStatus;
 }
 
 export interface JiraLinkDetails {

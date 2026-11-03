@@ -9,8 +9,8 @@ description: >
 
 # mdello board
 
-No server, database, or API. Edit files with normal filesystem
-tools. App reads disk on refresh. Human may have app open—touch only cards needed.
+Edit files with normal filesystem tools. App reads disk on refresh.
+Human may have app open—touch only cards needed.
 
 ## Layout
 
@@ -20,6 +20,7 @@ BOARD_ROOT/
   some-card.md
   other-card.md
   archive/2026-08/old.md
+  attachments/image.png
 ```
 
 `mdello.yml` defines ordered columns.
@@ -70,6 +71,7 @@ collapsible source view:
 - Always set `viewBox`; the image scales to card width.
 - Self-contained only: scripts, external images, fonts, and links do not load. SMIL/CSS animations work.
 - Fill a background rect; cards may use a dark theme.
+- Animated SVGs can be used!
 
 ## Operations
 
@@ -103,9 +105,13 @@ removing a column, update affected cards' `column` values too.
 - Do not touch `archive/` during routine work.
 - Do not bulk-rewrite unrelated cards; it churns mtimes.
 - If board root is missing, say so and ask before creating it.
-- If asked to work on a card, set its column to the appropriate in-progress column and set yourself. At end, add a brief summary and links to any tickets, issues, or PRs created, or any other online artifacts
+- If asked to work on a card, set its column to the appropriate in-progress
+  column and set yourself. At end, add a brief summary and links to any tickets,
+  issues, or PRs created, or any other online artifacts
 - Don't add tags for the sake of it. Use a tag if one is truly relevant to the card.
 - If you don't know the board root, tell the user and ask that they specify it in their
   system agent prompt file such as CLAUDE.md or AGENTS.md
-- When assets, issues, prs, or other external references are generated, those should
-  be attached to the card.
+- When assets, issues, prs, or other external references are generated,
+  those should be attached to the card!
+- When asked to generate output in a card, do not repeat the same output into the session.
+  A brief summary or "Produced _____ on card ______" is sufficient and will save tokens.

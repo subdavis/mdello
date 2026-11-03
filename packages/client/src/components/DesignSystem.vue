@@ -38,6 +38,7 @@ const icons = [
   'back',
   'edit',
   'check',
+  'clock',
   'more',
   'paperclip',
   'focus',

@@ -9,6 +9,7 @@ const GITHUB_ITEM_URL =
 
 export type GitHubLinkStatus = 'open' | 'closed' | 'merged' | 'draft';
 export type GitHubCiStatus = 'passing' | 'failing' | 'pending' | 'none';
+export type GitHubReviewStatus = 'approved' | 'required';
 
 export interface GitHubLink {
   url: string;
@@ -18,6 +19,7 @@ export interface GitHubLink {
   ciStatus?: GitHubCiStatus;
   /** Finished vs. total checks; only while CI is pending. */
   ciChecks?: { completed: number; total: number };
+  reviewStatus?: GitHubReviewStatus;
 }
 
 export interface GitHubLinkLookupResult {
@@ -36,6 +38,7 @@ export type GitHubCommandRunner = (command: string, args: string[]) => Promise<C
 interface GitHubView {
   isDraft?: unknown;
   number?: unknown;
+  reviewDecision?: unknown;
   state?: unknown;
   statusCheckRollup?: unknown;
   title?: unknown;
@@ -101,6 +104,17 @@ function ciOf(value: GitHubView): Pick<GitHubLink, 'ciStatus' | 'ciChecks'> {
   return { ciStatus: 'passing' };
 }
 
+const REVIEW_STATUSES: Record<string, GitHubReviewStatus> = {
+  APPROVED: 'approved',
+  REVIEW_REQUIRED: 'required',
+};
+
+function reviewOf(value: GitHubView): Pick<GitHubLink, 'reviewStatus'> {
+  const reviewStatus =
+    typeof value.reviewDecision === 'string' ? REVIEW_STATUSES[value.reviewDecision] : undefined;
+  return reviewStatus ? { reviewStatus } : {};
+}
+
 function parseView(stdout: string, requestedUrl: string): GitHubLink {
   const value: unknown = JSON.parse(stdout);
   if (!value || typeof value !== 'object') throw new Error('gh view returned invalid JSON');
@@ -115,7 +129,7 @@ function parseView(stdout: string, requestedUrl: string): GitHubLink {
     number: view.number,
     title: view.title,
     status,
-    ...(activePullRequest && ciOf(view)),
+    ...(activePullRequest && { ...ciOf(view), ...reviewOf(view) }),
   };
 }
 
@@ -123,7 +137,7 @@ function viewArgs(url: string): string[] {
   const match = GITHUB_ITEM_URL.exec(url);
   if (!match) throw new Error('Invalid GitHub URL');
   return match[3] === 'pull'
-    ? ['pr', 'view', url, '--json', 'isDraft,number,state,statusCheckRollup,title']
+    ? ['pr', 'view', url, '--json', 'isDraft,number,reviewDecision,state,statusCheckRollup,title']
     : ['issue', 'view', url, '--json', 'number,state,title'];
 }
 

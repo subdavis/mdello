@@ -257,6 +257,10 @@ textarea {
   stroke-width: 4;
 }
 
+.icon-glyph-thin {
+  stroke-width: 1.5;
+}
+
 button.icon-button {
   display: inline-flex;
   align-items: center;

@@ -48,7 +48,13 @@ test('fetches GitHub links through gh and retains partial results', async () => 
   });
   assert.deepEqual(calls[0], [
     '/usr/local/bin/gh',
-    ['pr', 'view', urls[0], '--json', 'isDraft,number,state,statusCheckRollup,title'],
+    [
+      'pr',
+      'view',
+      urls[0],
+      '--json',
+      'isDraft,number,reviewDecision,state,statusCheckRollup,title',
+    ],
   ]);
 });
 
@@ -95,6 +101,27 @@ test('reports aggregate CI state only for active pull requests', async () => {
   assert.deepEqual(
     items.items.map(({ ciStatus }) => ciStatus),
     ['passing', 'failing', 'pending', 'none', undefined],
+  );
+});
+
+test('reports review approval only for active pull requests', async () => {
+  const decisions = ['APPROVED', 'REVIEW_REQUIRED', 'CHANGES_REQUESTED', '', 'APPROVED'];
+  const urls = decisions.map((_, i) => `https://github.com/owner/repo/pull/${i + 1}`);
+  const items = await fetchGitHubLinks(urls, 'gh', async (_command, args) => {
+    const number = Number(args[2]?.split('/').at(-1));
+    return {
+      stdout: JSON.stringify({
+        number,
+        title: `PR ${number}`,
+        state: number === 5 ? 'MERGED' : 'OPEN',
+        reviewDecision: decisions[number - 1],
+      }),
+    };
+  });
+
+  assert.deepEqual(
+    items.items.map(({ reviewStatus }) => reviewStatus),
+    ['approved', 'required', undefined, undefined, undefined],
   );
 });
 

@@ -510,34 +510,33 @@
   display: flex;
   align-items: center;
   gap: var(--space-1);
-  grid-area: ci;
-  align-self: center;
   color: var(--github-ci-text);
 }
 
-.github-ci-icon {
-  display: grid;
-  width: 1em;
-  height: 1em;
-  place-items: center;
-  font-size: var(--font-sm);
-  line-height: 1;
+.github-ref-indicators {
+  display: flex;
+  align-items: center;
+  grid-area: ci;
+  align-self: center;
 }
 
-.github-ci[data-status="passing"] {
+.github-ci .github-ci-icon {
+  width: 1em;
+  height: 1em;
+  font-size: var(--font-sm);
+}
+
+.github-ci[data-status="passing"],
+.github-review[data-status="approved"] {
   --github-ci-text: var(--success-text);
 }
 
-.github-ci[data-status="passing"] .github-ci-icon::before {
-  content: "✓";
+.github-review[data-status="required"] {
+  --github-ci-text: var(--warning-text);
 }
 
 .github-ci[data-status="failing"] {
   --github-ci-text: var(--danger-text);
-}
-
-.github-ci[data-status="failing"] .github-ci-icon::before {
-  content: "×";
 }
 
 .github-ci[data-status="pending"] {
