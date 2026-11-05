@@ -29,7 +29,13 @@ const strings = (value: unknown): string[] =>
 const EXTENSIONS: Record<string, Fetcher> = {
   'github-assignment': (settings, { githubPath, githubRun }) =>
     githubPath
-      ? fetchReviewRequests(githubPath, strings(settings.organizations), githubRun)
+      ? fetchReviewRequests(
+          githubPath,
+          strings(settings.organizations),
+          githubRun,
+          strings(settings.reviewRepositories),
+          strings(settings.ignoreRepositories),
+        )
       : undefined,
   'jira-assignment': (settings, { jiraPath, jiraRun, environment }) =>
     jiraPath

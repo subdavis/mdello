@@ -19,6 +19,18 @@ const PR = {
   author: { login: 'someone' },
 };
 
+const review = (pr: typeof PR, reviewer: 'user' | 'team', repo = 'SonarSource/sonar-sca') => ({
+  ...pr,
+  repository: { nameWithOwner: repo },
+  reviewRequests: {
+    nodes: [{ requestedReviewer: reviewer === 'user' ? { login: 'me' } : {} }],
+    pageInfo: { hasNextPage: false },
+  },
+});
+const searchResult = (nodes: unknown[], hasNextPage = false) => ({
+  data: { viewer: { login: 'me' }, search: { nodes, pageInfo: { hasNextPage } } },
+});
+
 const ISSUE = {
   key: 'COSCA-149',
   fields: {
@@ -37,25 +49,74 @@ async function tempBoard(): Promise<string> {
   return board;
 }
 
-test('parses review requests and passes organizations to gh', async () => {
+test('one GraphQL search keeps direct requests and other requests only in approved repositories', async () => {
   const calls: string[][] = [];
-  const items = await fetchReviewRequests('gh', ['SonarSource'], async (_command, args) => {
-    calls.push(args);
-    return { stdout: JSON.stringify([PR]) };
-  });
-  assert.deepEqual(calls[0].slice(-2), ['--owner', 'SonarSource']);
-  assert.ok(calls[0].includes('user-review-requested:@me'));
-  assert.ok(!calls[0].includes('--review-requested=@me'));
+  const teamPr = { ...PR, url: 'https://github.com/SonarSource/sonarcloud-webapp/pull/42' };
+  const excluded = { ...PR, url: 'https://github.com/SonarSource/sonar-sca/pull/99' };
+  const items = await fetchReviewRequests(
+    'gh',
+    ['SonarSource'],
+    async (_command, args) => {
+      calls.push(args);
+      return {
+        stdout: JSON.stringify(
+          searchResult([
+            review(PR, 'user'),
+            review(teamPr, 'team', 'SonarSource/sonarcloud-webapp'),
+            review(excluded, 'team'),
+          ]),
+        ),
+      };
+    },
+    ['SONARSOURCE/sonarcloud-*'],
+  );
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0].slice(0, 3), ['api', 'graphql', '-f']);
+  assert.match(calls[0][3], /review-requested:@me/);
+  assert.equal(items.length, 2);
   assert.equal(items[0].title, 'Review: sonar-sca#2561 SCA-3340 Bound CPU use');
   assert.match(items[0].body, /\| Draft \| yes \|/);
   assert.ok(items[0].bound.test('see https://github.com/sonarsource/sonar-sca/pull/2561.'));
   assert.ok(!items[0].bound.test('https://github.com/SonarSource/sonar-sca/pull/25612'));
+  assert.ok(items[1].body.includes(teamPr.url));
 });
 
-test('rejects unexpected gh output', async () => {
+test('ignored repository globs override direct requests and included repository globs', async () => {
+  const personal = { ...PR, url: 'https://github.com/subdavis/my-repo/pull/1' };
+  const personalTeam = { ...PR, url: 'https://github.com/subdavis/another/pull/2' };
+  const approved = { ...PR, url: 'https://github.com/SonarSource/sonarcloud-webapp/pull/3' };
+  const items = await fetchReviewRequests(
+    'gh',
+    [],
+    async () => ({
+      stdout: JSON.stringify(
+        searchResult([
+          review(personal, 'user', 'subdavis/my-repo'),
+          review(personalTeam, 'team', 'subdavis/another'),
+          review(approved, 'team', 'SonarSource/sonarcloud-webapp'),
+        ]),
+      ),
+    }),
+    ['subdavis/*', 'SonarSource/sonarcloud-*'],
+    ['SubDavis/*'],
+  );
+  assert.deepEqual(
+    items.map((item) => item.body.split('\n')[0]),
+    [approved.url],
+  );
+});
+
+test('rejects incomplete GraphQL output rather than silently missing reviews', async () => {
   await assert.rejects(fetchReviewRequests('gh', [], async () => ({ stdout: '{}' })));
   await assert.rejects(
-    fetchReviewRequests('gh', [], async () => ({ stdout: JSON.stringify([{ title: 'x' }]) })),
+    fetchReviewRequests('gh', [], async () => ({ stdout: JSON.stringify(searchResult([], true)) })),
+  );
+  await assert.rejects(
+    fetchReviewRequests('gh', [], async () => ({
+      stdout: JSON.stringify(
+        searchResult([{ ...review(PR, 'user'), reviewRequests: { nodes: [] } }]),
+      ),
+    })),
   );
 });
 
@@ -93,14 +154,14 @@ test('creates Triage cards only for unbound items, ignoring archive', async () =
   const board = await tempBoard();
   await writeFile(join(board, 'existing.md'), '---\ncolumn: Todo\n---\n\nWorking on COSCA-149\n');
   await writeFile(join(board, 'archive', '2026-10', 'old.md'), `Old review ${PR.url}\n`);
-  const [review] = await fetchReviewRequests('gh', [], async () => ({
-    stdout: JSON.stringify([PR]),
+  const [item] = await fetchReviewRequests('gh', [], async () => ({
+    stdout: JSON.stringify(searchResult([review(PR, 'user')])),
   }));
   const [issue] = await fetchAssignedIssues('jira', 'https://jira.example', async () => ({
     stdout: JSON.stringify([ISSUE]),
   }));
 
-  const created = await triageItems(board, [review, issue, review], NOW);
+  const created = await triageItems(board, [item, issue, item], NOW);
 
   assert.deepEqual(created, [join(board, 'review-sonar-sca-2561-sca-3340-bound-cpu-use.md')]);
   const { data, body } = parseFile(await readFile(created[0], 'utf8'));
@@ -125,7 +186,7 @@ test('runExtension skips unknown boards and missing executables', async () => {
   const board = await tempBoard();
   const boards = [{ uuid: 'b1', path: board, updatedAt: '' }];
   const debug = () => {};
-  const githubRun = async () => ({ stdout: JSON.stringify([PR]) });
+  const githubRun = async () => ({ stdout: JSON.stringify(searchResult([review(PR, 'user')])) });
   assert.deepEqual(
     await runExtension(
       'github-assignment',
@@ -145,4 +206,35 @@ test('runExtension skips unknown boards and missing executables', async () => {
   );
   assert.equal(created.length, 1);
   assert.equal((await readdir(board)).filter((name) => name.endsWith('.md')).length, 1);
+  const calls: string[][] = [];
+  const ignored = await runExtension(
+    'github-assignment',
+    {
+      boardUuid: 'b1',
+      reviewRepositories: ['SonarSource/sonarcloud-*'],
+      ignoreRepositories: ['subdavis/*'],
+    },
+    {
+      boards,
+      debug,
+      githubPath: 'gh',
+      githubRun: async (_command, args) => {
+        calls.push(args);
+        return {
+          stdout: JSON.stringify(
+            searchResult([
+              review(
+                { ...PR, url: 'https://github.com/subdavis/test/pull/1' },
+                'user',
+                'subdavis/test',
+              ),
+            ]),
+          ),
+        };
+      },
+    },
+  );
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0].slice(0, 2), ['api', 'graphql']);
+  assert.deepEqual(ignored, []);
 });

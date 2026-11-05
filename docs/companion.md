@@ -126,7 +126,7 @@ Restart the companion after changing these settings.
 
 | Name | Source | Bound when a card contains |
 | --- | --- | --- |
-| `github-assignment` | `gh search prs user-review-requested:@me --state=open` (direct requests only, not via teams; drafts included), one `--owner` per entry in optional `organizations` | the PR URL (case-insensitive) |
+| `github-assignment` | One `gh api graphql` search for open PRs requesting your review (drafts included). Direct user requests pass, optionally scoped by `organizations`; other requests pass only if the repository matches `reviewRepositories`. `ignoreRepositories` excludes matching repositories even for direct requests. Both lists accept case-insensitive glob patterns (`*`, `?`, `**`) against `owner/repo`. The search fails rather than silently truncating results beyond 100 PRs or 100 reviewers per PR. | the PR URL (case-insensitive) |
 | `jira-assignment` | `jira issue list -q 'project IS NOT EMPTY AND assignee = currentUser() AND statusCategory != Done' --raw`, 100 per page | the exact issue key |
 
 Jira browse links use optional `server`, or else the `server` from jira-cli's config (`JIRA_CONFIG_FILE`, default `${XDG_CONFIG_HOME:-~/.config}/.jira/.config.yml`).
@@ -134,7 +134,7 @@ Jira browse links use optional `server`, or else the `server` from jira-cli's co
 ```json
 {
   "extensions": {
-    "github-assignment": { "schedule": "* * * * *", "organizations": ["SonarSource"], "boardUuid": "…" },
+    "github-assignment": { "schedule": "* * * * *", "reviewRepositories": ["SonarSource/sonarcloud-webapp"], "ignoreRepositories": ["subdavis/*"], "boardUuid": "…" },
     "jira-assignment": { "schedule": "* * * * *", "boardUuid": "…" }
   }
 }
