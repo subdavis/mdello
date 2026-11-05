@@ -44,6 +44,7 @@ import {
 import { acquireBoardLock, releaseBoardLock } from '../fs/lock';
 import { changePaths, watchBoard } from '../fs/watch';
 import { parseMarkdownImport } from '../importMarkdown';
+import { mergedContent } from '../mergeCards';
 import { promptForColumnMigration } from '../migrations/folderColumns';
 import { findReferences } from '../references';
 import { expungeCardAssociations, fetchCardAssociations } from './useCompanion';
@@ -709,6 +710,41 @@ export function useBoard() {
         if (from && from !== toColumn) await persistOrder(requireRoot(), from);
         await persistOrder(requireRoot(), toColumn);
       });
+    },
+
+    /** Keep the destination card and archive the source only after its content is saved. */
+    async mergeCard(source: Card, destination: Card): Promise<void> {
+      if (source.id === destination.id || !root.value || locked.value) return;
+      if (
+        !columns.value.some((column) => column.cards.includes(source)) ||
+        !columns.value.some((column) => column.cards.includes(destination))
+      )
+        return;
+      // flushCard leaves error untouched when nothing is pending, so clear stale ones first.
+      error.value = null;
+      await flushCard(source);
+      await flushCard(destination);
+      if (error.value) return;
+
+      // flushCard mirrors fields into data even when the write fails; persistOrder writes data later.
+      const previous = {
+        body: destination.body,
+        tags: destination.tags,
+        references: destination.references,
+        data: structuredClone(toRaw(destination.data)),
+      };
+      Object.assign(destination, mergedContent(destination, source));
+      queueSave(destination);
+      await flushCard(destination);
+      if (error.value) {
+        Object.assign(destination, previous);
+        return;
+      }
+      const archived = await guard(async () => archiveOne(source));
+      if (!archived) return;
+      const from = columns.value.find((column) => column.cards.includes(source));
+      if (from) from.cards = from.cards.filter((card) => card !== source);
+      showToast(`Merged "${source.title}" into "${destination.title}"`);
     },
 
     async archive(card: Card): Promise<void> {

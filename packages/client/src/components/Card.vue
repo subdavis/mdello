@@ -10,7 +10,7 @@ import type { Card } from '../fs/board';
 import IconGlyph from './IconGlyph.vue';
 import { useBoardExtras } from '../composables/useCardExtras.ts';
 
-const props = defineProps<{ card: Card }>();
+const props = defineProps<{ card: Card; preview?: boolean }>();
 const emit = defineEmits<{ open: [Card] }>();
 const now = useNow();
 
@@ -39,15 +39,18 @@ const referenceRepresentations = computed(() =>
   <article
     class="card"
     :class="[
-      { 'is-dragging': isDragging },
+      { 'is-dragging': isDragging, 'is-preview': preview },
       status ? `has-status status-${status}` : undefined,
     ]"
-    :data-card-id="card.id"
-    draggable="true"
-    @click="emit('open', card)"
+    :data-card-id="preview ? undefined : card.id"
+    :draggable="!preview"
+    @click="!preview && emit('open', card)"
     @dragstart="drag.start($event, card, extras.clipboardPath.value)"
     @dragend="drag.end()"
   >
+    <svg v-if="!preview && drag.mergeTarget.value === card.id" class="merge-progress" aria-hidden="true">
+      <rect x="0" y="0" width="100%" height="100%" pathLength="100" />
+    </svg>
     <IconGlyph
       v-if="status && status !== 'closed'"
       :name="`status-${status}`"

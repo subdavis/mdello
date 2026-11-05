@@ -23,11 +23,11 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
   return { promise, resolve };
 }
 
-function card(body: string): Card {
+function card(body: string, id = 'card-id'): Card {
   return {
-    id: 'card-id',
-    uuid: 'card-id',
-    name: 'race.md',
+    id,
+    uuid: id,
+    name: `${id}.md`,
     column: 'Todo',
     title: 'Race',
     tags: [],
@@ -158,4 +158,75 @@ test('finishing an older write does not report saved while a newer edit is pendi
 
   assert.match(content, /second version/);
   assert.equal(stateAfterOlderWrite, 'dirty');
+});
+
+function mergeBoard(failWrites = false) {
+  const board = useBoard();
+  const files = new Map<string, string>();
+  const root = {
+    name: 'board',
+    kind: 'directory',
+    async getFileHandle(name: string) {
+      return {
+        name,
+        kind: 'file',
+        async createWritable() {
+          if (failWrites) throw new Error('disk full');
+          return {
+            async write(next: string) {
+              files.set(name, next);
+            },
+            async close() {},
+          };
+        },
+        async getFile() {
+          return { lastModified: Date.now() };
+        },
+      };
+    },
+  };
+  board.access.value = {
+    state: 'ready',
+    id: 'test-board',
+    handle: root as unknown as FileSystemDirectoryHandle,
+  };
+  board.error.value = null;
+  const source = card('source body', 'source');
+  const destination = card('destination body', 'destination');
+  board.columns.value = [{ name: 'Todo', cards: [destination, source], virtual: false }];
+  return { board, files, source, destination };
+}
+
+test('merge saves through the card save path without adding an empty tags key', async () => {
+  const { board, files, source, destination } = mergeBoard();
+
+  await board.mergeCard(source, destination);
+
+  const saved = files.get('destination.md') ?? '';
+  assert.match(saved, /destination body\n\nsource body/);
+  assert.doesNotMatch(saved, /tags:/);
+});
+
+test('a failed destination save restores it and keeps the source on the board', async () => {
+  const { board, source, destination } = mergeBoard(true);
+  destination.tags = ['kept'];
+  destination.data.tags = ['kept'];
+  source.tags = ['added'];
+
+  await board.mergeCard(source, destination);
+
+  assert.equal(destination.body, 'destination body');
+  assert.deepEqual(destination.tags, ['kept']);
+  assert.deepEqual(destination.data.tags, ['kept']);
+  assert.ok(board.columns.value[0].cards.includes(source));
+  assert.match(board.error.value ?? '', /disk full/);
+});
+
+test('a stale error from an earlier action does not block a merge', async () => {
+  const { board, files, source, destination } = mergeBoard();
+  board.error.value = 'earlier failure';
+
+  await board.mergeCard(source, destination);
+
+  assert.match(files.get('destination.md') ?? '', /source body/);
 });

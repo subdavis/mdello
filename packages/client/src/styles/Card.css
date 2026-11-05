@@ -21,6 +21,43 @@
   opacity: 0.4;
 }
 
+.card.is-preview {
+  min-width: 0;
+  cursor: default;
+  overflow-wrap: anywhere;
+}
+
+.merge-progress {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.merge-progress rect {
+  fill: none;
+  stroke: var(--line-strong);
+  stroke-width: 3px;
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  rx: var(--radius);
+  opacity: 0;
+  animation: merge-charge 3s linear 2s forwards;
+}
+
+@keyframes merge-charge {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+}
+
 .card-title {
   margin: 0;
   font-size: var(--font-2sm);

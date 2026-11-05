@@ -24,6 +24,33 @@
   font-size: var(--font-md);
 }
 
+.merge-confirm {
+  width: min(600px, 100%);
+  padding: var(--space-3);
+  gap: var(--space-3);
+}
+
+.merge-confirm h2 {
+  margin: 0;
+}
+
+.merge-confirm-cards {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.merge-confirm-cards > span {
+  font-size: var(--font-lg);
+}
+
+.merge-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
 .board {
   display: flex;
   align-items: flex-start;

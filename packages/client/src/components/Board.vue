@@ -1,16 +1,46 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onUnmounted, ref } from 'vue';
 import { useBoard } from '../composables/useBoard';
 import { useDrag } from '../composables/useDrag';
 import { markdownFile, useMarkdownImport } from '../composables/useMarkdownImport';
 import { ARCHIVE_DIR, type Card } from '../fs/board';
 import CardModal from './CardModal.vue';
+import CardTile from './Card.vue';
 import Column from './Column.vue';
+import Overlay from './Overlay.vue';
 
 const board = useBoard();
 const drag = useDrag();
 const markdownImport = useMarkdownImport();
 const openCard = ref<Card | null>(null);
+const mergePair = ref<{ source: Card; destination: Card } | null>(null);
+let mergeTimer: ReturnType<typeof setTimeout> | undefined;
+let lastMergeHover = 0;
+
+function clearMergeHover(): void {
+  clearTimeout(mergeTimer);
+  mergeTimer = undefined;
+  drag.mergeTarget.value = null;
+}
+
+onUnmounted(clearMergeHover);
+
+function onMergeHover(destination: Card | null): void {
+  lastMergeHover = Date.now();
+  if (drag.mergeTarget.value === destination?.id) return;
+  clearMergeHover();
+  const source = drag.dragging.value && findCard(drag.dragging.value.id);
+  if (!source || !destination) return;
+  drag.mergeTarget.value = destination.id;
+  mergeTimer = setTimeout(() => {
+    // Dragover repeats while the pointer rests; silence means it left without a dragleave we see.
+    if (Date.now() - lastMergeHover > 500) return clearMergeHover();
+    mergePair.value = { source, destination };
+    drag.end();
+    mergeTimer = undefined;
+  }, 5000);
+}
+
 const archiveDropzone = ref<HTMLElement | null>(null);
 const archiveWarping = ref(false);
 const archiveOver = computed(() => drag.target.value?.column === ARCHIVE_DIR);
@@ -95,6 +125,7 @@ async function dropIntoArchive(card: Card, warp: ArchiveWarp | null): Promise<vo
 async function onDrop(event: DragEvent): Promise<void> {
   const source = drag.dragging.value;
   const target = drag.target.value;
+  clearMergeHover();
   const movedColumn = drag.column.value;
   const file = markdownFile(event.dataTransfer);
   const archiveCard = source && target?.column === ARCHIVE_DIR ? findCard(source.id) : undefined;
@@ -117,11 +148,13 @@ async function onDrop(event: DragEvent): Promise<void> {
 
 /** Fires after drop too, but by then the commit already cleared the preview snapshot. */
 function onDragend(): void {
+  clearMergeHover();
   drag.end();
   board.cancelColumnOrder();
 }
 
 function onArchiveDragover(event: DragEvent): void {
+  clearMergeHover();
   if (markdownImport.draggingMarkdown.value) drag.clearTarget();
   else drag.over(event, ARCHIVE_DIR, 0);
 }
@@ -144,8 +177,8 @@ function onArchiveDragover(event: DragEvent): void {
   <div
     v-else
     class="board"
-    @dragover.self="drag.clearTarget()"
-    @dragleave.self="drag.clearTarget()"
+    @dragover.self="clearMergeHover(); drag.clearTarget()"
+    @dragleave.self="clearMergeHover(); drag.clearTarget()"
     @drop.prevent="onDrop"
     @dragend="onDragend"
   >
@@ -159,6 +192,7 @@ function onArchiveDragover(event: DragEvent): void {
       @rename="(target, label) => board.renameColumn(target, label)"
       @archive="(target) => board.archiveColumn(target)"
       @hover="(dir, index) => board.previewColumnOrder(dir, index)"
+      @merge-hover="onMergeHover"
     />
 
     <section class="column archive-column">
@@ -174,6 +208,25 @@ function onArchiveDragover(event: DragEvent): void {
     </section>
 
     <CardModal v-if="openCard" :card="openCard" @close="openCard = null" />
+    <Overlay
+      v-if="mergePair"
+      panel-class="merge-confirm"
+      label="Merge cards"
+      place="center"
+      @close="mergePair = null"
+      @escape="mergePair = null"
+    >
+      <h2>Merge cards?</h2>
+      <div class="merge-confirm-cards" role="group" aria-label="Source card merges into destination card">
+        <CardTile :card="mergePair.source" preview />
+        <span aria-hidden="true">→</span>
+        <CardTile :card="mergePair.destination" preview />
+      </div>
+      <div class="merge-confirm-actions">
+        <button type="button" @click="board.mergeCard(mergePair.source, mergePair.destination); mergePair = null">Merge</button>
+        <button type="button" class="primary" @click="mergePair = null">Cancel</button>
+      </div>
+    </Overlay>
   </div>
 </template>
 

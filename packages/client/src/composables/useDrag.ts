@@ -4,6 +4,7 @@ import type { Card } from '../fs/board';
 const dragging = ref<{ id: string; column: string } | null>(null);
 // Driven only by dragover, so it never flickers the way dragenter/dragleave pairs do.
 const target = ref<{ column: string; index: number } | null>(null);
+const mergeTarget = ref<string | null>(null);
 // Height of the card being held, so the open slot matches it exactly.
 const slotHeight = ref(30);
 // Pointer position within the card, used to continue the native ghost from its drop position.
@@ -35,6 +36,7 @@ export function useDrag() {
   return {
     dragging,
     target,
+    mergeTarget,
     slotHeight,
     grabOffset,
     column,
@@ -114,6 +116,7 @@ export function useDrag() {
     end(): void {
       dragging.value = null;
       target.value = null;
+      mergeTarget.value = null;
       column.value = null;
     },
   };

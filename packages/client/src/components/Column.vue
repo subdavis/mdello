@@ -14,6 +14,7 @@ const emit = defineEmits<{
   rename: [Column, string];
   archive: [Column];
   hover: [string, number];
+  mergeHover: [CardType | null];
 }>();
 
 const drag = useDrag();
@@ -36,16 +37,21 @@ const slot = computed(() =>
 );
 const slotStyle = computed(() => ({ height: `${drag.slotHeight.value}px` }));
 
-/** Insertion point = first card whose vertical midpoint is below the pointer. */
-function slotAt(event: DragEvent): number {
+/**
+ * Insertion point = first card whose vertical midpoint is below the pointer.
+ * `merge` = card whose lower half holds the pointer, i.e. the one just above the slot.
+ */
+function slotAt(event: DragEvent): { index: number; merge?: CardType } {
   const tiles = body.value ? [...body.value.querySelectorAll<HTMLElement>('.card')] : [];
+  let merge: CardType | undefined;
 
   for (const [index, tile] of tiles.entries()) {
     const rect = tile.getBoundingClientRect();
-    if (event.clientY < rect.top + rect.height / 2) return index;
+    if (event.clientY < rect.top + rect.height / 2) return { index, merge };
+    merge = event.clientY < rect.bottom ? props.column.cards[index] : undefined;
   }
 
-  return tiles.length;
+  return { index: tiles.length, merge };
 }
 
 /** Index of the held card when it came from this column, else -1. */
@@ -61,20 +67,24 @@ const sourceIndex = computed(() => {
  */
 function onDragover(event: DragEvent): void {
   if (markdownImport.draggingMarkdown.value) {
-    drag.overImport(event, props.column.name, slotAt(event));
+    emit('mergeHover', null);
+    drag.overImport(event, props.column.name, slotAt(event).index);
     return;
   }
 
   // A column drag reorders the board live; cards are not involved.
   const held = drag.column.value;
   if (held !== null) {
+    emit('mergeHover', null);
     drag.overColumn(event);
     if (held !== props.column.name) emit('hover', held, props.index);
     return;
   }
 
-  const index = slotAt(event);
+  const { index, merge } = slotAt(event);
   const from = sourceIndex.value;
+  const dragged = drag.dragging.value;
+  emit('mergeHover', dragged && merge && merge.id !== dragged.id ? merge : null);
 
   if (from !== -1 && (index === from || index === from + 1)) {
     // Still claim the drop so the cursor does not flip to "no drop".
