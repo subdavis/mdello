@@ -1,6 +1,6 @@
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { serializeFile } from '@mdello/common/frontmatter';
+import { parseFile, serializeFile } from '@mdello/common/frontmatter';
 
 export const TRIAGE_COLUMN = 'Triage';
 const MAX_SLUG = 60;
@@ -11,6 +11,11 @@ export interface TriageItem {
   body: string;
   /** Matches any card text that already references this item. */
   bound: RegExp;
+}
+
+export interface TriageOutcome {
+  item: TriageItem;
+  cards: Array<{ path: string; action: 'created' | 'moved' | 'already in Triage' | 'linked' }>;
 }
 
 export function escapeRegExp(value: string): string {
@@ -26,12 +31,15 @@ export function slugify(title: string): string {
   return slug || 'card';
 }
 
-async function activeCardTexts(boardPath: string): Promise<string[]> {
+async function activeCards(boardPath: string): Promise<Array<{ path: string; text: string }>> {
   const entries = await readdir(boardPath, { withFileTypes: true });
   return Promise.all(
     entries
       .filter((entry) => entry.isFile() && entry.name.endsWith('.md'))
-      .map((entry) => readFile(resolve(boardPath, entry.name), 'utf8')),
+      .map(async (entry) => {
+        const path = resolve(boardPath, entry.name);
+        return { path, text: await readFile(path, 'utf8') };
+      }),
   );
 }
 
@@ -48,26 +56,46 @@ async function writeNewCard(boardPath: string, slug: string, text: string): Prom
   throw new Error(`No free filename for ${slug}`);
 }
 
-/** Creates a Triage card for every item no active card references. Never touches existing cards. */
+/** Creates unbound Triage cards; optionally moves cards already referencing an item. */
 export async function triageItems(
   boardPath: string,
   items: TriageItem[],
   now: () => Date = () => new Date(),
+  moveExisting = false,
+  report?: (outcome: TriageOutcome) => void,
 ): Promise<string[]> {
   const created: string[] = [];
   for (const item of items) {
     // Re-read per item so a card created meanwhile (by us or the app) still dedups.
-    const texts = await activeCardTexts(boardPath);
-    if (texts.some((text) => item.bound.test(text))) continue;
+    const cards = await activeCards(boardPath);
+    const matches = cards.filter(({ text }) => item.bound.test(text));
+    if (matches.length) {
+      const outcomes: TriageOutcome['cards'] = [];
+      for (const { path, text } of matches) {
+        const { data, body } = parseFile(text);
+        const action = moveExisting
+          ? data.column === TRIAGE_COLUMN
+            ? 'already in Triage'
+            : 'moved'
+          : 'linked';
+        if (action === 'moved') {
+          data.column = TRIAGE_COLUMN;
+          await writeFile(path, serializeFile(data, body));
+        }
+        outcomes.push({ path, action });
+      }
+      report?.({ item, cards: outcomes });
+      continue;
+    }
     const data = {
       uuid: crypto.randomUUID(),
       title: item.title,
       column: TRIAGE_COLUMN,
       created: now().toISOString(),
     };
-    created.push(
-      await writeNewCard(boardPath, slugify(item.title), serializeFile(data, item.body)),
-    );
+    const path = await writeNewCard(boardPath, slugify(item.title), serializeFile(data, item.body));
+    created.push(path);
+    report?.({ item, cards: [{ path, action: 'created' }] });
   }
   return created;
 }

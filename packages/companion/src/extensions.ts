@@ -5,7 +5,7 @@ import { fetchReviewRequests } from './github-assignment.ts';
 import type { GitHubCommandRunner } from './github-links.ts';
 import { fetchAssignedIssues, jiraOrigin, readJiraServer } from './jira-assignment.ts';
 import type { JiraCommandRunner } from './jira-links.ts';
-import { type TriageItem, triageItems } from './triage.ts';
+import { type TriageItem, type TriageOutcome, triageItems } from './triage.ts';
 
 export interface ExtensionContext {
   /** Live registration list; boards are looked up on every run. */
@@ -50,6 +50,7 @@ export async function runExtension(
   name: string,
   settings: Settings,
   context: ExtensionContext,
+  report?: (outcome: TriageOutcome) => void,
 ): Promise<string[]> {
   const board = context.boards.find((entry) => entry.uuid === settings.boardUuid);
   if (!board) {
@@ -61,7 +62,13 @@ export async function runExtension(
     context.debug('extension skipped: executable unavailable', { name });
     return [];
   }
-  const created = await triageItems(board.path, await fetching);
+  const created = await triageItems(
+    board.path,
+    await fetching,
+    undefined,
+    name === 'github-assignment',
+    report,
+  );
   context.debug('extension ran', { name, created: created.length });
   return created;
 }

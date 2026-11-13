@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -33,6 +33,77 @@ async function runFailure(args: string[], env: NodeJS.ProcessEnv): Promise<Comma
   }
   throw new Error(`Expected "${args.join(' ')}" to fail`);
 }
+
+test('triage reports discovered reviews, linked cards, and actions while updating board', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mdello-cli-'));
+  try {
+    const board = join(root, 'board');
+    const configFile = join(root, 'companion.json');
+    const pr = 'https://github.com/SonarSource/repo/pull/12';
+    const gh = join(root, 'gh');
+    await mkdir(board);
+    await writeFile(join(board, 'existing.md'), `---\ncolumn: Doing\n---\n\n${pr}\n`);
+    await writeFile(
+      gh,
+      `#!/bin/sh\nprintf '%s\\n' '${JSON.stringify({
+        data: {
+          viewer: { login: 'me' },
+          search: {
+            pageInfo: { hasNextPage: false },
+            nodes: [
+              {
+                url: pr,
+                title: 'Review this',
+                repository: { nameWithOwner: 'SonarSource/repo' },
+                reviewRequests: {
+                  pageInfo: { hasNextPage: false },
+                  nodes: [{ requestedReviewer: { login: 'me' } }],
+                },
+              },
+              {
+                url: 'https://github.com/SonarSource/repo/pull/13',
+                title: 'Review that',
+                repository: { nameWithOwner: 'SonarSource/repo' },
+                reviewRequests: {
+                  pageInfo: { hasNextPage: false },
+                  nodes: [{ requestedReviewer: { login: 'me' } }],
+                },
+              },
+            ],
+          },
+        },
+      })}'\n`,
+    );
+    await chmod(gh, 0o755);
+    await writeFile(
+      configFile,
+      JSON.stringify({
+        boards: [{ uuid: 'b1', path: board, updatedAt: '' }],
+        extensions: { 'github-assignment': { boardUuid: 'b1' } },
+      }),
+    );
+    const env = {
+      ...environment(join(root, 'data.jsonl'), configFile),
+      PATH: `${root}:${process.env.PATH ?? ''}`,
+    };
+    const invoke = () =>
+      run(process.execPath, ['--experimental-strip-types', cli, 'triage'], { env });
+    const { stdout } = await invoke();
+    assert.match(stdout, new RegExp(`moved: ${join(board, 'existing.md')}`));
+    assert.match(stdout, /Review: repo#12 Review this/);
+    assert.match(stdout, /Review: repo#13 Review that/);
+    assert.match(stdout, /created: .*review-repo-13-review-that\.md/);
+    assert.match(await readFile(join(board, 'existing.md'), 'utf8'), /column: Triage/);
+    const again = await invoke();
+    assert.match(again.stdout, /already in Triage: .*existing\.md/);
+    assert.doesNotMatch(again.stdout, /created:/);
+    await rm(gh);
+    const failure = await runFailure(['triage'], { ...env, PATH: root });
+    assert.match(failure.stderr, /spawn gh ENOENT/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 test('status lists tracked boards and their current event counts', async () => {
   const root = await mkdtemp(join(tmpdir(), 'mdello-cli-'));

@@ -8,7 +8,9 @@ import {
   backfillAssociations,
   isBackfillHarness,
 } from './backfill.ts';
-import { DEFAULT_CONFIG_FILE, loadBoards } from './boards.ts';
+import { DEFAULT_CONFIG_FILE, loadBoards, loadConfig } from './boards.ts';
+import { createDebugLogger } from './debug.ts';
+import { runExtension } from './extensions.ts';
 import {
   INTEGRATIONS,
   type Integration,
@@ -60,6 +62,7 @@ function helpText(): string {
     ...columns([
       ['serve', 'Start the sidecar and receive harness hooks (default command)'],
       ['status', 'List tracked boards and their event counts'],
+      ['triage', 'Run configured triage sources and report each item and card'],
       [`backfill [${harnessList}]`, 'Rebuild associations from stored sessions, then exit'],
       ['purge', 'Clear association history (alias: reset)'],
       [`install [${integrationList}]`, 'Install the launch agent and harness hooks'],
@@ -98,6 +101,42 @@ function harnessArgument(value: string | undefined): string[] | null {
 }
 
 switch (command) {
+  case 'triage': {
+    if (process.argv[3]) {
+      fail('triage');
+      break;
+    }
+    const [config, boards] = await Promise.all([loadConfig(configFile), loadBoards(configFile)]);
+    const extensions = config.extensions;
+    const entries = extensions && typeof extensions === 'object' ? Object.entries(extensions) : [];
+    if (!entries.length) console.log('No configured triage sources.');
+    for (const [name, settings] of entries) {
+      if (
+        (name !== 'github-assignment' && name !== 'jira-assignment') ||
+        !settings ||
+        typeof settings !== 'object'
+      ) {
+        console.log(`${name}: skipped (unknown source or invalid settings)`);
+        continue;
+      }
+      const source = settings as Record<string, unknown>;
+      if (!boards.some((board) => board.uuid === source.boardUuid)) {
+        console.log(`${name}: skipped (board not registered)`);
+        continue;
+      }
+      console.log(`${name} (${String(source.boardUuid)}):`);
+      await runExtension(
+        name,
+        source,
+        { boards, githubPath: 'gh', jiraPath: 'jira', debug: createDebugLogger() },
+        ({ item, cards }) => {
+          console.log(`  ${item.title}`);
+          for (const { path, action } of cards) console.log(`    ${action}: ${path}`);
+        },
+      );
+    }
+    break;
+  }
   case 'backfill': {
     const harnesses = harnessArgument(process.argv[3]);
     if (!harnesses || process.argv[4]) {

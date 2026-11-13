@@ -56,12 +56,15 @@ Errors use `{ error: string }`. Invalid requests return `400`, internal delete f
 mdello-companion serve                        Start sidecar (default command)
 mdello-companion backfill [claude|opencode|pi] Rebuild one harness from its sessions, or all, then exit
 mdello-companion status                       List tracked boards and event counts
+mdello-companion triage                       Run configured triage sources and report each item/card
 mdello-companion purge                        Clear association history
 mdello-companion reset                        Alias for purge
 mdello-companion install [macos|pi|opencode|claude]    Install integrations, or one of them
 mdello-companion uninstall [macos|pi|opencode|claude]  Remove integrations, or one of them
 mdello-companion help                         Print commands and configuration (aliases -h, --help)
 ```
+
+`triage` runs the configured GitHub and Jira extensions immediately, using `gh` and `jira` on `PATH`. It creates or moves cards just like scheduled triage and prints every discovered PR/ticket, associated card path, and outcome (`created`, `moved`, `already in Triage`, or `linked`). A missing executable or failed fetch exits with an error.
 
 `help` builds its command and environment lists from `BACKFILL_SOURCES`, `INTEGRATIONS`, and the default port and file paths, so it cannot drift from the code. An unknown command prints the same text on stderr and exits `1`.
 
@@ -122,7 +125,7 @@ Restart the companion after changing these settings.
 
 ### Extensions
 
-`extensions` in `companion.json` schedules triage sources. Each one runs once when `serve` starts, then on its cron `schedule` (5-part, via `croner`). It creates a card with `column: Triage` on its `boardUuid` board for every item that no active root card mentions. The client shows `Triage` as a virtual column. Extensions only create cards. They never edit, move, or archive existing ones, and new files are written exclusive-create so a filename collision gets a `-1`, `-2` suffix. Archived cards don't count as references, so an archived item that is still assigned comes back. Overlapping runs of one extension are skipped. A failed CLI or unexpected output skips that run, writes nothing, and logs to stderr. Unknown names, unregistered boards, invalid schedules, and missing executables are skipped.
+`extensions` in `companion.json` schedules triage sources. Each one runs once when `serve` starts, then on its cron `schedule` (5-part, via `croner`). It creates a card with `column: Triage` on its `boardUuid` board for every item that no active root card mentions. The client shows `Triage` as a virtual column. GitHub review requests move any active card already referencing the PR to `Triage`, preserving its other fields and body. Jira assignments leave existing cards alone. New files are written exclusive-create so a filename collision gets a `-1`, `-2` suffix. Archived cards don't count as references, so an archived item that is still assigned comes back. Overlapping runs of one extension are skipped. A failed CLI or unexpected output skips that run, writes nothing, and logs to stderr. Unknown names, unregistered boards, invalid schedules, and missing executables are skipped.
 
 | Name | Source | Bound when a card contains |
 | --- | --- | --- |

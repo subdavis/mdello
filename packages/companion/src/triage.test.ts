@@ -170,6 +170,58 @@ test('creates Triage cards only for unbound items, ignoring archive', async () =
   assert.equal(data.created, '2026-11-02T12:00:00.000Z');
   assert.match(String(data.uuid), /^[0-9a-f-]{36}$/);
   assert.ok(body.trimStart().startsWith(PR.url));
+  assert.equal(
+    await readFile(join(board, 'existing.md'), 'utf8'),
+    '---\ncolumn: Todo\n---\n\nWorking on COSCA-149\n',
+  );
+});
+
+test('GitHub review requests move existing cards to Triage without changing their content', async () => {
+  const board = await tempBoard();
+  const path = join(board, 'existing.md');
+  await writeFile(
+    path,
+    `---\nuuid: existing-id\ntitle: Existing task\ncolumn: Doing\n---\n\nCheck ${PR.url}\n`,
+  );
+  const boards = [{ uuid: 'b1', path: board, updatedAt: '' }];
+  const context = {
+    boards,
+    debug: () => {},
+    githubPath: 'gh',
+    githubRun: async () => ({ stdout: JSON.stringify(searchResult([review(PR, 'user')])) }),
+  };
+
+  assert.deepEqual(await runExtension('github-assignment', { boardUuid: 'b1' }, context), []);
+  const moved = await readFile(path, 'utf8');
+  const { data, body } = parseFile(moved);
+  assert.equal(data.column, 'Triage');
+  assert.equal(data.uuid, 'existing-id');
+  assert.equal(data.title, 'Existing task');
+  assert.equal(body.trimStart(), `Check ${PR.url}\n`);
+  assert.deepEqual(await runExtension('github-assignment', { boardUuid: 'b1' }, context), []);
+  assert.equal(await readFile(path, 'utf8'), moved);
+  assert.equal((await readdir(board)).filter((name) => name.endsWith('.md')).length, 1);
+});
+
+test('Jira triage reports linked cards without moving them', async () => {
+  const board = await tempBoard();
+  const path = join(board, 'issue.md');
+  await writeFile(path, '---\ncolumn: Doing\n---\n\nCOSCA-149\n');
+  const outcomes: Array<{ title: string; cards: Array<{ path: string; action: string }> }> = [];
+  await runExtension(
+    'jira-assignment',
+    { boardUuid: 'b1', server: 'https://jira.example' },
+    {
+      boards: [{ uuid: 'b1', path: board, updatedAt: '' }],
+      debug: () => {},
+      jiraPath: 'jira',
+      jiraRun: async () => ({ stdout: JSON.stringify([ISSUE]) }),
+    },
+    ({ item, cards }) => outcomes.push({ title: item.title, cards }),
+  );
+  assert.equal(outcomes.length, 1);
+  assert.deepEqual(outcomes[0].cards, [{ path, action: 'linked' }]);
+  assert.match(await readFile(path, 'utf8'), /column: Doing/);
 });
 
 test('never overwrites a colliding filename', async () => {
