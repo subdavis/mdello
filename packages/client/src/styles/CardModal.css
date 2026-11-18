@@ -164,6 +164,11 @@
   margin: 0;
 }
 
+.sidebar-note {
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+
 .sidebar-heading-note {
   margin-left: var(--space-1);
   color: var(--muted);

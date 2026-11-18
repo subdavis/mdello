@@ -34,6 +34,12 @@ export interface Card {
   data: Frontmatter;
 }
 
+/** Companion-owned list of triage sources still referencing the card. */
+export function triageSources(card: Pick<Card, 'data'>): string[] {
+  const value = card.data.triageSources;
+  return Array.isArray(value) ? value.map(String) : [];
+}
+
 export interface Column {
   name: string;
   cards: Card[];

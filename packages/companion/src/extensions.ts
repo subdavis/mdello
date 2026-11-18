@@ -65,6 +65,7 @@ export async function runExtension(
   const created = await triageItems(
     board.path,
     await fetching,
+    name,
     undefined,
     name === 'github-assignment',
     report,

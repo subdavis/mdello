@@ -14,7 +14,7 @@ import { showToast } from '../composables/useToast';
 import { formatRelativeStamp, formatStamp } from '../format';
 import { useNow } from '../composables/useNow';
 import type { CardAttachment } from '../fs/attachments';
-import type { Card } from '../fs/board';
+import { type Card, triageSources as readTriageSources } from '../fs/board';
 import { markdownOutline, renderMarkdown, setTaskChecked } from '../markdown';
 import type { GitHubLinkDetails, JiraLinkDetails } from '../references';
 import Agents from './Agents.vue';
@@ -75,8 +75,10 @@ const enrichedAt = ref<string>();
 const preview = ref<HTMLElement | null>(null);
 const outline = computed(() => markdownOutline(props.card.body));
 const associations = useCompanion(board.rootPath, props.card);
+const triageSources = computed(() => readTriageSources(props.card));
 const hasSidebar = computed(
   () =>
+    triageSources.value.length > 0 ||
     (board.companionEnabled.value && associations.value.length > 0) ||
     props.card.references.length > 0 ||
     outline.value.length > 0,
@@ -515,6 +517,12 @@ function onEscape(): void {
         />
         <div class="card-sidebar-content">
           <dl class="sidebar-meta">
+            <template v-if="triageSources.length">
+              <dt>Triage</dt>
+              <dd class="sidebar-note">
+                Still open in {{ triageSources.join(', ') }}.
+              </dd>
+            </template>
             <Agents :card="card" />
             <template v-if="card.references.length">
               <dt class="sidebar-heading">

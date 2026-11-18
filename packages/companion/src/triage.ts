@@ -3,6 +3,8 @@ import { resolve } from 'node:path';
 import { parseFile, serializeFile } from '@mdello/common/frontmatter';
 
 export const TRIAGE_COLUMN = 'Triage';
+/** Frontmatter list of sources whose current items reference the card. */
+export const TRIAGE_SOURCES = 'triageSources';
 const MAX_SLUG = 60;
 const MAX_COLLISIONS = 100;
 
@@ -56,15 +58,25 @@ async function writeNewCard(boardPath: string, slug: string, text: string): Prom
   throw new Error(`No free filename for ${slug}`);
 }
 
-/** Creates unbound Triage cards; optionally moves cards already referencing an item. */
+function readSources(data: Record<string, unknown>): string[] {
+  const value = data[TRIAGE_SOURCES];
+  return Array.isArray(value) ? value.map(String) : [];
+}
+
+/**
+ * Creates unbound Triage cards; optionally moves cards already referencing an item.
+ * Records `source` in each bound card's `triageSources` and drops it from cards no longer bound.
+ */
 export async function triageItems(
   boardPath: string,
   items: TriageItem[],
+  source: string,
   now: () => Date = () => new Date(),
   moveExisting = false,
   report?: (outcome: TriageOutcome) => void,
 ): Promise<string[]> {
   const created: string[] = [];
+  const bound = new Set<string>();
   for (const item of items) {
     // Re-read per item so a card created meanwhile (by us or the app) still dedups.
     const cards = await activeCards(boardPath);
@@ -78,10 +90,12 @@ export async function triageItems(
             ? 'already in Triage'
             : 'moved'
           : 'linked';
-        if (action === 'moved') {
-          data.column = TRIAGE_COLUMN;
-          await writeFile(path, serializeFile(data, body));
-        }
+        bound.add(path);
+        const sources = readSources(data);
+        const unsourced = !sources.includes(source);
+        if (unsourced) data[TRIAGE_SOURCES] = [...sources, source];
+        if (action === 'moved') data.column = TRIAGE_COLUMN;
+        if (unsourced || action === 'moved') await writeFile(path, serializeFile(data, body));
         outcomes.push({ path, action });
       }
       report?.({ item, cards: outcomes });
@@ -92,10 +106,22 @@ export async function triageItems(
       title: item.title,
       column: TRIAGE_COLUMN,
       created: now().toISOString(),
+      [TRIAGE_SOURCES]: [source],
     };
     const path = await writeNewCard(boardPath, slugify(item.title), serializeFile(data, item.body));
     created.push(path);
+    bound.add(path);
     report?.({ item, cards: [{ path, action: 'created' }] });
+  }
+  for (const { path, text } of await activeCards(boardPath)) {
+    if (bound.has(path)) continue;
+    const { data, body } = parseFile(text);
+    const sources = readSources(data);
+    if (!sources.includes(source)) continue;
+    const remaining = sources.filter((entry) => entry !== source);
+    if (remaining.length) data[TRIAGE_SOURCES] = remaining;
+    else delete data[TRIAGE_SOURCES];
+    await writeFile(path, serializeFile(data, body));
   }
   return created;
 }

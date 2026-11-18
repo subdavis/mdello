@@ -6,7 +6,7 @@ import { tagStyle } from '../composables/useLabels';
 import { useBoard } from '../composables/useBoard';
 import { formatRelativeStamp, formatStamp } from '../format';
 import { useNow } from '../composables/useNow';
-import type { Card } from '../fs/board';
+import { type Card, triageSources as readTriageSources } from '../fs/board';
 import IconGlyph from './IconGlyph.vue';
 import { useBoardExtras } from '../composables/useCardExtras.ts';
 
@@ -21,6 +21,15 @@ const status = computed(() => aggregateStatus(associations.value));
 const statusLabel = computed(() => status.value?.replaceAll('_', ' '));
 const isDragging = computed(() => drag.dragging.value?.id === props.card.id);
 const extras = useBoardExtras(board, props.card.name);
+
+const TRIAGE_TAG = 'Triage';
+// Derived from companion-owned frontmatter so users can't remove it by editing tags.
+const triageSources = computed(() => readTriageSources(props.card));
+const displayTags = computed(() =>
+  triageSources.value.length
+    ? [TRIAGE_TAG, ...props.card.tags.filter((tag) => tag !== TRIAGE_TAG)]
+    : props.card.tags,
+);
 
 const referenceRepresentations = computed(() =>
   Object.values(
@@ -62,8 +71,16 @@ const referenceRepresentations = computed(() =>
     />
     <h3 class="card-title">{{ card.title }}</h3>
     <footer class="card-meta">
-      <ul v-if="card.tags.length" class="tags">
-        <li v-for="tag in card.tags" :key="tag" class="tag" :style="tagStyle(tag)">{{ tag }}</li>
+      <ul v-if="displayTags.length" class="tags">
+        <li
+          v-for="tag in displayTags"
+          :key="tag"
+          class="tag"
+          :style="tagStyle(tag)"
+          :title="tag === TRIAGE_TAG && triageSources.length ? `Triage: ${triageSources.join(', ')}` : undefined"
+        >
+          {{ tag }}
+        </li>
       </ul>
       <span class="card-meta-end">
         <span

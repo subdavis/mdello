@@ -161,7 +161,7 @@ test('creates Triage cards only for unbound items, ignoring archive', async () =
     stdout: JSON.stringify([ISSUE]),
   }));
 
-  const created = await triageItems(board, [item, issue, item], NOW);
+  const created = await triageItems(board, [item, issue, item], 'test', NOW);
 
   assert.deepEqual(created, [join(board, 'review-sonar-sca-2561-sca-3340-bound-cpu-use.md')]);
   const { data, body } = parseFile(await readFile(created[0], 'utf8'));
@@ -169,11 +169,30 @@ test('creates Triage cards only for unbound items, ignoring archive', async () =
   assert.equal(data.title, 'Review: sonar-sca#2561 SCA-3340 Bound CPU use');
   assert.equal(data.created, '2026-11-02T12:00:00.000Z');
   assert.match(String(data.uuid), /^[0-9a-f-]{36}$/);
+  assert.deepEqual(data.triageSources, ['test']);
   assert.ok(body.trimStart().startsWith(PR.url));
   assert.equal(
     await readFile(join(board, 'existing.md'), 'utf8'),
-    '---\ncolumn: Todo\n---\n\nWorking on COSCA-149\n',
+    '---\ncolumn: Todo\ntriageSources:\n  - test\n---\n\nWorking on COSCA-149\n',
   );
+});
+
+test('triageSources tracks each source independently and clears when unbound', async () => {
+  const board = await tempBoard();
+  const path = join(board, 'card.md');
+  await writeFile(path, '---\ncolumn: Todo\n---\n\nA-1 and B-1\n');
+  const sources = async () => parseFile(await readFile(path, 'utf8')).data.triageSources;
+  const a = { title: 'A', body: '', bound: /A-1/ };
+  const b = { title: 'B', body: '', bound: /B-1/ };
+
+  await triageItems(board, [a], 'gh', NOW);
+  await triageItems(board, [b], 'jira', NOW);
+  assert.deepEqual(await sources(), ['gh', 'jira']);
+  await triageItems(board, [], 'gh', NOW);
+  assert.deepEqual(await sources(), ['jira']);
+  await triageItems(board, [], 'jira', NOW);
+  assert.equal(await sources(), undefined);
+  assert.equal((await readdir(board)).filter((name) => name.endsWith('.md')).length, 1);
 });
 
 test('GitHub review requests move existing cards to Triage without changing their content', async () => {
@@ -222,12 +241,18 @@ test('Jira triage reports linked cards without moving them', async () => {
   assert.equal(outcomes.length, 1);
   assert.deepEqual(outcomes[0].cards, [{ path, action: 'linked' }]);
   assert.match(await readFile(path, 'utf8'), /column: Doing/);
+  assert.deepEqual(parseFile(await readFile(path, 'utf8')).data.triageSources, ['jira-assignment']);
 });
 
 test('never overwrites a colliding filename', async () => {
   const board = await tempBoard();
   await writeFile(join(board, 'hello.md'), 'unrelated\n');
-  const created = await triageItems(board, [{ title: 'Hello', body: 'x', bound: /nope/ }], NOW);
+  const created = await triageItems(
+    board,
+    [{ title: 'Hello', body: 'x', bound: /nope/ }],
+    'test',
+    NOW,
+  );
   assert.deepEqual(created, [join(board, 'hello-1.md')]);
   assert.equal(await readFile(join(board, 'hello.md'), 'utf8'), 'unrelated\n');
   assert.equal(slugify('  A/B: c!  '), 'a-b-c');
