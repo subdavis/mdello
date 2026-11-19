@@ -525,6 +525,22 @@
   align-self: center;
 }
 
+.github-diff-additions,
+.github-diff-deletions {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.github-diff-additions {
+  color: var(--success-text);
+}
+
+.github-diff-deletions {
+  margin-left: var(--space-1);
+  color: var(--danger-text);
+}
+
 .github-ci .github-ci-icon {
   width: 1em;
   height: 1em;
@@ -540,7 +556,8 @@
   --github-ci-text: var(--warning-text);
 }
 
-.github-ci[data-status="failing"] {
+.github-ci[data-status="failing"],
+.github-review[data-status="changes"] {
   --github-ci-text: var(--danger-text);
 }
 

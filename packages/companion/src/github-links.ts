@@ -9,7 +9,7 @@ const GITHUB_ITEM_URL =
 
 export type GitHubLinkStatus = 'open' | 'closed' | 'merged' | 'draft';
 export type GitHubCiStatus = 'passing' | 'failing' | 'pending' | 'none';
-export type GitHubReviewStatus = 'approved' | 'required';
+export type GitHubReviewStatus = 'approved' | 'required' | 'changes';
 
 export interface GitHubLink {
   url: string;
@@ -20,6 +20,9 @@ export interface GitHubLink {
   /** Finished vs. total checks; only while CI is pending. */
   ciChecks?: { completed: number; total: number };
   reviewStatus?: GitHubReviewStatus;
+  /** Pull requests only. */
+  additions?: number;
+  deletions?: number;
 }
 
 export interface GitHubLinkLookupResult {
@@ -36,6 +39,8 @@ interface CommandResult {
 export type GitHubCommandRunner = (command: string, args: string[]) => Promise<CommandResult>;
 
 interface GitHubView {
+  additions?: unknown;
+  deletions?: unknown;
   isDraft?: unknown;
   number?: unknown;
   reviewDecision?: unknown;
@@ -107,6 +112,7 @@ function ciOf(value: GitHubView): Pick<GitHubLink, 'ciStatus' | 'ciChecks'> {
 const REVIEW_STATUSES: Record<string, GitHubReviewStatus> = {
   APPROVED: 'approved',
   REVIEW_REQUIRED: 'required',
+  CHANGES_REQUESTED: 'changes',
 };
 
 function reviewOf(value: GitHubView): Pick<GitHubLink, 'reviewStatus'> {
@@ -129,6 +135,8 @@ function parseView(stdout: string, requestedUrl: string): GitHubLink {
     number: view.number,
     title: view.title,
     status,
+    ...(typeof view.additions === 'number' && { additions: view.additions }),
+    ...(typeof view.deletions === 'number' && { deletions: view.deletions }),
     ...(activePullRequest && { ...ciOf(view), ...reviewOf(view) }),
   };
 }
@@ -137,7 +145,13 @@ function viewArgs(url: string): string[] {
   const match = GITHUB_ITEM_URL.exec(url);
   if (!match) throw new Error('Invalid GitHub URL');
   return match[3] === 'pull'
-    ? ['pr', 'view', url, '--json', 'isDraft,number,reviewDecision,state,statusCheckRollup,title']
+    ? [
+        'pr',
+        'view',
+        url,
+        '--json',
+        'additions,deletions,isDraft,number,reviewDecision,state,statusCheckRollup,title',
+      ]
     : ['issue', 'view', url, '--json', 'number,state,title'];
 }
 

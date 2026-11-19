@@ -117,6 +117,13 @@
   background: var(--archive-label-bg);
   box-shadow: 0 2px 2px rgb(9 30 66 / 25%);
   font-weight: 650;
+  text-align: center;
+}
+
+.archive-label small {
+  display: block;
+  font-size: var(--font-xs);
+  font-weight: 400;
 }
 
 .archive-dropzone.is-over,

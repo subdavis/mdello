@@ -4,18 +4,17 @@ import googleDocsIcon from './assets/icons/Google-Docs-logo.svg';
 import gitIcon from './assets/icons/Octicons-mark-github.svg';
 import slackIcon from './assets/icons/Slack_icon_2019.svg';
 
-export type ReferenceKind = 'git' | 'jira' | 'slack' | 'figma' | 'google-docs';
+import { findReferenceLinks, type ReferenceKind, type ReferenceLink } from './referenceLinks';
 
-export interface Reference {
-  kind: ReferenceKind;
-  label: string;
-  url: string;
+export type { ReferenceKind };
+
+export interface Reference extends ReferenceLink {
   icon: string;
 }
 
 export type GitHubLinkStatus = 'open' | 'closed' | 'merged' | 'draft';
 export type GitHubCiStatus = 'passing' | 'failing' | 'pending' | 'none';
-export type GitHubReviewStatus = 'approved' | 'required';
+export type GitHubReviewStatus = 'approved' | 'required' | 'changes';
 
 export interface GitHubLinkDetails {
   url: string;
@@ -25,6 +24,8 @@ export interface GitHubLinkDetails {
   ciStatus?: GitHubCiStatus;
   ciChecks?: { completed: number; total: number };
   reviewStatus?: GitHubReviewStatus;
+  additions?: number;
+  deletions?: number;
 }
 
 export interface JiraLinkDetails {
@@ -42,53 +43,7 @@ export const REFERENCE_ICONS: Record<ReferenceKind, string> = {
   'google-docs': googleDocsIcon,
 };
 
-/** Kinds that only ever contribute a single chip, since their labels carry no detail. */
-const SINGLETONS: ReferenceKind[] = ['slack', 'figma', 'google-docs'];
-
-const URL_PATTERN = /https?:\/\/[^\s<>()[\]"'`]+/g;
-
-const GITHUB = /^https?:\/\/(?:www\.)?github\.com\/[^/]+\/([^/]+)\/(?:pull|issues)\/(\d+)/;
-const GITLAB =
-  /^https?:\/\/[^/]*gitlab[^/]*\/(?:[^/]+\/)*([^/]+)\/-\/(?:merge_requests|issues)\/(\d+)/;
-const JIRA = /^https?:\/\/[^/]+\.atlassian\.net\/browse\/([A-Z][A-Z0-9]*-\d+)/;
-const SLACK = /^https?:\/\/[^/]+\.slack\.com\/archives\//;
-const FIGMA = /^https?:\/\/(?:www\.)?figma\.com\//;
-const GOOGLE_DOCS = /^https?:\/\/docs\.google\.com\/document\//;
-
-type Match = Omit<Reference, 'icon'>;
-
-function classify(url: string): Match | null {
-  const git = GITHUB.exec(url) ?? GITLAB.exec(url);
-  if (git) return { kind: 'git', label: `${git[1]}#${git[2]}`, url };
-
-  const jira = JIRA.exec(url);
-  if (jira) return { kind: 'jira', label: jira[1], url };
-
-  if (SLACK.test(url)) return { kind: 'slack', label: 'Slack', url };
-  if (FIGMA.test(url)) return { kind: 'figma', label: 'Figma', url };
-  if (GOOGLE_DOCS.test(url)) return { kind: 'google-docs', label: 'Google Docs', url };
-
-  return null;
-}
-
 /** External references found in a card body, in order of discovery. */
 export function findReferences(body: string): Reference[] {
-  const found: Reference[] = [];
-
-  for (const match of body.matchAll(URL_PATTERN)) {
-    // Trailing punctuation is prose, not part of the link.
-    const reference = classify(match[0].replace(/[.,;:!?]+$/, ''));
-    if (!reference) continue;
-
-    const duplicate = found.some(
-      (existing) =>
-        existing.url === reference.url ||
-        (existing.kind === reference.kind && SINGLETONS.includes(reference.kind)),
-    );
-    if (duplicate) continue;
-
-    found.push({ ...reference, icon: REFERENCE_ICONS[reference.kind] });
-  }
-
-  return found;
+  return findReferenceLinks(body).map((link) => ({ ...link, icon: REFERENCE_ICONS[link.kind] }));
 }

@@ -11,8 +11,13 @@ const ciLabel = computed(() => {
     ? `CI ${ciStatus}: ${ciChecks.completed} of ${ciChecks.total} checks finished`
     : `CI ${ciStatus}`;
 });
-const reviewLabel = computed(() =>
-  props.details.reviewStatus === 'approved' ? 'Review approved' : 'Review required',
+const REVIEW = {
+  approved: { label: 'Review approved', icon: 'check' },
+  required: { label: 'Review required', icon: 'clock' },
+  changes: { label: 'Changes requested', icon: 'close' },
+} as const;
+const hasDiff = computed(
+  () => props.details.additions !== undefined && props.details.deletions !== undefined,
 );
 </script>
 
@@ -28,7 +33,13 @@ const reviewLabel = computed(() =>
     <img class="ref-icon" :src="REFERENCE_ICONS.git" alt="" />
     <span class="enriched-ref-key">#{{ details.number }}</span>
     <span class="enriched-ref-status" :title="details.status">{{ details.status }}</span>
-    <span class="enriched-ref-label">{{ details.title }}</span>
+    <span class="enriched-ref-label"
+      >{{ details.title }}
+      <template v-if="hasDiff"
+        ><span class="github-diff-additions">+{{ details.additions }}</span>
+        <span class="github-diff-deletions">-{{ details.deletions }}</span></template
+      ></span
+    >
     <span class="github-ref-indicators">
       <span
         v-if="details.ciStatus && details.ciStatus !== 'none'"
@@ -52,11 +63,11 @@ const reviewLabel = computed(() =>
         v-if="details.reviewStatus"
         class="github-ci github-review"
         :data-status="details.reviewStatus"
-        :aria-label="reviewLabel"
-        :title="reviewLabel"
+        :aria-label="REVIEW[details.reviewStatus].label"
+        :title="REVIEW[details.reviewStatus].label"
       >
         <IconGlyph
-          :name="details.reviewStatus === 'approved' ? 'check' : 'clock'"
+          :name="REVIEW[details.reviewStatus].icon"
           class="github-ci-icon"
           aria-hidden="true"
         />

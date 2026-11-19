@@ -35,13 +35,21 @@ test('fetches GitHub links through gh and retains partial results', async () => 
         number: Number(args[2]?.split('/').at(-1)),
         title: args[0] === 'pr' ? 'Add feature' : 'Fix bug',
         state: args[0] === 'pr' ? 'MERGED' : 'OPEN',
+        ...(args[0] === 'pr' && { additions: 10, deletions: 3 }),
       }),
     };
   });
 
   assert.deepEqual(result, {
     items: [
-      { url: urls[0], number: 12, title: 'Add feature', status: 'merged' },
+      {
+        url: urls[0],
+        number: 12,
+        title: 'Add feature',
+        status: 'merged',
+        additions: 10,
+        deletions: 3,
+      },
       { url: urls[1], number: 34, title: 'Fix bug', status: 'open' },
     ],
     errors: [{ url: urls[2], error: 'lookup_failed' }],
@@ -53,7 +61,7 @@ test('fetches GitHub links through gh and retains partial results', async () => 
       'view',
       urls[0],
       '--json',
-      'isDraft,number,reviewDecision,state,statusCheckRollup,title',
+      'additions,deletions,isDraft,number,reviewDecision,state,statusCheckRollup,title',
     ],
   ]);
 });
@@ -121,7 +129,7 @@ test('reports review approval only for active pull requests', async () => {
 
   assert.deepEqual(
     items.items.map(({ reviewStatus }) => reviewStatus),
-    ['approved', 'required', undefined, undefined, undefined],
+    ['approved', 'required', 'changes', undefined, undefined],
   );
 });
 

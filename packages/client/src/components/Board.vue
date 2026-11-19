@@ -3,7 +3,7 @@ import { computed, onUnmounted, ref } from 'vue';
 import { useBoard } from '../composables/useBoard';
 import { useDrag } from '../composables/useDrag';
 import { markdownFile, useMarkdownImport } from '../composables/useMarkdownImport';
-import { ARCHIVE_DIR, type Card } from '../fs/board';
+import { ARCHIVE_DIR, type Card, triageSources } from '../fs/board';
 import CardModal from './CardModal.vue';
 import CardTile from './Card.vue';
 import Column from './Column.vue';
@@ -44,6 +44,10 @@ function onMergeHover(destination: Card | null): void {
 const archiveDropzone = ref<HTMLElement | null>(null);
 const archiveWarping = ref(false);
 const archiveOver = computed(() => drag.target.value?.column === ARCHIVE_DIR);
+const archiveBlocked = computed(() => {
+  const card = drag.dragging.value && findCard(drag.dragging.value.id);
+  return !!card && triageSources(card).length > 0;
+});
 const isEmpty = computed(
   () => board.configReady.value && !board.loading.value && board.columns.value.length === 0,
 );
@@ -155,8 +159,11 @@ function onDragend(): void {
 
 function onArchiveDragover(event: DragEvent): void {
   clearMergeHover();
-  if (markdownImport.draggingMarkdown.value) drag.clearTarget();
-  else drag.over(event, ARCHIVE_DIR, 0);
+  // Not calling preventDefault refuses the drop.
+  if (markdownImport.draggingMarkdown.value || archiveBlocked.value) {
+    drag.clearTarget();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'none';
+  } else drag.over(event, ARCHIVE_DIR, 0);
 }
 </script>
 
@@ -203,7 +210,10 @@ function onArchiveDragover(event: DragEvent): void {
         @dragover="onArchiveDragover"
       >
         <span class="archive-vortex" aria-hidden="true" />
-        <span class="archive-label">Archive</span>
+        <span v-if="archiveBlocked" class="archive-label">
+          🚫 Archive Blocked<small>Clear triage first</small>
+        </span>
+        <span v-else class="archive-label">Archive</span>
       </div>
     </section>
 
