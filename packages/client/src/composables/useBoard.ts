@@ -524,6 +524,7 @@ export function useBoard() {
     queueSave,
     renameTag,
     flushCard,
+    flushPending,
 
     async addAttachments(card: Card, files: File[]): Promise<number> {
       if (!files.length || !root.value || locked.value) return 0;

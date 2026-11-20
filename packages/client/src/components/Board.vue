@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref } from 'vue';
+import { computed, onUnmounted, ref, watch } from 'vue';
 import { useBoard } from '../composables/useBoard';
 import { useDrag } from '../composables/useDrag';
 import { markdownFile, useMarkdownImport } from '../composables/useMarkdownImport';
@@ -8,6 +8,10 @@ import CardModal from './CardModal.vue';
 import CardTile from './Card.vue';
 import Column from './Column.vue';
 import Overlay from './Overlay.vue';
+import SearchSidebar from './SearchSidebar.vue';
+
+const props = defineProps<{ searchOpen: boolean; searchFocusRequest: number }>();
+const emit = defineEmits<{ closeSearch: [] }>();
 
 const board = useBoard();
 const drag = useDrag();
@@ -48,12 +52,23 @@ const archiveBlocked = computed(() => {
   const card = drag.dragging.value && findCard(drag.dragging.value.id);
   return !!card && triageSources(card).length > 0;
 });
+const allCards = computed(() => board.columns.value.flatMap((column) => column.cards));
+const searchMounted = ref(false);
+watch(
+  () => props.searchOpen,
+  (open) => {
+    if (!open) return;
+    searchMounted.value = true;
+    void board.flushPending();
+  },
+  { immediate: true },
+);
 const isEmpty = computed(
   () => board.configReady.value && !board.loading.value && board.columns.value.length === 0,
 );
 
 function findCard(id: string): Card | undefined {
-  return board.columns.value.flatMap((column) => column.cards).find((card) => card.id === id);
+  return allCards.value.find((card) => card.id === id);
 }
 
 function playArchiveWarp(
@@ -179,64 +194,74 @@ function onArchiveDragover(event: DragEvent): void {
     </button>
   </div>
 
-  <!-- .self: gaps and padding only. Dragovers bubbling up from a column or archive
-       have already set a target and must not be cleared here. -->
-  <div
-    v-else
-    class="board"
-    @dragover.self="clearMergeHover(); drag.clearTarget()"
-    @dragleave.self="clearMergeHover(); drag.clearTarget()"
-    @drop.prevent="onDrop"
-    @dragend="onDragend"
-  >
-    <Column
-      v-for="(column, index) in board.columns.value"
-      :key="column.name"
-      :column="column"
-      :index="index"
-      @open="openCard = $event"
-      @add="(target, title) => board.addCard(target, title)"
-      @rename="(target, label) => board.renameColumn(target, label)"
-      @archive="(target) => board.archiveColumn(target)"
-      @hover="(dir, index) => board.previewColumnOrder(dir, index)"
-      @merge-hover="onMergeHover"
+  <div v-else class="board-shell">
+    <!-- Mounted on first open; v-show inside keeps query, toggles, and results across closes. -->
+    <SearchSidebar
+      v-if="searchMounted"
+      :cards="allCards"
+      :open="searchOpen"
+      :focus-request="searchFocusRequest"
+      @close="emit('closeSearch')"
+      @select="openCard = $event"
     />
-
-    <section class="column archive-column">
-      <div
-        ref="archiveDropzone"
-        class="archive-dropzone"
-        :class="{ 'is-over': archiveOver, 'is-warping': archiveWarping }"
-        @dragover="onArchiveDragover"
-      >
-        <span class="archive-vortex" aria-hidden="true" />
-        <span v-if="archiveBlocked" class="archive-label">
-          🚫 Archive Blocked<small>Clear triage first</small>
-        </span>
-        <span v-else class="archive-label">Archive</span>
-      </div>
-    </section>
-
-    <CardModal v-if="openCard" :card="openCard" @close="openCard = null" />
-    <Overlay
-      v-if="mergePair"
-      panel-class="merge-confirm"
-      label="Merge cards"
-      place="center"
-      @close="mergePair = null"
-      @escape="mergePair = null"
+    <!-- .self: gaps and padding only. Dragovers bubbling up from a column or archive
+         have already set a target and must not be cleared here. -->
+    <div
+      class="board"
+      @dragover.self="clearMergeHover(); drag.clearTarget()"
+      @dragleave.self="clearMergeHover(); drag.clearTarget()"
+      @drop.prevent="onDrop"
+      @dragend="onDragend"
     >
-      <h2>Merge cards?</h2>
-      <div class="merge-confirm-cards" role="group" aria-label="Source card merges into destination card">
-        <CardTile :card="mergePair.source" preview />
-        <span aria-hidden="true">→</span>
-        <CardTile :card="mergePair.destination" preview />
-      </div>
-      <div class="merge-confirm-actions">
-        <button type="button" @click="board.mergeCard(mergePair.source, mergePair.destination); mergePair = null">Merge</button>
-        <button type="button" class="primary" @click="mergePair = null">Cancel</button>
-      </div>
-    </Overlay>
+      <Column
+        v-for="(column, index) in board.columns.value"
+        :key="column.name"
+        :column="column"
+        :index="index"
+        @open="openCard = $event"
+        @add="(target, title) => board.addCard(target, title)"
+        @rename="(target, label) => board.renameColumn(target, label)"
+        @archive="(target) => board.archiveColumn(target)"
+        @hover="(dir, index) => board.previewColumnOrder(dir, index)"
+        @merge-hover="onMergeHover"
+      />
+  
+      <section class="column archive-column">
+        <div
+          ref="archiveDropzone"
+          class="archive-dropzone"
+          :class="{ 'is-over': archiveOver, 'is-warping': archiveWarping }"
+          @dragover="onArchiveDragover"
+        >
+          <span class="archive-vortex" aria-hidden="true" />
+          <span v-if="archiveBlocked" class="archive-label">
+            🚫 Archive Blocked<small>Clear triage first</small>
+          </span>
+          <span v-else class="archive-label">Archive</span>
+        </div>
+      </section>
+  
+      <CardModal v-if="openCard" :card="openCard" @close="openCard = null" />
+      <Overlay
+        v-if="mergePair"
+        panel-class="merge-confirm"
+        label="Merge cards"
+        place="center"
+        @close="mergePair = null"
+        @escape="mergePair = null"
+      >
+        <h2>Merge cards?</h2>
+        <div class="merge-confirm-cards" role="group" aria-label="Source card merges into destination card">
+          <CardTile :card="mergePair.source" preview />
+          <span aria-hidden="true">→</span>
+          <CardTile :card="mergePair.destination" preview />
+        </div>
+        <div class="merge-confirm-actions">
+          <button type="button" @click="board.mergeCard(mergePair.source, mergePair.destination); mergePair = null">Merge</button>
+          <button type="button" class="primary" @click="mergePair = null">Cancel</button>
+        </div>
+      </Overlay>
+    </div>
   </div>
 </template>
 

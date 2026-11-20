@@ -17,6 +17,13 @@ const draftColumn = ref('');
 const columnInput = ref<HTMLInputElement | null>(null);
 const switching = ref(false);
 const settingsOpen = ref(false);
+const searchOpen = ref(false);
+const searchFocusRequest = ref(0);
+
+function openSearch(): void {
+  searchOpen.value = true;
+  searchFocusRequest.value += 1;
+}
 
 async function startAddingColumn(): Promise<void> {
   addingColumn.value = true;
@@ -80,11 +87,18 @@ async function onDrop(event: DragEvent): Promise<void> {
   if (await board.setBackground(file)) showToast('Background updated');
 }
 
-/** The shortcut the panel imitates; on a board app, print is the lesser feature. */
 function onKeydown(event: KeyboardEvent): void {
-  if (event.key !== 'p' || event.altKey || !(event.metaKey || event.ctrlKey)) return;
-  event.preventDefault();
-  switching.value = !switching.value;
+  if (event.altKey || !(event.metaKey || event.ctrlKey)) return;
+  const key = event.key.toLowerCase();
+  // Ctrl/Cmd+F and Ctrl/Cmd+Shift+F both open board search instead of browser find.
+  if (key === 'f' && board.access.value.state === 'ready' && !board.locked.value) {
+    event.preventDefault();
+    openSearch();
+  } else if (key === 'p' && !event.shiftKey) {
+    // The shortcut the panel imitates; on a board app, print is the lesser feature.
+    event.preventDefault();
+    switching.value = !switching.value;
+  }
 }
 
 onMounted(async () => {
@@ -119,6 +133,7 @@ onBeforeUnmount(() => {
     </button>
     <span class="spacer" />
     <template v-if="board.access.value.state === 'ready' && !board.locked.value">
+      <button type="button" title="Search cards (Ctrl+F)" @click="openSearch">Search</button>
       <form v-if="addingColumn" class="add-column-form" @submit.prevent="submitColumn">
         <input
           ref="columnInput"
@@ -175,7 +190,12 @@ onBeforeUnmount(() => {
       <button type="button" class="primary" @click="board.grant()">Reconnect</button>
     </div>
 
-    <Board v-else />
+    <Board
+      v-else
+      :search-open="searchOpen"
+      :search-focus-request="searchFocusRequest"
+      @close-search="searchOpen = false"
+    />
   </main>
 
   <BoardSwitcher v-if="switching" @close="switching = false" />
