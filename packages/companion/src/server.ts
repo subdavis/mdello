@@ -113,6 +113,13 @@ interface AssociationContext {
   presentAssociations: PresentAssociations;
 }
 
+// Agents in a tab or workspace with these names coordinate other agents and never bind to cards.
+const RESERVED_AGENT_NAMES = new Set(['orchestrator', 'control plane']);
+const isReservedAgent = ({ herdrWorkspace, herdrTab }: Association) =>
+  [herdrWorkspace, herdrTab].some(
+    (name) => name && RESERVED_AGENT_NAMES.has(name.trim().toLowerCase()),
+  );
+
 async function writeBoardSnapshots(
   clients: Map<ServerResponse, string>,
   associations: Map<string, Association>,
@@ -256,7 +263,7 @@ async function recordAssociation(
   clients: Map<ServerResponse, string>,
   boards: BoardRegistration[],
   presentAssociations: PresentAssociations,
-): Promise<Association | 'unknown_card' | 'invalid'> {
+): Promise<Association | 'unknown_card' | 'reserved_agent' | 'invalid'> {
   const requestedPath = input.markdownPath ?? input.cardPath;
   const card =
     typeof requestedPath === 'string' ? await resolveCard(requestedPath, boards) : undefined;
@@ -281,6 +288,10 @@ async function recordAssociation(
     association.sessionFile = previous.sessionFile;
   }
   const [live] = await presentAssociations([association], true);
+  if (!live) {
+    debug('association ignored', { sessionId: association.sessionId, reason: 'reserved_agent' });
+    return 'reserved_agent';
+  }
   const labels = live.herdrWorkspace ? live : previous;
   if (labels?.herdrWorkspace && labels.herdrTab) {
     association.herdrWorkspace = labels.herdrWorkspace;
@@ -335,8 +346,8 @@ async function handleAssociationPost(
       boards,
       presentAssociations,
     );
-    if (result === 'unknown_card') {
-      sendJson(response, 202, { ignored: true, reason: 'unknown_card' });
+    if (result === 'unknown_card' || result === 'reserved_agent') {
+      sendJson(response, 202, { ignored: true, reason: result });
       return;
     }
     if (result === 'invalid') {
@@ -777,12 +788,14 @@ export async function createCompanionServer(options: CompanionOptions = {}): Pro
     );
     const labeled = caches.reduce((current, cache) => cache.present(current), plain);
     // Closed sessions are gone from the terminal; fall back to where they last ran.
-    return labeled.map((entry, index) => {
-      const { herdrWorkspace, herdrTab } = entries[index];
-      return entry.herdrWorkspace || entry.status !== 'closed' || !herdrWorkspace || !herdrTab
-        ? entry
-        : { ...entry, herdrWorkspace, herdrTab };
-    });
+    return labeled
+      .map((entry, index) => {
+        const { herdrWorkspace, herdrTab } = entries[index];
+        return entry.herdrWorkspace || entry.status !== 'closed' || !herdrWorkspace || !herdrTab
+          ? entry
+          : { ...entry, herdrWorkspace, herdrTab };
+      })
+      .filter((entry) => !isReservedAgent(entry));
   };
   const herdrEnabled = Boolean(focusTerminal);
   const githubEnabled = Boolean(githubPath);

@@ -298,6 +298,82 @@ test('discovers herdr from the active PATH when no path is configured', async ()
   }
 });
 
+test('never binds cards to reserved Orchestrator or Control Plane agents', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mdello-server-'));
+  const boardPath = join(root, 'board');
+  const cardPath = join(boardPath, 'card.md');
+  await mkdir(boardPath);
+  await writeFile(cardPath, '---\nuuid: card-a\n---\n');
+  const companion = await createCompanionServer({
+    port: 0,
+    dataFile: join(root, 'companion.jsonl'),
+    configFile: await writeTerminals(root, ['herdr']),
+    herdrPath: '/usr/local/bin/herdr',
+    environment: {},
+    herdrRun: async (_command, args) => {
+      const result =
+        args[0] === 'agent'
+          ? {
+              agents: [
+                { agent_session: { value: 's-tab' }, tab_id: 't1', workspace_id: 'w1' },
+                { agent_session: { value: 's-space' }, tab_id: 't2', workspace_id: 'w2' },
+                { agent_session: { value: 's-ok' }, tab_id: 't3', workspace_id: 'w1' },
+              ],
+            }
+          : args[0] === 'tab'
+            ? {
+                tabs: [
+                  { tab_id: 't1', label: 'orchestrator' },
+                  { tab_id: 't2', label: 'Main' },
+                  { tab_id: 't3', label: 'Main' },
+                ],
+              }
+            : {
+                workspaces: [
+                  { workspace_id: 'w1', label: 'Frontend' },
+                  { workspace_id: 'w2', label: 'Control Plane' },
+                ],
+              };
+      return { stdout: JSON.stringify({ result }) };
+    },
+  });
+  try {
+    await registerBoard(companion.url, 'board-a', boardPath);
+    const post = (sessionFile: string) =>
+      fetch(`${companion.url}/associations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cardPath,
+          harness: 'pi',
+          sessionId: sessionFile,
+          sessionFile,
+          status: 'running',
+        }),
+      });
+    assert.deepEqual(await (await post('s-tab')).json(), {
+      ignored: true,
+      reason: 'reserved_agent',
+    });
+    assert.deepEqual(await (await post('s-space')).json(), {
+      ignored: true,
+      reason: 'reserved_agent',
+    });
+    await post('s-ok');
+
+    const listed = (await (await fetch(`${companion.url}/associations`)).json()) as Record<
+      string,
+      unknown
+    >[];
+    assert.deepEqual(
+      listed.map((a) => a.sessionId),
+      ['s-ok'],
+    );
+  } finally {
+    await companion.close();
+  }
+});
+
 test('returns transient Herdr labels for a resolvable session', async () => {
   const root = await mkdtemp(join(tmpdir(), 'mdello-server-'));
   const boardPath = join(root, 'board');

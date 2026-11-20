@@ -29,6 +29,8 @@ interface Association {
 
 Identity is `(cardUuid, harness, sessionId)`. Card UUIDs are global, so associations survive renames and moves between registered boards. `boardUuid` and `cardPath` describe the card's current location and filter each board's event stream; paths are also a legacy identity fallback. A session may associate with multiple cards, and a card may associate with multiple sessions. Companion accepts only active, direct-child cards with UUIDs from registered boards.
 
+Reserved agents never bind: a session whose Herdr workspace or tab is named `Orchestrator` or `Control Plane` (case-insensitive) is ignored on `POST` (`202`, `{ ignored: true, reason: "reserved_agent" }`) and hidden from every read and stream, including bindings recorded before the rename.
+
 ## HTTP API
 
 Default endpoint: `http://127.0.0.1:51618`. JSON request bodies are limited to 64 KiB. The server accepts only loopback `Host` values. Browser-facing routes allow loopback origins plus the configured `webOrigin`, return matching CORS headers, and reject other `Origin` or `Referer` values with `403`. Requests without browser source headers remain available to local clients.
