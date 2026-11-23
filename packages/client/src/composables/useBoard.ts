@@ -425,7 +425,10 @@ export function useBoard() {
         setAccess(picked);
         return;
       }
-      if (picked.state === 'ready' && picked.id === activeId.value) return;
+      // Only a board that actually opened can be skipped; one stuck on permission or the lock
+      // must reload, or re-picking the same folder silently does nothing.
+      const open = access.value.state === 'ready' && !locked.value && config.value !== null;
+      if (open && picked.state === 'ready' && picked.id === activeId.value) return;
 
       await closeBoard();
       setAccess(picked);
