@@ -71,6 +71,11 @@
   background: var(--surface-subtle);
 }
 
+/* The actions' transform traps the menu's z-index; lift the whole row while it's open. */
+.agent-session:has([aria-expanded="true"]) {
+  z-index: var(--z-popover);
+}
+
 .agent-session:hover {
   border-color: var(--line-strong);
   background: var(--surface-hover);
