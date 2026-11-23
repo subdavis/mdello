@@ -332,7 +332,7 @@ watch(
     class="search-sidebar"
     :style="{ width: `${width}px` }"
     aria-label="Search cards"
-    @keydown.esc="emit('close')"
+    @keydown.esc.prevent="emit('close')"
   >
     <div ref="probe" class="search-match search-probe" aria-hidden="true">
       <span class="tag" />

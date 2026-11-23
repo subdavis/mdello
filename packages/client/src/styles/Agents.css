@@ -132,7 +132,11 @@
 
 .agent-session-name {
   grid-column: 2;
-  overflow-wrap: anywhere;
+  min-width: 0;
+  overflow: hidden;
+  font: var(--font-2xs) var(--mono);
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .agent-session-context,

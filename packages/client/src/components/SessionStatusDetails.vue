@@ -14,8 +14,9 @@ const emit = defineEmits<{ activate: [] }>();
 const now = useNow();
 
 const statusLabel = computed(() => props.association.status.replaceAll('_', ' '));
+const sessionName = computed(() => props.association.herdrWorkspace || props.association.herdrTab);
 const displayedSessionLabel = computed(() =>
-  [props.association.harness, props.association.herdrWorkspace, props.association.herdrTab]
+  [props.association.harness, sessionName.value]
     .filter(Boolean)
     .join(': '),
 );
@@ -46,6 +47,6 @@ const lastActive = computed(() => {
         <time :datetime="association.updatedAt" :title="formatStamp(association.updatedAt)">{{ lastActive }}</time>
       </span>
     </span>
-    <span v-if="association.herdrTab" class="agent-session-name">{{ association.herdrTab }}</span>
+    <span v-if="sessionName" class="agent-session-name">{{ sessionName }}</span>
   </button>
 </template>

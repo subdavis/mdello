@@ -42,7 +42,7 @@ function onMergeHover(destination: Card | null): void {
     mergePair.value = { source, destination };
     drag.end();
     mergeTimer = undefined;
-  }, 5000);
+  }, 2000);
 }
 
 const archiveDropzone = ref<HTMLElement | null>(null);

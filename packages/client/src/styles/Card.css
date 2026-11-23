@@ -44,7 +44,7 @@
   stroke-dashoffset: 100;
   rx: var(--radius);
   opacity: 0;
-  animation: merge-charge 3s linear 2s forwards;
+  animation: merge-charge 2s linear forwards;
 }
 
 @keyframes merge-charge {
