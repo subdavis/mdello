@@ -2,6 +2,7 @@
 import { computed, onUnmounted, ref, watch } from 'vue';
 import { useBoard } from '../composables/useBoard';
 import { useDrag } from '../composables/useDrag';
+import { pruneTriageSeen } from '../composables/useTriageSeen';
 import { markdownFile, useMarkdownImport } from '../composables/useMarkdownImport';
 import { ARCHIVE_DIR, type Card, triageSources } from '../fs/board';
 import CardModal from './CardModal.vue';
@@ -42,7 +43,7 @@ function onMergeHover(destination: Card | null): void {
     mergePair.value = { source, destination };
     drag.end();
     mergeTimer = undefined;
-  }, 2000);
+  }, 3000); // 1s hold + 2s charge, matching merge-charge in Card.css
 }
 
 const archiveDropzone = ref<HTMLElement | null>(null);
@@ -53,6 +54,9 @@ const archiveBlocked = computed(() => {
   return !!card && triageSources(card).length > 0;
 });
 const allCards = computed(() => board.columns.value.flatMap((column) => column.cards));
+watch(() => allCards.value.map(({ id, column }) => ({ id, column })), pruneTriageSeen, {
+  immediate: true,
+});
 const searchMounted = ref(false);
 watch(
   () => props.searchOpen,

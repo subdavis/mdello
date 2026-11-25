@@ -15,12 +15,15 @@ import { formatRelativeStamp, formatStamp } from '../format';
 import { useNow } from '../composables/useNow';
 import type { CardAttachment } from '../fs/attachments';
 import { type Card, triageSources as readTriageSources } from '../fs/board';
+import { acknowledgeTriage } from '../composables/useTriageSeen';
 import { markdownOutline, renderMarkdown, setTaskChecked } from '../markdown';
 import type { GitHubLinkDetails, JiraLinkDetails } from '../references';
 import Agents from './Agents.vue';
 import GitHubReferenceBadge from './GitHubReferenceBadge.vue';
 import JiraReferenceBadge from './JiraReferenceBadge.vue';
 import IconGlyph from './IconGlyph.vue';
+import { useFocus } from '../composables/useFocus';
+import FocusToggle from './FocusToggle.vue';
 import MarkdownEditor from './MarkdownEditor.vue';
 import MarkdownOutline from './MarkdownOutline.vue';
 import Overlay from './Overlay.vue';
@@ -52,6 +55,7 @@ function storedSidebarWidth(): number {
 const board = useBoard();
 const markdownImport = useMarkdownImport();
 const editing = ref(false);
+const focus = useFocus();
 const editor = ref<InstanceType<typeof MarkdownEditor> | null>(null);
 /** Width with the sidebar; an empty card drops the sidebar's share so its body width holds. */
 const modalWidth = ref(storedModalWidth());
@@ -76,6 +80,7 @@ const preview = ref<HTMLElement | null>(null);
 const outline = computed(() => markdownOutline(props.card.body));
 const associations = useCompanion(board.rootPath, props.card);
 const triageSources = computed(() => readTriageSources(props.card));
+acknowledgeTriage(props.card.id);
 const hasSidebar = computed(
   () =>
     triageSources.value.length > 0 ||
@@ -492,6 +497,12 @@ function onEscape(): void {
 
         <footer class="modal-foot">
           <span class="save-state">{{ board.saveState.value }}</span>
+          <FocusToggle
+            label="Focus"
+            title="Toggle focus for this card"
+            :active="focus.isFocused(card.id)"
+            @click="focus.toggleCard(card.id)"
+          />
           <a
             v-if="editorLink"
             class="editor-link"

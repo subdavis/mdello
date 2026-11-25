@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, useTemplateRef } from 'vue';
+import { useFocus } from '../composables/useFocus';
 import { useDrag } from '../composables/useDrag';
 import { useMarkdownImport } from '../composables/useMarkdownImport';
 import type { Card as CardType, Column } from '../fs/board';
@@ -17,6 +18,10 @@ const emit = defineEmits<{
   mergeHover: [CardType | null];
 }>();
 
+const focus = useFocus();
+const visibleCount = computed(
+  () => props.column.cards.filter((card) => !focus.isHidden(card.id)).length,
+);
 const drag = useDrag();
 const markdownImport = useMarkdownImport();
 const body = useTemplateRef<HTMLElement>('body');
@@ -170,7 +175,7 @@ function runColumnAction(action: string): void {
         <h2 title="Double-click to rename, drag to reorder" @dblclick="startRenaming">
           {{ column.name }}
         </h2>
-        <span class="count">{{ column.cards.length }}</span>
+        <span class="count">{{ visibleCount }}</span>
         <ActionDropdown
           class="column-actions"
           title="Column actions"
@@ -186,10 +191,10 @@ function runColumnAction(action: string): void {
     <div ref="body" class="column-body">
       <template v-for="(card, index) in column.cards" :key="card.id">
         <div v-if="slot === index" class="slot" :style="slotStyle" />
-        <CardTile :card="card" @open="emit('open', $event)" />
+        <CardTile v-show="!focus.isHidden(card.id)" :card="card" @open="emit('open', $event)" />
       </template>
       <div v-if="slot !== null && slot >= column.cards.length" class="slot" :style="slotStyle" />
-      <p v-if="!column.cards.length && slot === null" class="empty">No cards</p>
+      <p v-if="!visibleCount && slot === null" class="empty">No cards</p>
     </div>
 
     <form v-if="adding" class="add-form" @submit.prevent="submitDraft">

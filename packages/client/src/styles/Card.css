@@ -44,7 +44,8 @@
   stroke-dashoffset: 100;
   rx: var(--radius);
   opacity: 0;
-  animation: merge-charge 2s linear forwards;
+  /* 1s hold, then 2s charge; Board.vue's merge timer is the sum. */
+  animation: merge-charge 2s linear 1s forwards;
 }
 
 @keyframes merge-charge {

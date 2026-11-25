@@ -1,0 +1,28 @@
+.focus-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.focus-toggle-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--neutral-dot);
+}
+
+.focus-toggle.is-on {
+  border-color: var(--success-line);
+  background: var(--success-bg);
+  color: var(--success-text);
+}
+
+.focus-toggle.is-on .focus-toggle-dot {
+  background: var(--success-dot);
+}

@@ -10,7 +10,6 @@ const status = useCompanionConnectionStatus(
   board.rootPath,
 );
 const saving = ref(false);
-const label = computed(() => status.value.replace('_', ' '));
 const canToggle = computed(
   () =>
     board.access.value.state === 'ready' &&
@@ -43,7 +42,7 @@ async function toggle(): Promise<void> {
     @click="toggle"
   >
     <span class="companion-status-dot" aria-hidden="true" />
-    Companion {{ label }}
+    Companion
   </button>
 </template>
 

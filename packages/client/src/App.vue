@@ -3,13 +3,16 @@ import { nextTick, onBeforeUnmount, onMounted, ref, watchEffect } from 'vue';
 import Board from './components/Board.vue';
 import BoardSwitcher from './components/BoardSwitcher.vue';
 import CompanionStatus from './components/CompanionStatus.vue';
+import FocusToggle from './components/FocusToggle.vue';
 import SettingsDialog from './components/SettingsDialog.vue';
 import Toast from './components/Toast.vue';
 import { useBoard } from './composables/useBoard';
+import { useFocus } from './composables/useFocus';
 import { isMarkdownFile, useMarkdownImport } from './composables/useMarkdownImport';
 import { showToast } from './composables/useToast';
 
 const board = useBoard();
+const focus = useFocus();
 const markdownImport = useMarkdownImport();
 
 const addingColumn = ref(false);
@@ -156,9 +159,13 @@ onBeforeUnmount(() => {
     >
       Refresh
     </button>
-    <button v-if="board.access.value.state !== 'unsupported'" type="button" @click="board.pick()">
-      Open folder
-    </button>
+    <FocusToggle
+      v-if="board.access.value.state === 'ready'"
+      label="Focus"
+      title="Show only focused cards"
+      :active="focus.enabled.value"
+      @click="focus.toggleMode()"
+    />
     <CompanionStatus />
     <button v-if="board.access.value.state === 'ready'" type="button" @click="settingsOpen = true">
       Settings

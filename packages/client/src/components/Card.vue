@@ -7,6 +7,7 @@ import { useBoard } from '../composables/useBoard';
 import { formatRelativeStamp, formatStamp } from '../format';
 import { useNow } from '../composables/useNow';
 import { type Card, triageSources as readTriageSources } from '../fs/board';
+import { isTriageUnseen } from '../composables/useTriageSeen';
 import IconGlyph from './IconGlyph.vue';
 import { useBoardExtras } from '../composables/useCardExtras.ts';
 
@@ -17,8 +18,16 @@ const now = useNow();
 const drag = useDrag();
 const board = useBoard();
 const associations = useCompanion(board.rootPath, props.card);
-const status = computed(() => aggregateStatus(associations.value));
-const statusLabel = computed(() => status.value?.replaceAll('_', ' '));
+const agentStatus = computed(() => aggregateStatus(associations.value));
+// A live agent status outranks the triage notification.
+const status = computed(() =>
+  isTriageUnseen(props.card) && (!agentStatus.value || agentStatus.value === 'closed')
+    ? 'triage_unseen'
+    : agentStatus.value,
+);
+const statusLabel = computed(() =>
+  status.value === 'triage_unseen' ? 'New in Triage' : status.value?.replaceAll('_', ' '),
+);
 const isDragging = computed(() => drag.dragging.value?.id === props.card.id);
 const extras = useBoardExtras(board, props.card.name);
 
@@ -62,11 +71,11 @@ const referenceRepresentations = computed(() =>
     </svg>
     <IconGlyph
       v-if="status && status !== 'closed'"
-      :name="`status-${status}`"
+      :name="status === 'triage_unseen' ? 'status-waiting_for_input' : `status-${status}`"
       class="card-status-indicator"
       :class="`is-${status}`"
       role="img"
-      :aria-label="`Session status: ${statusLabel}`"
+      :aria-label="status === 'triage_unseen' ? statusLabel : `Session status: ${statusLabel}`"
       :title="statusLabel"
     />
     <h3 class="card-title">{{ card.title }}</h3>

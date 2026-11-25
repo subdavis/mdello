@@ -48,8 +48,10 @@ import { mergedContent } from '../mergeCards';
 import { promptForColumnMigration } from '../migrations/folderColumns';
 import { findReferences } from '../references';
 import { expungeCardAssociations, fetchCardAssociations } from './useCompanion';
+import { setCardFocused, useFocus } from './useFocus';
 import { labels, takeLegacyLabels } from './useLabels';
 import { showToast } from './useToast';
+import { acknowledgeTriage, TRIAGE_COLUMN } from './useTriageSeen';
 
 const SAVE_DELAY = 600;
 const WATCH_DELAY = 250;
@@ -58,6 +60,7 @@ const ECHO_WINDOW = 1000;
 const access = shallowRef<BoardAccess>({ state: 'none' });
 /** Shallow: the entries hold native directory handles, which must not be proxied. */
 const boards = shallowRef<BoardRef[]>([]);
+const { enabled: focusMode } = useFocus();
 const columns = ref<Column[]>([]);
 const loading = ref(false);
 const error = ref<string | null>(null);
@@ -674,6 +677,8 @@ export function useBoard() {
     async addCard(column: Column, title: string): Promise<Card | undefined> {
       return guard(async () => {
         const card = await createCard(requireRoot(), column.name, title, 1);
+        if (focusMode.value) setCardFocused(card.id, true);
+        acknowledgeTriage(card.id);
         column.cards.unshift(card);
         await persistOrder(requireRoot(), column);
         return card;
@@ -685,6 +690,8 @@ export function useBoard() {
         const { title, body } = parseMarkdownImport(file.name, await file.text());
         const destination = Math.min(index, column.cards.length);
         const card = await createCard(requireRoot(), column.name, title, destination + 1, body);
+        if (focusMode.value) setCardFocused(card.id, true);
+        acknowledgeTriage(card.id);
         column.cards.splice(destination, 0, card);
         await persistOrder(requireRoot(), column);
         return card;
@@ -707,6 +714,8 @@ export function useBoard() {
         if (from) from.cards = from.cards.filter((entry) => entry.id !== card.id);
         card.column = toColumn.name;
         card.order = undefined;
+        // Your own drop into Triage is not news.
+        if (toColumn.name === TRIAGE_COLUMN) acknowledgeTriage(card.id);
         toColumn.cards.splice(Math.min(index, toColumn.cards.length), 0, card);
       }
 

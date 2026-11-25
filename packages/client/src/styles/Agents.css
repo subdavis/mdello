@@ -3,7 +3,8 @@
   background: color-mix(in srgb, var(--card-bg) 88%, var(--agent-running-highlight));
 }
 
-.card.status-waiting_for_input {
+.card.status-waiting_for_input,
+.card.status-triage_unseen {
   background: color-mix(in srgb, var(--card-bg) 88%, var(--agent-waiting-highlight));
 }
 
@@ -20,7 +21,8 @@
   --agent-status-color: var(--agent-running);
 }
 
-.status-waiting_for_input {
+.status-waiting_for_input,
+.status-triage_unseen {
   --agent-status-color: var(--accent);
 }
 
