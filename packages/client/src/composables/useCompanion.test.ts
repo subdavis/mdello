@@ -4,6 +4,7 @@ import { effectScope, type Ref, ref } from 'vue';
 import {
   type Association,
   type CompanionConnectionStatus,
+  dispatchPrompt,
   focusSession,
   forgetSession,
   resumeCommand,
@@ -207,4 +208,15 @@ test('reconnects continuously while enabled and stops when disposed', (context) 
     scope.stop();
     globalThis.EventSource = originalEventSource;
   }
+});
+
+test('builds the default dispatch prompt, omitting an empty board description', () => {
+  assert.equal(
+    dispatchPrompt('/b/card.md', '/b', 'Work stuff'),
+    'Please dispatch /b/card.md\nSource: Mdello board /b\nBoard description: Work stuff',
+  );
+  assert.equal(
+    dispatchPrompt('/b/card.md', '/b', ''),
+    'Please dispatch /b/card.md\nSource: Mdello board /b',
+  );
 });

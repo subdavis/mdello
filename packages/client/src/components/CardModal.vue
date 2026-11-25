@@ -5,6 +5,7 @@ import {
   subscribeUrlEnrichments,
   type UrlEnrichment,
   useCompanion,
+  useOrchestratorStatus,
   useGitHubEnabled,
   useLinkEnrichment,
   useJiraEnabled,
@@ -19,6 +20,7 @@ import { acknowledgeTriage } from '../composables/useTriageSeen';
 import { markdownOutline, renderMarkdown, setTaskChecked } from '../markdown';
 import type { GitHubLinkDetails, JiraLinkDetails } from '../references';
 import Agents from './Agents.vue';
+import DispatchDialog from './DispatchDialog.vue';
 import GitHubReferenceBadge from './GitHubReferenceBadge.vue';
 import JiraReferenceBadge from './JiraReferenceBadge.vue';
 import IconGlyph from './IconGlyph.vue';
@@ -99,6 +101,8 @@ const enrichedReferences = computed(() =>
 const { fullPath, clipboardPath } = useBoardExtras(board, props.card.name);
 /** Undefined until `path` is filled in inside the board's mdello.yml. */
 const editorLink = computed(() => board.cardUrl(props.card));
+const orchestratorStatus = useOrchestratorStatus();
+const dispatchOpen = ref(false);
 
 interface LoadedAttachment extends CardAttachment {
   url: string;
@@ -503,6 +507,17 @@ function onEscape(): void {
             :active="focus.isFocused(card.id)"
             @click="focus.toggleCard(card.id)"
           />
+          <button
+            v-if="board.companionEnabled.value"
+            type="button"
+            class="dispatch-button"
+            :class="orchestratorStatus && `is-${orchestratorStatus}`"
+            :disabled="orchestratorStatus !== 'idle'"
+            :title="orchestratorStatus ? `Orchestrator ${orchestratorStatus}` : 'No orchestrator available'"
+            @click="dispatchOpen = true"
+          >
+            Dispatch
+          </button>
           <a
             v-if="editorLink"
             class="editor-link"
@@ -592,6 +607,8 @@ function onEscape(): void {
     </div>
     </div>
   </Overlay>
+
+  <DispatchDialog v-if="dispatchOpen" :card-path="clipboardPath" @close="dispatchOpen = false" />
 
   <Overlay
     v-if="openImage"

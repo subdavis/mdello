@@ -30,7 +30,7 @@ import { discoverExecutable } from './executables.ts';
 import { startExtensions } from './extensions.ts';
 import { createGitHubEnrichmentProvider, type GitHubCommandRunner } from './github-links.ts';
 import { HerdrSessionCache } from './herdr.ts';
-import { HerdrCoreSessionCache } from './herdr-core.ts';
+import { HerdrCoreSessionCache, isReservedName, type Orchestrator } from './herdr-core.ts';
 import { findAdapter, harnessFromPath, hookAssociationInputs } from './hooks.ts';
 import { createJiraEnrichmentProvider, type JiraCommandRunner } from './jira-links.ts';
 import { companionPaths } from './xdg.ts';
@@ -111,14 +111,17 @@ interface AssociationContext {
   clients: Map<ServerResponse, string>;
   boards: BoardRegistration[];
   presentAssociations: PresentAssociations;
+  onReserved: OnReserved;
 }
 
-// Agents in a tab or workspace with these names coordinate other agents and never bind to cards.
-const RESERVED_AGENT_NAMES = new Set(['orchestrator', 'control plane']);
+/** Receives statuses from reserved agents, which never bind but still report their state. */
+type OnReserved = (association: Association) => void;
+
 const isReservedAgent = ({ herdrWorkspace, herdrTab }: Association) =>
-  [herdrWorkspace, herdrTab].some(
-    (name) => name && RESERVED_AGENT_NAMES.has(name.trim().toLowerCase()),
-  );
+  isReservedName(herdrWorkspace) || isReservedName(herdrTab);
+
+const orchestratorEvent = (orchestrator: Orchestrator | undefined) =>
+  orchestrator ? { status: orchestrator.status } : null;
 
 async function writeBoardSnapshots(
   clients: Map<ServerResponse, string>,
@@ -263,6 +266,7 @@ async function recordAssociation(
   clients: Map<ServerResponse, string>,
   boards: BoardRegistration[],
   presentAssociations: PresentAssociations,
+  onReserved?: OnReserved,
 ): Promise<Association | 'unknown_card' | 'reserved_agent' | 'invalid'> {
   const requestedPath = input.markdownPath ?? input.cardPath;
   const card =
@@ -289,6 +293,7 @@ async function recordAssociation(
   }
   const [live] = await presentAssociations([association], true);
   if (!live) {
+    onReserved?.(association);
     debug('association ignored', { sessionId: association.sessionId, reason: 'reserved_agent' });
     return 'reserved_agent';
   }
@@ -335,6 +340,7 @@ async function handleAssociationPost(
   clients: Map<ServerResponse, string>,
   boards: BoardRegistration[],
   presentAssociations: PresentAssociations,
+  onReserved: OnReserved,
 ): Promise<void> {
   try {
     const input = (await readBody(request)) as AssociationInput;
@@ -345,6 +351,7 @@ async function handleAssociationPost(
       clients,
       boards,
       presentAssociations,
+      onReserved,
     );
     if (result === 'unknown_card' || result === 'reserved_agent') {
       sendJson(response, 202, { ignored: true, reason: result });
@@ -364,6 +371,7 @@ async function handleAssociationPost(
 
 const ACTION_ERROR_STATUS: Record<string, number> = {
   herdr_not_configured: 409,
+  orchestrator_not_found: 404,
   session_not_found: 404,
 };
 
@@ -416,7 +424,7 @@ async function handleHookPost(
   harness: string,
   context: AssociationContext,
 ): Promise<void> {
-  const { dataFile, associations, clients, boards, presentAssociations } = context;
+  const { dataFile, associations, clients, boards, presentAssociations, onReserved } = context;
   const adapter = findAdapter(harness);
   if (!adapter) {
     response.writeHead(404, { 'Content-Type': 'application/json' });
@@ -461,6 +469,7 @@ async function handleHookPost(
         clients,
         boards,
         presentAssociations,
+        onReserved,
       );
       if (typeof result === 'object') recorded += 1;
     }
@@ -697,6 +706,7 @@ async function handleEventsGet(
   clients.set(response, boardUuid);
   const snapshot = await presentAssociations(boardAssociations(associations, boardUuid));
   writeSse(response, 'snapshot', snapshot);
+  writeSse(response, 'orchestrator', orchestratorEvent(herdrCoreCache.orchestrator));
   debug('event stream subscribed', { boardUuid, associations: snapshot.length });
   request.on('close', () => {
     clients.delete(response);
@@ -775,8 +785,34 @@ export async function createCompanionServer(options: CompanionOptions = {}): Pro
     herdrAppPath,
     run: options.herdrRun,
   };
+  const clients = new Map<ServerResponse, string>();
   const herdrCache = new HerdrSessionCache(actionContext);
-  const herdrCoreCache = new HerdrCoreSessionCache(actionContext);
+  // The orchestrator is global, so every board hears about it.
+  const herdrCoreCache = new HerdrCoreSessionCache({
+    ...actionContext,
+    onOrchestrator: (orchestrator) => {
+      for (const client of clients.keys()) {
+        writeSse(client, 'orchestrator', orchestratorEvent(orchestrator));
+      }
+    },
+  });
+  if (herdrCorePath) {
+    actionContext.findOrchestrator = async () => {
+      await herdrCoreCache.refresh();
+      return herdrCoreCache.orchestrator?.hcTerminal;
+    };
+  }
+  const onReserved: OnReserved = ({ hcTerminal, status }) => {
+    if (!hcTerminal) return;
+    herdrCoreCache.setOrchestrator(
+      status === 'closed'
+        ? undefined
+        : {
+            hcTerminal,
+            status: status === 'running' || status === 'waiting_for_input' ? 'running' : 'idle',
+          },
+    );
+  };
   const caches = terminals.map((terminal) => (terminal === 'herdr' ? herdrCache : herdrCoreCache));
   // Labels are transient: strip stored ones, then the first listed terminal that knows a session wins.
   const presentAssociations: PresentAssociations = async (entries, ensureSessions = false) => {
@@ -802,7 +838,6 @@ export async function createCompanionServer(options: CompanionOptions = {}): Pro
   const jiraEnabled = Boolean(jiraPath);
   let autofocus = config.autofocus === true;
   let linkEnrichment = config.linkEnrichment === true;
-  const clients = new Map<ServerResponse, string>();
   const enrichmentClients = new Set<ServerResponse>();
   const enrichmentCache = new Map<string, UrlEnrichment>();
   const enrichmentProviders = [
@@ -862,6 +897,7 @@ export async function createCompanionServer(options: CompanionOptions = {}): Pro
         clients,
         boards,
         presentAssociations,
+        onReserved,
       })
     ) {
       return;
@@ -911,6 +947,7 @@ export async function createCompanionServer(options: CompanionOptions = {}): Pro
         clients,
         boards,
         presentAssociations,
+        onReserved,
       );
       return;
     }

@@ -1383,3 +1383,68 @@ test('treats persisted associations without a harness as unknown associations', 
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test('streams orchestrator state and dispatches cards to it', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mdello-server-'));
+  const boardPath = join(root, 'board');
+  const cardPath = join(boardPath, 'card.md');
+  await mkdir(boardPath);
+  await writeFile(cardPath, '---\nuuid: card-a\n---\n');
+  const sends: string[][] = [];
+  const companion = await createCompanionServer({
+    port: 0,
+    dataFile: join(root, 'companion.jsonl'),
+    configFile: await writeTerminals(root, ['herdr-core']),
+    herdrCorePath: '/bin/herdr-core',
+    environment: {},
+    herdrRun: async (_command, args) => {
+      if (args[0] === 'send') sends.push(args);
+      return {
+        stdout: JSON.stringify({
+          terminals: [{ address: 't3x', where: 'Control Plane / Orchestrator', status: 'done' }],
+        }),
+      };
+    },
+  });
+  const controller = new AbortController();
+  try {
+    const response = await fetch(eventsUrl(companion.url, 'board-a', boardPath), {
+      signal: controller.signal,
+    });
+    const reader = response.body?.getReader();
+    assert.ok(reader);
+    await readUntil(reader, 'event: orchestrator\ndata: {"status":"idle"}');
+
+    // The orchestrator reports through the association channel once it sees a card path.
+    const posted = await fetch(`${companion.url}/associations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        cardPath,
+        harness: 'pi',
+        sessionId: 'orchestrator',
+        hcTerminal: 't3x',
+        status: 'running',
+      }),
+    });
+    assert.equal(((await posted.json()) as { reason?: string }).reason, 'reserved_agent');
+    await readUntil(reader, 'event: orchestrator\ndata: {"status":"running"}');
+
+    const dispatch = (body: unknown) =>
+      fetch(`${companion.url}/actions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    assert.equal(
+      (await dispatch({ action: 'dispatch', prompt: `Please dispatch ${cardPath}` })).status,
+      200,
+    );
+    assert.deepEqual(sends, [['send', 't3x', `Please dispatch ${cardPath}`]]);
+    assert.equal((await dispatch({ action: 'dispatch', prompt: '' })).status, 400);
+  } finally {
+    controller.abort();
+    await companion.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});

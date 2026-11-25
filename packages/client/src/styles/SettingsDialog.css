@@ -143,6 +143,11 @@
   font-size: var(--font-xs);
 }
 
+.settings-field textarea {
+  font-size: var(--font-xs);
+  resize: vertical;
+}
+
 .settings-hint,
 .settings-note p {
   margin: 0;

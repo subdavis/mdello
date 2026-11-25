@@ -6,7 +6,7 @@ import { createDebugLogger } from './debug.ts';
 const exec = promisify(execFile);
 const debug = createDebugLogger();
 
-export type ActionName = 'focus';
+export type ActionName = 'focus' | 'dispatch';
 
 export interface FocusRequest {
   action: 'focus';
@@ -16,7 +16,13 @@ export interface FocusRequest {
   hcTerminal?: string;
 }
 
-export type ActionRequest = FocusRequest;
+export interface DispatchRequest {
+  action: 'dispatch';
+  /** User-reviewed text pasted into the orchestrator as-is. */
+  prompt: string;
+}
+
+export type ActionRequest = FocusRequest | DispatchRequest;
 
 export type ActionOutcome = { ok: true } | { ok: false; error: string };
 
@@ -33,6 +39,8 @@ export interface ActionContext {
   herdrCorePath?: string;
   /** Herdr Desktop CLI (`herdr-app`); focuses herdr-core terminals in the window. */
   herdrAppPath?: string;
+  /** Live orchestrator's herdr-core terminal, resolved fresh for each dispatch. */
+  findOrchestrator?: () => Promise<string | undefined>;
   /** Injectable for tests; defaults to actually spawning the process. */
   run?: (command: string, args: string[]) => Promise<CommandResult>;
 }
@@ -45,6 +53,10 @@ interface HerdrAgent {
 
 function isActionRequest(value: unknown): value is ActionRequest {
   if (!value || typeof value !== 'object') return false;
+  if ((value as Partial<DispatchRequest>).action === 'dispatch') {
+    const { prompt } = value as Partial<DispatchRequest>;
+    return typeof prompt === 'string' && prompt.trim().length > 0;
+  }
   const candidate = value as Partial<FocusRequest>;
   if (candidate.action === 'focus') {
     return (
@@ -106,10 +118,21 @@ async function focus(request: ActionRequest, context: ActionContext): Promise<Ac
   return { ok: false, error: 'herdr_not_configured' };
 }
 
+async function dispatch(request: ActionRequest, context: ActionContext): Promise<ActionOutcome> {
+  if (request.action !== 'dispatch') return { ok: false, error: 'invalid_action' };
+  const { herdrCorePath, findOrchestrator } = context;
+  if (!herdrCorePath || !findOrchestrator) return { ok: false, error: 'herdr_not_configured' };
+  const terminal = await findOrchestrator();
+  if (!terminal) return { ok: false, error: 'orchestrator_not_found' };
+  // A non-zero `hc send` exit rejects, which surfaces as herdr_command_failed.
+  await resolveRun(context)(herdrCorePath, ['send', terminal, request.prompt.trim()]);
+  return { ok: true };
+}
+
 const ACTIONS: Record<
   ActionName,
   (request: ActionRequest, context: ActionContext) => Promise<ActionOutcome>
-> = { focus };
+> = { focus, dispatch };
 
 export async function performAction(
   input: unknown,

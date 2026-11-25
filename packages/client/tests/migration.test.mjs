@@ -89,6 +89,17 @@ test('reads and writes companion setting', async () => {
   assert.equal((await readConfig(root)).companion, false);
 });
 
+test('reads and writes board description', async () => {
+  const root = new MemoryDirectoryHandle('board');
+  root.file('mdello.yml', 'path: /tmp/board\n');
+  const config = await readConfig(root);
+  assert.equal(config.description, '');
+
+  config.description = 'Work stuff\nfor SCA';
+  await writeConfig(root, config);
+  assert.equal((await readConfig(root)).description, 'Work stuff\nfor SCA');
+});
+
 test('migrates folder columns into config and root card frontmatter', async () => {
   const root = new MemoryDirectoryHandle('board');
   root.file('mdello.yml', 'path: /tmp/board\n');

@@ -401,6 +401,7 @@ export function useBoard() {
     columns,
     editorName: computed(() => editorName(config.value ?? DEFAULT_CONFIG)),
     editorTemplate: computed(() => config.value?.editor ?? DEFAULT_CONFIG.editor),
+    description: computed(() => config.value?.description ?? ''),
     rootPath: computed(() => config.value?.path ?? ''),
     boardUuid: computed(() => config.value?.uuid ?? ''),
     configReady: computed(() => config.value !== null),
@@ -487,17 +488,28 @@ export function useBoard() {
      * The two config scalars the settings dialog owns. A blank editor means "the default",
      * not "no editor", because an empty template would silently break every card link.
      */
-    async saveSettings(next: { path: string; editor: string }): Promise<boolean> {
+    async saveSettings(next: {
+      path: string;
+      editor: string;
+      description: string;
+    }): Promise<boolean> {
       const loaded = config.value;
       if (!root.value || locked.value || !loaded) return false;
 
       const path = next.path.trim();
       const editor = next.editor.trim() || DEFAULT_CONFIG.editor;
-      if (loaded.path === path && loaded.editor === editor) return true;
+      const description = next.description.trim();
+      if (loaded.path === path && loaded.editor === editor && loaded.description === description)
+        return true;
 
-      const previous = { path: loaded.path, editor: loaded.editor };
+      const previous = {
+        path: loaded.path,
+        editor: loaded.editor,
+        description: loaded.description,
+      };
       loaded.path = path;
       loaded.editor = editor;
+      loaded.description = description;
       if (!(await saveConfig())) {
         Object.assign(loaded, previous);
         return false;

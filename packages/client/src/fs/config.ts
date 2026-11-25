@@ -19,6 +19,8 @@ export interface BoardConfig {
   editor: string;
   /** Whether the web app should connect to the local companion sidecar. */
   companion: boolean;
+  /** Freeform context included when the companion dispatches a card to the orchestrator. */
+  description: string;
   labels: Label[];
 }
 
@@ -30,6 +32,7 @@ export const DEFAULT_CONFIG: BoardConfig = {
   path: '',
   editor: DEFAULT_EDITOR,
   companion: false,
+  description: '',
   labels: [],
 };
 
@@ -64,6 +67,8 @@ const HEADER = `# mdello board config — written by the app, safe to hand-edit.
 #           obsidian://open?path={path}  Obsidian
 #
 # companion  Connect to the optional local companion sidecar. Disabled by default.
+#
+# description  Freeform board context, sent to the orchestrator with dispatched cards.
 #
 # Wallpaper: drop a file named background.<ext> in this folder. Any format the browser
 #            can render works; it is drawn centred and cropped to cover.
@@ -112,6 +117,7 @@ export async function readConfig(root: FileSystemDirectoryHandle): Promise<Board
     path: typeof data.path === 'string' ? data.path.trim() : '',
     editor: typeof data.editor === 'string' && data.editor ? data.editor : DEFAULT_EDITOR,
     companion: data.companion === true,
+    description: typeof data.description === 'string' ? data.description.trim() : '',
     labels: readLabels(data.labels),
   };
 }

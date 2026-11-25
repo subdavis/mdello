@@ -10,9 +10,24 @@ const exec = promisify(execFile);
 interface HcTerminal {
   address?: string;
   where?: string;
+  /** Present only for agent terminals: `working`, `done`, `idle`, … */
+  status?: string;
 }
 
-type Context = Pick<ActionContext, 'herdrCorePath' | 'run'>;
+// Agents in a tab or workspace with these names coordinate other agents and never bind to cards.
+const RESERVED_AGENT_NAMES = new Set(['orchestrator', 'control plane']);
+export const isReservedName = (name: string | undefined) =>
+  Boolean(name && RESERVED_AGENT_NAMES.has(name.trim().toLowerCase()));
+
+export type OrchestratorStatus = 'running' | 'idle';
+export interface Orchestrator {
+  hcTerminal: string;
+  status: OrchestratorStatus;
+}
+
+type Context = Pick<ActionContext, 'herdrCorePath' | 'run'> & {
+  onOrchestrator?: (orchestrator: Orchestrator | undefined) => void;
+};
 
 /** Herdr Desktop shows `where` as `Space / Tab`; terminals without it are hidden workers. */
 function parseWhere(where: string | undefined) {
@@ -33,6 +48,15 @@ export class HerdrCoreSessionCache {
 
   constructor(context: Context) {
     this.context = context;
+  }
+
+  orchestrator?: Orchestrator;
+
+  /** Notifies only on change, so callers may report every status they hear. */
+  setOrchestrator(next: Orchestrator | undefined): void {
+    if (JSON.stringify(next) === JSON.stringify(this.orchestrator)) return;
+    this.orchestrator = next;
+    this.context.onOrchestrator?.(next);
   }
 
   async refresh(): Promise<void> {
@@ -79,8 +103,26 @@ export class HerdrCoreSessionCache {
           terminal.address && terminal.where ? [[terminal.address, terminal.where]] : [],
         ),
       );
+      // Shells share the orchestrator's tab; only an agent terminal reports a status.
+      const orchestrator = terminals.find((terminal) => {
+        const labels = parseWhere(terminal.where);
+        return (
+          terminal.address &&
+          terminal.status &&
+          (isReservedName(labels?.herdrWorkspace) || isReservedName(labels?.herdrTab))
+        );
+      });
+      this.setOrchestrator(
+        orchestrator?.address
+          ? {
+              hcTerminal: orchestrator.address,
+              status: orchestrator.status === 'working' ? 'running' : 'idle',
+            }
+          : undefined,
+      );
     } catch (error) {
       this.whereByTerminal.clear();
+      this.setOrchestrator(undefined);
       debug('herdr-core state sync failed', {
         error: error instanceof Error ? error.message : String(error),
       });

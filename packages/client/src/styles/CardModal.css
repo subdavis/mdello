@@ -403,6 +403,12 @@
   background: var(--surface-hover);
 }
 
+.dispatch-button.is-running {
+  border-color: var(--warning-line);
+  background: var(--warning-bg);
+  color: var(--warning-text);
+}
+
 .ref-row {
   display: flex;
   flex-direction: column;

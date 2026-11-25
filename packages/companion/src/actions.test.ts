@@ -194,3 +194,53 @@ test('herdr focuses through Herdr even when a terminal is known', async () => {
     false,
   );
 });
+
+function dispatchContext(orchestrator: string | undefined): ActionContext & { calls: string[][] } {
+  const calls: string[][] = [];
+  return {
+    herdrCorePath: '/bin/herdr-core',
+    findOrchestrator: async () => orchestrator,
+    calls,
+    run: async (_command, args) => {
+      calls.push(args);
+      return { stdout: '' };
+    },
+  };
+}
+
+test('sends the reviewed prompt to the orchestrator terminal with hc send', async () => {
+  const context = dispatchContext('t3x');
+  const result = await performAction(
+    { action: 'dispatch', prompt: '  Please dispatch /board/card.md\nSource: x \n' },
+    context,
+  );
+  assert.deepEqual(result, { ok: true });
+  assert.deepEqual(context.calls, [['send', 't3x', 'Please dispatch /board/card.md\nSource: x']]);
+});
+
+test('refuses to dispatch without an orchestrator, a prompt, or herdr-core', async () => {
+  const request = { action: 'dispatch', prompt: 'Please dispatch' };
+  assert.deepEqual(await performAction(request, dispatchContext(undefined)), {
+    ok: false,
+    error: 'orchestrator_not_found',
+  });
+  assert.deepEqual(
+    await performAction(request, { ...dispatchContext('t3x'), herdrCorePath: undefined }),
+    { ok: false, error: 'herdr_not_configured' },
+  );
+  assert.equal(
+    await performAction({ action: 'dispatch', prompt: ' ' }, dispatchContext('t3x')),
+    'invalid',
+  );
+});
+
+test('reports a failing hc send as herdr_command_failed', async () => {
+  const context = dispatchContext('t3x');
+  context.run = async () => {
+    throw new Error('exit 1');
+  };
+  assert.deepEqual(await performAction({ action: 'dispatch', prompt: 'go' }, context), {
+    ok: false,
+    error: 'herdr_command_failed',
+  });
+});

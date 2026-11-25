@@ -41,6 +41,7 @@ const savingAutofocus = ref(false);
 const savingLinkEnrichment = ref(false);
 const path = ref(board.rootPath.value);
 const editor = ref(board.editorTemplate.value);
+const description = ref(board.description.value);
 const saving = ref(false);
 const failed = ref(false);
 const autofocusFailed = ref(false);
@@ -61,7 +62,8 @@ const editable = computed(
 const dirty = computed(
   () =>
     path.value.trim() !== board.rootPath.value ||
-    editor.value.trim() !== board.editorTemplate.value,
+    editor.value.trim() !== board.editorTemplate.value ||
+    description.value.trim() !== board.description.value,
 );
 
 const status = computed(() => {
@@ -79,6 +81,7 @@ async function save(): Promise<boolean> {
   const saved = await board.saveSettings({
     path: path.value,
     editor: editor.value,
+    description: description.value,
   });
   saving.value = false;
   failed.value = !saved;
@@ -87,6 +90,7 @@ async function save(): Promise<boolean> {
   if (saved) {
     path.value = board.rootPath.value;
     editor.value = board.editorTemplate.value;
+    description.value = board.description.value;
   }
   return saved;
 }
@@ -157,6 +161,16 @@ onMounted(() => pathInput.value?.focus());
             Absolute path of this folder. The browser never reveals real paths, so
             mdello cannot fill it in. Setting it turns on the "open in editor"
             link and is required for the companion to function properly.
+          </small>
+        </label>
+      </section>
+
+      <section class="settings-note">
+        <label class="settings-field">
+          <span class="settings-label">Board description</span>
+          <textarea v-model="description" :disabled="!editable" rows="3" />
+          <small class="settings-hint">
+            Freeform context sent to the orchestrator with every dispatched card.
           </small>
         </label>
       </section>

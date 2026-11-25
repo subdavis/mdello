@@ -59,3 +59,29 @@ test('syncs once per unseen terminal until the next refresh', async () => {
   await cache.ensure(hidden);
   assert.equal(calls.length, 3);
 });
+
+test('identifies the orchestrator agent terminal from hc ls and reports changes', async () => {
+  const seen: unknown[] = [];
+  let status = 'done';
+  const cache = new HerdrCoreSessionCache({
+    herdrCorePath: '/bin/herdr-core',
+    onOrchestrator: (orchestrator) => seen.push(orchestrator),
+    run: async () => ({
+      stdout: JSON.stringify({
+        terminals: [
+          { address: 't52', where: 'Control Plane / Orchestrator' },
+          { address: 't3x', where: 'Control Plane / Orchestrator', status },
+          { address: 't4r', where: 'Agentic / Mdello', status: 'working' },
+        ],
+      }),
+    }),
+  });
+  await cache.refresh();
+  await cache.refresh();
+  status = 'working';
+  await cache.refresh();
+  assert.deepEqual(seen, [
+    { hcTerminal: 't3x', status: 'idle' },
+    { hcTerminal: 't3x', status: 'running' },
+  ]);
+});

@@ -36,6 +36,9 @@ const autofocus = ref(false);
 const githubEnabled = ref(false);
 const linkEnrichment = ref(false);
 const jiraEnabled = ref(false);
+export type OrchestratorStatus = 'running' | 'idle';
+/** Undefined while no orchestrator is known; dispatch is unavailable then. */
+const orchestratorStatus = ref<OrchestratorStatus>();
 const RECONNECT_DELAY_MS = 1_000;
 
 let eventSource: EventSource | undefined;
@@ -147,6 +150,7 @@ function disconnect(): void {
   eventSource = undefined;
   source?.close();
   associations.clear();
+  orchestratorStatus.value = undefined;
   connectionStatus.value = 'disabled';
   autofocus.value = false;
   githubEnabled.value = false;
@@ -200,6 +204,11 @@ function connect(boardUuid: string, boardPath: string): void {
   source.addEventListener('association', (event) => {
     if (eventSource === source) accept(JSON.parse(event.data) as Association);
   });
+  source.addEventListener('orchestrator', (event) => {
+    if (eventSource !== source) return;
+    const orchestrator = JSON.parse(event.data) as { status: OrchestratorStatus } | null;
+    orchestratorStatus.value = orchestrator?.status;
+  });
 }
 
 export function useCompanionConnectionStatus(
@@ -221,6 +230,10 @@ export function useCompanionConnectionStatus(
 
 export function useHerdrEnabled(): Readonly<Ref<boolean>> {
   return readonly(herdrEnabled);
+}
+
+export function useOrchestratorStatus(): Readonly<Ref<OrchestratorStatus | undefined>> {
+  return readonly(orchestratorStatus);
 }
 
 export function useCompanionStatus(): Readonly<Ref<CompanionConnectionStatus>> {
@@ -317,6 +330,28 @@ export async function focusSession(association: Association): Promise<boolean> {
         sessionId: association.sessionId,
         sessionFile: association.sessionFile,
       }),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+/** Default orchestrator prompt; the user reviews and edits it before it is sent. */
+export function dispatchPrompt(cardPath: string, boardPath: string, description: string): string {
+  return [
+    `Please dispatch ${cardPath}`,
+    `Source: Mdello board ${boardPath}`,
+    ...(description ? [`Board description: ${description}`] : []),
+  ].join('\n');
+}
+
+export async function dispatchToOrchestrator(prompt: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${endpoint}/actions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'dispatch', prompt }),
     });
     return response.ok;
   } catch {
